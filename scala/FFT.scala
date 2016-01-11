@@ -10,7 +10,7 @@ import ChiselDSP._
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   val wfta = DSPModule(new WFTA(gen,0))
-  val io2 = new WFTAIO(gen)
+  override val io = new WFTAIO(gen)
   //wfta.io <> io
   //io.x <> wfta.io.x
   //wfta.io.x <> io.x
@@ -21,14 +21,18 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   println("rawr")
   println(Params.getFFT.sizes)
   println(wfta.io.x.length)
-  println(wfta.io.x(0).real.dir + "," + io2.x(0).real.dir)
-  for (t <- 0 until io2.x.length) {
+  println(wfta.io.x(0).real.dir + "," + io.x(0).real.dir)
+  /*for (t <- 0 until io.x.length) {
     println(t)
-    wfta.io.x(t) <> io2.x(t)
-  }
+    wfta.io.x(t) <> io.x(t)
+  }*/
 
+  wfta.io.x := io.x
   println("end")
-  wfta.io.y <> io2.y
-  wfta.io.currRad <> io2.currRad
+  wfta.io.y <> io.y
+  wfta.io.currRad <> io.currRad
+
+  val test = DSPFixed(-1,30)*DSPFixed(-.23,30)//DSPFixed(-3.3,30)*DSPFixed(-1,30)
+  debug(test)
 
 }

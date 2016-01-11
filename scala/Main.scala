@@ -1,4 +1,4 @@
-// TODO: Delay variations
+// TODO: Delay variations sweep
 
 package FFT
 import ChiselDSP._
@@ -16,8 +16,7 @@ object Main {
 
     // All possible subsets of the FFTs the user specified are also generated
     // TODO: Enable all subsets
-    //val sizeComb = List(p.fft.sizes)
-    val sizeComb = p.fft.sizes.toSet.subsets.map(_.toList).toList.filter(_ != List()).reverse.filter(_ != List(4)).filter(_ != List(3)).filter(_ != List(7)).filter(_ != List(5))
+    val sizeComb = p.fft.sizes.toSet.subsets.map(_.toList).toList.filter(_ != List()).reverse
 
     sizeComb.zipWithIndex.foreach { case (e,i) => {
       val (par,nameExt) = {

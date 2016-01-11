@@ -206,6 +206,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val n2h = n1g.pipe(dly(2))
   val n2i = n1k.pipe(dly(2))
   val n2 = Vec(n2a,n2b,n2c,n2d,n2e,n2f,n2g,n2h,n2i)
+  debug(n2)
 
   // Default mul delay used
   // Multiplier logic optimized
@@ -266,6 +267,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
     n6b - (n6e,dly(7)),
     n6a - (n6d,dly(7))
   )
+  debug(y)
 
   // Output after 8th delay stage
   val r2o = rad(7)(WFTA.vRadIdx(2))

@@ -10,7 +10,7 @@
     "mulFracGrowth":1
   },
   "fft":{
-    "sizes":[4,2,3,5,7]
+    "sizes":[4,3,2,5,7]
   },
   "test":{
     "frames":2

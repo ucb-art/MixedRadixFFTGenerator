@@ -37,14 +37,33 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     if (idxN < 0) Error("FFTN is not included in this generated output")
     val inVec = TestVectors.getIn(idxN)
     val outVec = TestVectors.getOut(idxN)
+
     // For WFTA tests
-    val radIdx = Params.getBF.rad.indexOf(Tracker.FFTN).max(0)
-    poke(c.io2.currRad(radIdx),true)
-    for ( i <- 0 until Tracker.FFTN) {poke(c.io2.x(i),inVec(i))}
-    step(c.io2.getOutDelay)
-    for ( i <- 0 until Tracker.FFTN)
-      expect(c.io2.y(i),outVec(i), test = Tracker.FFTN.toString, error = "")
-    poke(c.io2.currRad(radIdx),false)
+    if (Tracker.FFTN <= Params.getBF.rad.max){
+      val radIdx = Params.getBF.rad.indexOf(Tracker.FFTN)
+      poke(c.io.currRad(radIdx),true)
+      for ( i <- 0 until Tracker.FFTN) poke(c.io.x(i),inVec(i))
+      step(c.io.getOutDelay)
+      for ( i <- 0 until Tracker.FFTN)
+        expect(c.io.y(i),outVec(i), test = Tracker.FFTN.toString, error = "")
+      poke(c.io.currRad(radIdx),false)
+    }
+  }
+
+  /** Peek butterfly internal signals */
+  def peekWFTA(): Unit = {
+    for (i <- 0 until c.wfta.io.x.length) peek(c.wfta.io.x(i))
+    for (i <- 0 until c.wfta.x.length) peek(c.wfta.x(i))
+    for (i <- 0 until c.wfta.n0.length) peek(c.wfta.n0(i))
+    for (i <- 0 until c.wfta.n1.length) peek(c.wfta.n1(i))
+    for (i <- 0 until c.wfta.n2.length) peek(c.wfta.n2(i))
+    for (i <- 0 until c.wfta.n3.length) peek(c.wfta.n3(i))
+    for (i <- 0 until c.wfta.n4.length) peek(c.wfta.n4(i))
+    for (i <- 0 until c.wfta.n5.length) peek(c.wfta.n5(i))
+    for (i <- 0 until c.wfta.n6.length) peek(c.wfta.n6(i))
+    for (i <- 0 until c.wfta.y.length) peek(c.wfta.y(i))
+    for (i <- 0 until c.wfta.io.y.length) peek(c.wfta.io.y(i))
+    step()
   }
 
 }
