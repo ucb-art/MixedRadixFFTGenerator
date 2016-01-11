@@ -1,0 +1,18 @@
+{
+  "complex":{
+    "intBits":1,
+    "fracBits":30,
+    "use4Muls":true,
+    "mulPipe":3,
+    "addPipe":0.334,
+    "trimType":"Truncate",
+    "overflowType":"Wrap",
+    "mulFracGrowth":1
+  },
+  "fft":{
+    "sizes":[4,2,3,5,7]
+  },
+  "test":{
+    "frames":2
+  }
+}
