@@ -11,6 +11,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   val wfta = DSPModule(new WFTA(gen,0))
   override val io = new WFTAIO(gen)
+
+
   //wfta.io <> io
   //io.x <> wfta.io.x
   //wfta.io.x <> io.x
@@ -18,17 +20,18 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   /*io.x.zipWithIndex.foreach{
     case (e,i) => {println(i); e <> wfta.io.x(i)}
   }*/
-  println("rawr")
-  println(Params.getFFT.sizes)
-  println(wfta.io.x.length)
-  println(wfta.io.x(0).real.dir + "," + io.x(0).real.dir)
-  /*for (t <- 0 until io.x.length) {
-    println(t)
-    wfta.io.x(t) <> io.x(t)
-  }*/
 
-  wfta.io.x := io.x
-  println("end")
+  //println(Params.getFFT.sizes)
+  //println(wfta.io.x(0).real.isAssigned)
+  //println(wfta.io.getComponent)
+  for (t <- 0 until io.x.length) {
+    //println(t + "," + io.x(t).real.compOpt + "," + io.x(t).imag.compOpt + "," + wfta.io.x(t).real.compOpt + "," + wfta.io.x(t).imag.compOpt)
+    wfta.io.x(t).real <> io.x(t).real
+    wfta.io.x(t).imag <> io.x(t).imag
+  }
+
+  //wfta.io.x := io.x
+  //println("end")
   wfta.io.y <> io.y
   wfta.io.currRad <> io.currRad
 

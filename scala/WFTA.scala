@@ -1,4 +1,8 @@
 // TODO: Separate out ctrl signals for multi-butterfly support
+// TODO: i.e. radix 2, when you try to bypass logic 0-(0-a) = a, which synthesis tools
+// are able to see, BUT ONLY IF there isn't any intermediate registering. Either need to look for
+// all double negative cases, or figure out a way to have Chisel do arithmetic optimization i.e.
+// 0-(0-a) = a so no extra hardware is needed.
 
 package FFT
 // TODO: Rework logic and vectorize from the start
