@@ -495,12 +495,6 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	///val xxx = CreateIO[a]("a","b",List("c","d","e"))
 	//println(xxx.b.x.getWidth)
 	
-	
-	
-	
-
-	
-	
 	// Derivation: N = N1N2N3
     // A1 = q1N2N3+1
     // n = (N2N3n1+A1n2~)modN = (N2N3(n1+q1n2~)+n2~)modN
@@ -523,36 +517,23 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
  	// Also note that (factorizationin(3)*n2p+n3p) and (n3p) are up counters, meaning that
  	// you just need to add qused(1), qused(2) to the previous value and take appropriate mods (not a + 1 counter). 
     // See GMR paper
-	
-	val iDIFModCounts = Vec.fill(coprimesColCount-1){UInt()}
-	val iDIFModCounters = Vec((0 until coprimesColCount-1).map( x => Module( new modCounter(generalConstants.maxCoprime(x)-1) ).io ))
-	// Accounts for sum before mod overflow inside module (2*max-1)
-	for (i <- coprimesColCount-2 to 0 by -1){
-		iDIFModCounters(i).inc := qDIFi(i)
-		iDIFModCounters(i).modVal := coprimes(i)
-		iDIFModCounters(i).changeCond := slwClkEn 		
-		iDIFModCounters(i).globalReset := io.START_FIRST_FRAME			// Reset counts to 0 on next clk cycle after START_FIRST_FRAME high
-		iDIFModCounters(i).wrapCond := iDIFCounters(i).changeCond		// Piggyback off of wrap condition of main counters: i.e. for ModCount2, wait until iDIFCount3 has maxed out
-		iDIFModCounts(i) := iDIFModCounters(i).out
-	}
-	
-	/*val iDIFModCounters2 = (0 until coprimesColCount-1).map(x => ModCounter(generalConstants.maxCoprime(x)-1,generalConstants.maxCoprime(x)-1,"test") )        
-	iDIFModCounters2.zipWithIndex.foreach{ case(x,i) => {
-	  x.x.inc := MyUInt(qDIFi(i),generalConstants.maxCoprime(i)-1)
-	  x.x.modN := MyUInt(coprimes(i),generalConstants.maxCoprime(i))
-	  x.iCtrl.change := MyBool(slwClkEn)
-	  x.iCtrl.reset := MyBool(io.START_FIRST_FRAME)
-	  x.iCtrl.wrap := MyBool(iDIFCounters(i).changeCond)
-	  iDIFModCounts(i) := x.x.out.toUInt
-	  }
-	}*/
-	
-	
-	
-	
-	for (i <- coprimesColCount-2 to 0 by -1){
-		debug(iDIFModCounts(i))
-	}
+
+
+
+	val iDIFModCounters = (0 until coprimesColCount-1).map(x => ModCounter(generalConstants.maxCoprime(x)-1,
+		generalConstants.maxCoprime(x)-1, inputDelay = 0, nameExt = "iDIF"+generalConstants.maxCoprime(x).toString) )
+
+	val iDIFModCounts =	Vec(iDIFModCounters.zipWithIndex.map{
+			case (e,i) => {
+				e.io.inc.get := DSPUInt(qDIFi(i),generalConstants.maxCoprime(i)-1)
+				e.io.modN.get := DSPUInt(coprimes(i),generalConstants.maxCoprime(i))
+				e.iCtrl.change.get := DSPBool(slwClkEn)
+				e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+				e.iCtrl.wrap.get := DSPBool(iDIFCounters(i).changeCond)
+				e.io.out.toUInt
+			}
+		})
+
 
 	// nxpp
 	val iDIFNewCounts = Vec((0 until coprimesColCount).map( x => UInt(width=Helper.bitWidth(generalConstants.maxCoprime(x)-1)))) 
@@ -682,20 +663,21 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 	val maxCoprimeFlipped = generalConstants.maxCoprime.reverse
 
-	val oDIFModCounts = Vec.fill(coprimesColCount-1){UInt()}
-	val oDIFModCounters = Vec((0 until coprimesColCount-1).map( x => Module( new modCounter(maxCoprimeFlipped(x)-1) ).io ))
-	// Accounts for sum before mod overflow inside module (2*max-1)
-	for (i <- coprimesColCount-2 to 0 by -1){
-		oDIFModCounters(i).inc := qDIFo(i)
-		oDIFModCounters(i).modVal := coprimesFlipped(i)
-		oDIFModCounters(i).changeCond := slwClkEn 		
-		oDIFModCounters(i).globalReset := io.START_FIRST_FRAME			// Reset counts to 0 on next clk cycle after START_FIRST_FRAME high
-		oDIFModCounters(i).wrapCond := oDIFCounters(i).changeCond		// Piggyback off of wrap condition of main counters: i.e. for ModCount2, wait until oDIFCount3 has maxed out
-		oDIFModCounts(i) := oDIFModCounters(i).out
-	}
-	for (i <- coprimesColCount-2 to 0 by -1){
-		debug(oDIFModCounts(i))
-	}
+
+
+	val oDIFModCounters = (0 until coprimesColCount-1).map(x => ModCounter(maxCoprimeFlipped(x)-1,
+		maxCoprimeFlipped(x)-1, inputDelay = 0, nameExt = "oDIF"+maxCoprimeFlipped(x).toString) )
+
+	val oDIFModCounts =	Vec(oDIFModCounters.zipWithIndex.map{
+		case (e,i) => {
+			e.io.inc.get := DSPUInt(qDIFo(i),maxCoprimeFlipped(i)-1)
+			e.io.modN.get := DSPUInt(coprimesFlipped(i),maxCoprimeFlipped(i))
+			e.iCtrl.change.get := DSPBool(slwClkEn)
+			e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+			e.iCtrl.wrap.get := DSPBool(oDIFCounters(i).changeCond)
+			e.io.out.toUInt
+		}
+	})
 
 	// nxpp
 	val oDIFNewCounts = Vec((0 until coprimesColCount).map( x => UInt(width=Helper.bitWidth(maxCoprimeFlipped(x)-1)))) 

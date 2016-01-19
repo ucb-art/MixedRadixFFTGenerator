@@ -7,6 +7,7 @@ import Chisel.{Complex => _, _}
 /** Module tester that allows switching between fixed and floating point testing */
 class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
+  traceOn = false
   // Set tolerance for comparing expected values
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
@@ -40,8 +41,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     val inVec = TestVectors.getIn(idxN)
     val outVec = TestVectors.getOut(idxN)
 
-    println(inVec)
-    println(outVec)
+    //println(inVec)
+    //println(outVec)
     // TODO: Clean
     testFFTNio(idxN, fftTF = true, inVec,outVec)
     /*

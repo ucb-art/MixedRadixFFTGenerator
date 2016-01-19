@@ -59,9 +59,8 @@ object TestVectors{
     else{
       for (i <- 0 until FFTN){
         val r1 = (reala,realf).zipped.map( (a,f) => a*sin(2*Pi*f*i))
-        //val r2 = r1.foldLeft(0.0001+i.toDouble/FFTN/100)(_ + _)
-        val r2 = r1.foldLeft(0.0001)(_ + _)
-        inProto = inProto :+ Complex(r2,0.0)// + 0.001*Random.nextGaussian,0.004*Random.nextGaussian)
+        val r2 = r1.foldLeft(0.0001+i.toDouble/FFTN/100)(_ + _)
+        inProto = inProto :+ Complex(r2 + 0.001*Random.nextGaussian,0.04*Random.nextGaussian)
       }
     }
     inProto.toList
