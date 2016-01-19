@@ -10,13 +10,34 @@ object Main {
 
     // Suppress warnings
     Warn.suppress = true
+    // Test all subsets
+    val fftSubsets = false
 
     // Generator parameters + fixed/double mode setup
     val (isFixed,p) = Init({GeneratorParams()}, jsonName = "FFT", args = args)
 
+
+
+
+
+
+    // TODO: Clean up
+    FFTGenerator()
+    val sizeComb = List(fftSizes.fftSizeArray.toList)
+    println(sizeComb)
+
+
+
+
+
+
+    /*
     // All possible subsets of the FFTs the user specified are also generated
-    // TODO: Enable all subsets
-    val sizeComb = p.fft.sizes.toSet.subsets.map(_.toList).toList.filter(_ != List()).reverse
+    val sizeComb = {
+      if (fftSubsets) p.fft.sizes.toSet.subsets.map(_.toList).toList.filter(_ != List()).reverse
+      else List(p.fft.sizes)
+    }
+    */
 
     sizeComb.zipWithIndex.foreach { case (e,i) => {
       val (par,nameExt) = {

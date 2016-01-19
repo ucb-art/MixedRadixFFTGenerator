@@ -28,14 +28,15 @@ abstract class StageType
 case object Mul extends StageType
 case object Add extends StageType
 
-class WFTAIO[T <: DSPQnm[T]](gen : => T) extends IOBundle (outDlyMatch = true) {
+class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
 
   val p = Params.getBF
   val maxRad = p.rad.max
 
+  // If only 1 radix is supported, you don't need a flag
   // Array location x maps to radix stored at location x in Param.butterfly.rad. i.e.
   // if rad = (2,3,4,5,7), currRad(2) is true when current radix = 4
-  val currRad = Vec(p.rad.length,DSPBool(INPUT))
+  val currRad = if (p.rad.length > 1) Some(Vec(p.rad.length,DSPBool(INPUT))) else None
   // Butterfly output
   val y = Vec(maxRad,Complex(gen).asOutput)
   // Butterfly input
@@ -47,11 +48,11 @@ class WFTAIO[T <: DSPQnm[T]](gen : => T) extends IOBundle (outDlyMatch = true) {
   */
 class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen) {
 
-  val p = Params.getBF
-  val maxRad = p.rad.max
-
   // Output delays should be matched
   override val io = new WFTAIO(gen)
+
+  val p = io.p
+  val maxRad = io.maxRad
 
   // Set constraints on radix-related signals based off of used radices
   val radIn = Vec(WFTA.getValidRad.map( x => {
@@ -61,7 +62,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
     // Supported radix unused
     else if(!isUsed) DSPBool(false)
     // Otherwise matches valid radices to supported radices
-    else io.currRad(p.rad.indexOf(x))
+    else (io.currRad.get)(p.rad.indexOf(x))
   }))
   debug(radIn)
 
@@ -294,5 +295,8 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
     io.y(5) := (y(5) ? r7o).trim(Complex.getFrac)
   if (maxRad > 6)
     io.y(6) := (y(6) ? r7o).trim(Complex.getFrac)
+
+  // Total pipeline delay through WFTA butterfly
+  val delay = io.getOutDelay-inputDelay
 
 }

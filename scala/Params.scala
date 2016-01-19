@@ -6,11 +6,11 @@ import ChiselDSP._
 /** Parameters for different components of the generator */
 object Params {
 
-  private var butterfly = Butterfly()
-  private var twiddle = Twiddle()
-  private var calc = Calc()
-  private var io = IO()
-  private var mem = Mem()
+  private var butterfly = ButterflyParams()
+  private var twiddle = TwiddleParams()
+  private var calc = CalcParams()
+  private var io = IOParams()
+  private var mem = MemParams()
   private var fft = FFTParams()
   private var test = TestParams()
 
@@ -60,14 +60,14 @@ case class TestParams (
 
 ///////////////////////////////////////////////////////
 
-case class Mem (
+case class MemParams (
   // # of memory banks to ensure conflict free access
   var banks: Int = 7,
   // Memory sizes for each bank
   var lengths: List[Int] = List.fill(7)(32)
 )
 
-case class IO (
+case class IOParams (
   // Coprime bases used
   var primes: List[Int] = List(2,3,5),
   // Factorization into coprimes for each FFT length
@@ -77,7 +77,7 @@ case class IO (
 
 )
 
-case class Calc (
+case class CalcParams (
   // Order of the calculation radix stages
   var radOrder:List[List[Int]] = List.fill(10)(List(4,2,3,5)),
   // i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [a1,a2,b,c]
@@ -87,11 +87,11 @@ case class Calc (
 
 )
 
-case class Twiddle (
+case class TwiddleParams (
 
 )
 
-case class Butterfly (
+case class ButterflyParams (
   // -- Radices actually needed
   var rad: List[Int] = List(2,3,4,5,7),
   // Number of butterflies needed
