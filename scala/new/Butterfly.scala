@@ -12,6 +12,7 @@ import ChiselDSP._
 class PEIO[T <: DSPQnm[T]](gen : => T) extends WFTAIO(gen,outDlyMatch=false) {
 
   // TODO: Check unused x, twiddles are 0ed externally, case out when FFTN <= 7 (no twiddles)
+  // TODO: Pass input delays?
 
   // Twiddle factors (one less than target radix)
   val twiddles = Vec(maxRad-1,Complex(gen).asInput)

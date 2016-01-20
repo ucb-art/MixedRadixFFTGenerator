@@ -14,11 +14,6 @@ import scala.math._
 
 class ComplexLUT[T <: DSPQnm[T]](Array1D:Array[ScalaComplex], gen : => T) extends GenDSPModule (gen) {
 
-
-
-
- 
-
 	var Array1Dx = Array.empty[ScalaComplex]
 	// If the complex array is empty, give it a default value of 0
 	if (Array1D.isEmpty){
@@ -45,16 +40,12 @@ class ComplexLUT[T <: DSPQnm[T]](Array1D:Array[ScalaComplex], gen : => T) extend
 	} ))
 	val LUTi = Vec((0 until LUTsize).map( x =>  double2T( Array1Dx(x).imag ) ))
 
-
-
 	val temp = (0 until LUTsize).map(x => List(Array1Dx(x).real,Array1Dx(x).imag)).transpose
 	// only if fixed
 	// TODO: not fixed
 
 	val real = LUTr(io.addr)
 	val imag = LUTi(io.addr)
-	//io.dout.real := real
-	//io.dout.imag := imag
 
 	io.dout := Complex(real,imag)
 
@@ -63,7 +54,6 @@ class ComplexLUT[T <: DSPQnm[T]](Array1D:Array[ScalaComplex], gen : => T) extend
 			val realrange = (DSPFixed.toFixed(temp(0).min,f.getFracWidth),DSPFixed.toFixed(temp(0).max,f.getFracWidth))
 			val imagrange = (DSPFixed.toFixed(temp(1).min,f.getFracWidth),DSPFixed.toFixed(temp(1).max,f.getFracWidth))
 			// only of inone? TODO
-			//println(realrange + "," + imagrange)
 
 			io.dout.updateLimits(realrange,imagrange)
 		}
@@ -73,8 +63,7 @@ class ComplexLUT[T <: DSPQnm[T]](Array1D:Array[ScalaComplex], gen : => T) extend
 
 
 
-	//println(io.dout.real.getRange + "," + io.dout.imag.getRange)
-	//io.dout := Complex(real,imag)
+
 
 }
 

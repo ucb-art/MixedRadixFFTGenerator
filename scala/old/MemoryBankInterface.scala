@@ -154,6 +154,25 @@ class memBanks[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val seqRdDly = 1 //mems(0)(0).delay
 
 
+
+  // Note when you pipeline, during calculation* stage transitions [NOT IO], it's possible to have R/W conflicts
+  // where you're reading a stale value as it's in the process of being written to (it's also possible to read
+  // before valid value has been written due to the fact that processing is pipelined -- not addressed here)
+  // i.e. at t = n, Stage 0 current bank Address 0 should be written to w/ data (properly stored in memory sequentially @ t = n+1)
+  // BUT at t = n, Stage 1 current bank Address 0 should be read (current stage expects previous stage values to be valid),
+  // so @ t = n+1 (sequential read), the previous [stale] data @ address 0 is read out instead of the data that has now just been saved.
+  // t = n                                        | t = n+1
+  // Write Address 0 + Write Enable               | Write Address x + WE
+  //                                              | Valid Data saved in memory @ A0 = x0
+  // Read Address 0                               | Read Address x
+  // Stale A0 Data (combinational) from memory    | Data x
+  // Data y0                                      | Stale A0 Data output via io.x (sequential read)
+
+
+
+
+
+
   // Therefore, in sequential read mode, IO rAddr, wAddr, we should be sent to memory modules at the same time
   // Calculation rAddr should be at time t = n; wAddr + we should be at time t = n+m+1 (where m is from butterfly pipelining)
   val weCalcBank = Vec.fill(numBanks){Bool()}; weCalcBank := Pipe(weCalcBankS,pipeBFWriteDly+seqRdDly).asInstanceOf[Vec[Bool]]

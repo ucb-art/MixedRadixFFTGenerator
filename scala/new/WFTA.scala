@@ -30,6 +30,8 @@ case object Add extends StageType
 
 class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
 
+  // TODO: Pass input delay?
+
   val p = Params.getBF
   val maxRad = p.rad.max
 

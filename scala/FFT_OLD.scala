@@ -491,9 +491,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	}
 	
 	
-	
-	///val xxx = CreateIO[a]("a","b",List("c","d","e"))
-	//println(xxx.b.x.getWidth)
+
 	
 	// Derivation: N = N1N2N3
     // A1 = q1N2N3+1
@@ -518,7 +516,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
  	// you just need to add qused(1), qused(2) to the previous value and take appropriate mods (not a + 1 counter). 
     // See GMR paper
 
-
+// NOTE INSTEAD OF TABLE OF COPRIMES, SHOULD BE USING TABLE OF DIGITS
 
 	val iDIFModCounters = (0 until coprimesColCount-1).map(x => ModCounter(generalConstants.maxCoprime(x)-1,
 		generalConstants.maxCoprime(x)-1, inputDelay = 0, nameExt = "iDIF"+generalConstants.maxCoprime(x).toString) )
@@ -536,20 +534,25 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 	// nxpp
-	val iDIFNewCounts = Vec((0 until coprimesColCount).map( x => UInt(width=Helper.bitWidth(generalConstants.maxCoprime(x)-1)))) 
-	val iDIFNewCountMod = Vec((0 until coprimesColCount-1).map( x => Module( new mod(Helper.bitWidth(2*generalConstants.maxCoprime(x)-1)) ).io ))
-	for (i <- 0 until coprimesColCount){
-		if (i == coprimesColCount-1){
-				iDIFNewCounts(i) := iDIFCounts(i)
+
+	val iDIFNewCounts = Vec((0 until coprimesColCount).map(
+		i => {
+			val out = {
+				if (i == coprimesColCount - 1) iDIFCounts(i)
+				else {
+					Mod(DSPUInt(iDIFCounts(i), generalConstants.maxCoprime(i) - 1) + DSPUInt(iDIFModCounts(i), generalConstants.maxCoprime(i) - 1), DSPUInt(coprimes(i), generalConstants.maxCoprime(i)))._1
+				}
+			}
+			out.toUInt
 		}
-		else{
-			//iDIFNewCountMod(i).x := UInt(iDIFCounts(i)+iDIFModCounts(i),width=Helper.bitWidth(2*generalConstants.maxCoprime(i)-1))
-			iDIFNewCountMod(i).x := iDIFCounts(i)+Cat(Bits(0,width=1),iDIFModCounts(i))
-			iDIFNewCountMod(i).n := coprimes(i)
-			iDIFNewCounts(i) := iDIFNewCountMod(i).out
-		}
-		debug(iDIFNewCounts(i))
-	}
+	))
+
+
+
+
+
+
+
 
 	// Switch rows/cols so Scala doesn't complain (originally columns are associated with n1...n6, but want to address "column" first -> tranpose)
 	var dec2xAryArray = Array.ofDim[Int](generalConstants.validPrimes.length,0,0)
@@ -567,6 +570,13 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	}
 	val iDIFn = Vec.fill(generalConstants.maxNumStages){Reg(UInt(width=Helper.bitWidth(generalConstants.maxRadix-1)))}
 	val rad4startingBit = Vec.fill(generalConstants.maxNumStages){UInt()}
+
+
+
+
+
+
+
 
 	// For max 2^N = 2048, max count = 2047 -> 11 bits (worst case # of bits needed)
 	val pow2MaxCountBits = (log(generalConstants.maxCoprime(0))/log(2)).toInt 			// If radix 4 is used, guaranteed first coprime is related to 2^N
@@ -595,6 +605,16 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 			rad4iDIFNewCount := iDIFNewCounts(0)										// If 4 used in generator but not 2, then don't need to modify
 		}
 	}
+
+
+
+
+
+
+
+
+
+
 
 	for (y <- 0 until generalConstants.maxNumStages){
 		iDIFn(y) := UInt(0) 												// Unused stages
@@ -680,20 +700,18 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	})
 
 	// nxpp
-	val oDIFNewCounts = Vec((0 until coprimesColCount).map( x => UInt(width=Helper.bitWidth(maxCoprimeFlipped(x)-1)))) 
-	val oDIFNewCountMod = Vec((0 until coprimesColCount-1).map( x => Module( new mod(Helper.bitWidth(2*maxCoprimeFlipped(x)-1)) ).io ))
-	for (i <- 0 until coprimesColCount){
-		if (i == coprimesColCount-1){
-				oDIFNewCounts(i) := oDIFCounts(i)
+
+	val oDIFNewCounts = Vec((0 until coprimesColCount).map(
+		i => {
+			val out = {
+				if (i == coprimesColCount - 1) oDIFCounts(i)
+				else {
+					Mod(DSPUInt(oDIFCounts(i), maxCoprimeFlipped(i) - 1) + DSPUInt(oDIFModCounts(i), maxCoprimeFlipped(i) - 1), DSPUInt(coprimesFlipped(i), maxCoprimeFlipped(i)))._1
+				}
+			}
+			out.toUInt
 		}
-		else{
-			oDIFNewCountMod(i).x := oDIFCounts(i)+Cat(Bits(0,width=1),oDIFModCounts(i))
-			//oDIFNewCountMod(i).x := UInt(oDIFCounts(i)+oDIFModCounts(i),width=Helper.bitWidth(2*maxCoprimeFlipped(i)-1))
-			oDIFNewCountMod(i).n := coprimesFlipped(i)
-			oDIFNewCounts(i) := oDIFNewCountMod(i).out
-		}
-		debug(oDIFNewCounts(i))
-	}
+	))
 
 	val dec2xAryDIFo = Vec((0 until dec2xAryArray.length).map(y => {Vec.fill(dec2xAryArray(y).length){UInt()}}))
 	for (i <- 0 until dec2xAryArray.length;
