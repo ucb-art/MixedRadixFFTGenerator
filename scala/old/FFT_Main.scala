@@ -60,7 +60,7 @@ object FFTGenerator {
 
     // Generate valid FFT sizes
 
-    //customFFTSizes = Array(243)
+    //customFFTSizes = Array(3,5,16,24*3)
     customFFTSizes = Array(24,15,16)
     //customFFTSizes = Array()
     //fftSizes.generate(customFFTSizes,true,true)
