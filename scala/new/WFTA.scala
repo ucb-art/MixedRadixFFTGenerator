@@ -30,7 +30,7 @@ case object Add extends StageType
 
 class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
 
-  // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further (**)
+  // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further, condition (**)
 
   val p = Params.getBF
   val maxRadAdj = if (p.rad.contains(2)) 4 else 0       // **
@@ -124,7 +124,9 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
 
   // Select into s0, s1 @ 2nd stage (index 1)
   val s0_1 = rad(0)(WFTA.vRadIdx(7))
-  val s1_1 = !rad(0)(WFTA.vRadIdx(4))
+  // ** Original optimization doesn't work for 2x rad 2 butterflies
+  // val s1_1 = !rad(0)(WFTA.vRadIdx(4))
+  val s1_1 = !(rad(0)(WFTA.vRadIdx(4)) | rad(0)(WFTA.vRadIdx(2)))
 
   // Other selects sx_t
   val s3_4 = rad(3)(WFTA.vRadIdx(5)) | rad(3)(WFTA.vRadIdx(7)) | rad(3)(WFTA.vRadIdx(3))
@@ -188,6 +190,8 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val n0b = x(1) - (x(6),dly(0))
   val n0c = x(4) + (x(3),dly(0))
   val n0d = x(4) - (x(3),dly(0))
+
+  // TODO: Maybe 3,4 would've been better than 2,5?
 
   val n0eTemp = x(2) + (x(5),dly(0))                // ** 2x radix 2
   val X0b = n0eTemp.pipe(dly.tail.sum)              // First output of second radix 2 butterfly
