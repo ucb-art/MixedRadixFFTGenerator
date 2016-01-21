@@ -11,7 +11,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   // Set tolerance for comparing expected values
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
-  //runTo(8)
+  //runTo(60)
   //run(243)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
@@ -176,12 +176,13 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     peek(c.addressConstant)
     peek (c.twiddleMul)
     peek(c.io.SETUP_DONE)
+    println("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ SETUP DONE")
   }
 
 
 
   def testFFTNio(fftIndex:Int, fftTF:Boolean, in1:List[ScalaComplex],out1:List[ScalaComplex]){
-    println("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ TEST FFT N")
+    println("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ TEST FFT N" + Tracker.FFTN)
     newSetup(fftIndex,fftTF)
 
 
@@ -223,6 +224,26 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     }
     Tracker.startSymbol = start_symbol  // Save old value
 
+
+    traceOn = true
+    //println("ioIncCOunts")
+    //c.ioIncCounts.foreach{peek(_)}
+    //c.ioIncCounters.foreach{x => peek(x.io.primeDigits)}
+
+    //println("iDIFCounts")
+    //peek(c.iDIFCounts)
+    //peek(c.qDIFi)
+    //c.qDIFis.foreach{peek(_)}
+    //peek(c.primeDigits)
+    //peek(c.primeDigitsTemp)
+    //println("iomodcounts")
+    //c.ioModCounts.foreach{peek(_)}
+    //c.ioFinalCounts.foreach{peek(_)}
+    //println("idifmodcount")
+    //peek(c.iDIFModCounts)
+    c.iDIFtemp.foreach{peek(_)}
+    peek(c.iDIFn)
+    traceOn = false
 
     //peek(c.memBanks.io.calcBank)
     //peek(c.memBanks.io.calcAddr)

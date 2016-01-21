@@ -455,6 +455,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 // IO Addressing
 
+
 	// Slow clock for IO (vs. fast clock for calculations)
 	val slwClkCnt = Reg(init = UInt(0,width=1))
 	when (io.START_FIRST_FRAME){
@@ -466,6 +467,202 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	val slwClkEn = (slwClkCnt===UInt(0))						// = 0 next clock cycle after START_FIRST_FRAME high
 	val ioWriteFlag = slwClkEn
 	// debug(slwClkEn)
+
+
+
+
+
+
+
+
+
+
+  val qDIFiTbl = ioAddressConstants.qDIFiArray.toList.transpose.map(x => x.toList)									// Columns
+  val qDIFiLUTs = qDIFiTbl.zipWithIndex.map{case (x,i) => {
+      val temp = Params.getIO.primes(i)
+      val rad = if (temp == 2) 4 else temp
+      DSPModule(new BaseNLUT(x, rad = rad))
+    }}
+  val qDIFis =Vec(qDIFiLUTs.zipWithIndex.map{ case(x,i) => {
+    x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
+    val tempOut = x.io.dout.cloneType
+    tempOut := x.io.dout
+    //Reg(tempOut) weirdest reg problem ever/!??!
+    BaseN(tempOut.map(x => x.reg()), tempOut.rad)
+  }})
+  // debug list of stuff
+  // CHANGE ALL REG TO PIPE -- should there be an enclosing vec? for all iterables
+	val coprimeCols = Params.getIO.coprimes.transpose
+	// Always have at least 1 'digit' even when a particular prime isn't used
+	val primeDigitsTbl = coprimeCols.zipWithIndex.map { case (x, i) =>
+		x.map(y => {
+      // take max count allowed to determine how many digits need to be represented
+			val temp = (y-1)
+      // seems i use length pretty frequently how about wrapper function?
+			BaseN.toIntList(temp, Params.getIO.primes(i)).length
+		})
+	}
+	val primeDigitsLUT = DSPModule(new IntLUT2D(primeDigitsTbl.transpose))
+	primeDigitsLUT.io.addr := DSPUInt(fftIndex,Params.getFFT.sizes.length-1)
+	val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
+  primeDigitsTemp := primeDigitsLUT.io.dout
+  // vec reg has issues?!?!?!
+  val primeDigits = Vec(primeDigitsTemp.map(x => x.reg()))
+	val (ioIncCounters,ioModCounters) = Params.getIO.maxCoprimes.zipWithIndex.map{case (x,i) => {
+		val temp = Params.getIO.primes(i)
+		// TODO: Generalize rad also reused? temp rad
+		val rad = if (temp == 2) 4 else temp
+		val c1 = BaseNIncCounter(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString)
+    val c2 = {
+      if (x != Params.getIO.maxCoprimes.last)
+        Some(BaseNAccWithWrap(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString))
+      else
+        None
+    }
+    (c1,c2)
+	}}.unzip
+
+	// Right-most counter is "least significant"
+	val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map{ case (e,i) => {
+		val iChange = if (e != ioIncCounters.last) ioIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
+		e.iCtrl.change := iChange
+		e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+		// Should not need? can also trim to io.primDigits length
+		e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
+		val temp = e.io.out.cloneType
+    temp := e.io.out
+    temp
+	}})
+	// Do zip together
+	val ioModCounts = Vec(ioModCounters.init.zipWithIndex.map{ case (etemp,i) => {
+    val e = etemp.get
+		e.iCtrl.change := DSPBool(slwClkEn)
+		e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+		// Should not need? can also trim to io.primDigits length
+		e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
+    e.io.inc.get := qDIFis(i).padTo(e.io.inc.get.length).asOutput // ???
+		e.iCtrl.wrap.get := ioIncCounters(i).iCtrl.change
+    val temp = e.io.out.cloneType
+    temp := e.io.out
+    temp
+	}})
+  // Should try to minimize mem output length and pad where there is width mismatch
+  // CAN PIPELINE DELAY ioFinalConuts
+  val ioFinalCounts = Vec(Params.getIO.maxCoprimes.zipWithIndex.map{case (x,i) => {
+    if (x == Params.getIO.maxCoprimes.last) ioIncCounts(i)
+    else (ioIncCounts(i) + ioModCounts(i)).maskWithMaxCheck(primeDigits(i))._1
+  }})
+  debug(ioFinalCounts)
+  val iDIFtemp1 = Vec(ioFinalCounts.zipWithIndex.map{ case (x,i) => {
+    if (Params.getBF.rad.contains(2) && Params.getIO.primes(i) == 2 && Params.getBF.rad.contains(4)){
+      // switch to getBF.rad(i) == 2  ????
+      // Convert to Mixed radix [4,...4,2] if current FFT size requires radix 2 stage & operating on 2^n coprime
+      // FOR DIF 2 always follows 4 and it's the only one with list of length 2
+      Mux(DSPBool(numPower(i+1)(0)),x.toRad42(),x)
+    }
+    else x
+  }})
+  // registered here?
+  val iDIFtemp = Vec(iDIFtemp1.map(x => {
+    val set = x.map(y => {y.reg()})
+    BaseN(set, x.rad)
+  }))
+  iDIFtemp.foreach{debug(_)}
+
+
+
+
+  (0 until generalConstants.maxNumStages).map (i => {
+
+    DSPUInt(i) <
+  })
+
+
+
+
+
+
+
+    for (z <- generalConstants.validRadices.length-1 to 0 by -1){
+      when(stageRadix(y)===UInt(generalConstants.validRadices(z))){
+        if (generalConstants.validRadices(z) == 2){ 				// Coprime 2^N always handled first
+          iDIFn(y) := iDIFNewCounts(0)(0) 						// LSB of count associated with 2^N coprime (indicates if multiple of 2)
+        }
+        else if (generalConstants.validRadices(z) == 4){
+          iDIFn(y) := Cat(rad4iDIFNewCount(UInt(rad4startingBit(y)+UInt(1),width=Helper.bitWidth(pow2NewMaxCountBits-1))),rad4iDIFNewCount(rad4startingBit(y)))
+          // Grouped in 2 bits (base 4)
+        }
+        else{
+          //  Eg: radix-3 stages if existing; codes in ternary (0 to 2); highest set of 3 (like MSB) stored left-most stage-wise
+          if (generalConstants.rad4Used){
+            iDIFn(y) := dec2xAryDIFi(z-1)(stageSumM1(z)-UInt(y))
+          }
+          else{
+            iDIFn(y) := dec2xAryDIFi(z)(stageSumM1(z)-UInt(y))
+          }
+        }
+      }
+    }
+    debug(iDIFn(y))														// Note: 1 cycle delay
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ////// DIF INPUT
 	// DIF I Counters

@@ -61,9 +61,10 @@ object FFTGenerator {
     // Generate valid FFT sizes
 
     //customFFTSizes = Array(243)
-    //customFFTSizes = Array(3,5,16)
-    customFFTSizes = Array()
-    fftSizes.generate(customFFTSizes,true,true)
+    customFFTSizes = Array(24,15,16)
+    //customFFTSizes = Array()
+    //fftSizes.generate(customFFTSizes,true,true)
+    fftSizes.generate(customFFTSizes,false,false)
     //fftSizes.generate(customFFTSizes,standardRadioFFTSizesTF,SCFDMAFFTSizesTF)
     // need 6 stages
     //fftSizes.generate(Array(2,3,4,5,8,9,16,32,25,15,24,27,60,30,125,81,243,243*3,2048,648,864,972),false,false)
