@@ -879,7 +879,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 	val iDIFnToBankAddr = Module(new nToBankAddr(toAddrBankDly(1)))
 	for (i <- 0 until generalConstants.maxNumStages){
-		iDIFnToBankAddr.io.n(i) := ions(i)
+		iDIFnToBankAddr.io.n(i) := iDIFn(i)//ions(i)
 		iDIFnToBankAddr.io.addrConstant(i) := addressConstant(i)
 	}
 	iDIFnToBankAddr.io.maxRadix := maxRadix									// two kinds of max radices: generalConstants.maxRadix = overall max radix for generator; maxRadix = max radix for current FFT
@@ -1386,20 +1386,44 @@ val twiddleAddrMax = 2000
 	// Current calcPhase configures twiddle input/output multiplication for DIT/DIF calculations
 
 
-	
+
+	val rad = Pipe(currentRadixD2,toMemAddrDly+seqRdDly).asInstanceOf[UInt]
+
+
 
 	val peNum = 0
 	val butterfly = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)
 
 	CheckDelay.off()
 
+
+  val eq2 = DSPBool(rad.toUInt === UInt(2))
+
+
 	butterfly.io.twiddles.zipWithIndex.foreach{case (e,i) => {
-		if (i < generalConstants.maxRadix-1) {
+		/*if (i < generalConstants.maxRadix-1) {
 			println("xxx" + e.real.getRange + "," + e.imag.getRange + ",") //+ twiddleX(i).real.getRange)
 			e := twiddleX(i)
 
 			println("ttt" + e.real.getRange + "," + e.imag.getRange)
 			//e.imag := twiddleX(i).imag
+		}*/
+		/*if (Params.getBF.rad.contains(2)){
+			if (i == 1 || i == 2) {											// twiddle index is 1 off -- maybe not necessary? check always (1,0) for rad = 2
+
+				//val check2 = Mux(eq2,twiddleX(0),twiddleX(i))
+				//e :=  //Mux(eq2,twiddleX(0),twiddleX(i))
+        e.real := Mux(eq2,twiddleX(0).real,twiddleX(i).real)
+        e.imag := Mux(eq2,twiddleX(0).imag,twiddleX(i).imag)
+				//e := Complex(test.real,test.imag) //twiddleX(i)//Mux(DSPBool(rad.toUInt === UInt(2)),twiddleX(0),twiddleX(i))
+				//e := twiddleX(i)
+			}
+			else if (i < generalConstants.maxRadix-1){
+				e := twiddleX(i)
+			}
+		}     NOTE NEEDADDRESS AT 0 FOR RAD 2 twiddle!!!! for idx 0-3 seems i already did -- twiddles delayed earlier
+		else*/ if (i < generalConstants.maxRadix-1){
+			e := twiddleX(i)
 		}
 	}}
 
@@ -1416,9 +1440,7 @@ val twiddleAddrMax = 2000
 
 
 	
-	val rad = Pipe(currentRadixD2,toMemAddrDly+seqRdDly).asInstanceOf[UInt]
-	
-	
+
 	memBanks.io.currRad := currentRadixD2
 	//memBanks.io.discardCalcWrite := Bool(false)
   

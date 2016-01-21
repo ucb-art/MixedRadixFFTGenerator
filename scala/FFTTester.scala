@@ -10,9 +10,9 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   traceOn = false
   // Set tolerance for comparing expected values
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
-  runAll()
+  //runAll()
   //runTo(60)
-  //run(243)
+  run(24)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
 
@@ -242,9 +242,22 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     //println("idifmodcount")
     //peek(c.iDIFModCounts)
     //c.iDIFtemp.foreach{peek(_)}
-    val t1 = peek(c.iDIFn)
+    //val t1 = peek(c.iDIFn)
     //peek(c.ions)
-    val t2 = peek(c.ions)
+    //val t2 = peek(c.ions)
+    peek(c.rad)
+    if ( peek(c.rad) == 2) {
+      println("xyz")
+      //peek(c.eq2)
+      //peek(c.butterfly.t)
+      //c.butterfly.io.twiddles.flatten.map(x => peek(x._2))//c.butterfly.io.twiddles.foreach{ x => peek(x)}
+      for (i <- 0 until 3) {
+        //expect(c.butterfly.io.twiddles(i),Complex(1.0,0.0),"ss","ssss")
+        //if (c.butterfly.io.twiddles(i) != Complex(1.0, 0.0)) Error("blah")
+      }
+    }
+
+
 
     //if (t1 != t2) Error("sadface")
     //peek(c.newStageSum)

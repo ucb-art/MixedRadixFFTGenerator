@@ -9,7 +9,7 @@ package FFT
 
 // ------- Imports START -- DO NOT MODIFY BELOW
 import Chisel.{Complex => _, Mux => _, Reg => _, RegNext => _, RegInit => _, Pipe => _, Mem => _,
-               Module => _, ModuleOverride => _, when => _, switch => _, is => _, unless => _, Round => _,  _}
+Module => _, ModuleOverride => _, when => _, switch => _, is => _, unless => _, Round => _,  _}
 import ChiselDSP._
 // ------- Imports END -- OK TO MODIFY BELOW
 import math._
@@ -30,10 +30,11 @@ case object Add extends StageType
 
 class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
 
-  // TODO: Pass input delay?
+  // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further (**)
 
   val p = Params.getBF
-  val maxRad = p.rad.max
+  val maxRadAdj = if (p.rad.contains(2)) 4 else 0       // **
+  val maxRad = p.rad.max.max(maxRadAdj)
 
   // If only 1 radix is supported, you don't need a flag
   // Array location x maps to radix stored at location x in Param.butterfly.rad. i.e.
@@ -78,9 +79,13 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val r4r7i = r4i|r7i
   val r3r4i = r3i|r4i
 
+  // ** Added support for 2x radix 2 butterfly
+  val r2r7i = r2i|r7i
+
+  val zero = Complex(double2T(0),double2T(0))
   // Assign internal "inputs" to 0 if >= max used radix
   val xp = Vec((0 until WFTA.getValidRad.max).map( i => {
-    if (i >= maxRad) Complex(double2T(0),double2T(0))
+    if (i >= maxRad) zero
     else io.x(i)
   }))
 
@@ -88,10 +93,10 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val x = Vec (
     xp(0) ? (!r2r4i),
     Mux(r2r4i,xp(0),xp(1)),
-    xp(2) ? r7i,
+    xp(2) ? r2r7i,                                                            // ** Added support for 2x radix 2
     (xp(3) ? r5i) | (xp(3) ? r4r7i),
     (xp(1) ? r4i) | (xp(2) ? r5i) | (xp(4) ? r7i),
-    xp(5) ? r7i,
+    (xp(5) ? r7i) | (xp(3) ? r2i) ,                                           // **
     ((xp(1) ? r2i) | (xp(4) ? r5i)) | ((xp(6) ? r7i) | (xp(2) ? r3r4i))
   )
   debug(x)
@@ -183,7 +188,12 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val n0b = x(1) - (x(6),dly(0))
   val n0c = x(4) + (x(3),dly(0))
   val n0d = x(4) - (x(3),dly(0))
-  val n0e = x(2) + (x(5),dly(0))
+
+  val n0eTemp = x(2) + (x(5),dly(0))                // ** 2x radix 2
+  val X0b = n0eTemp.pipe(dly.tail.sum)              // First output of second radix 2 butterfly
+  val r2_1 = rad(0)(WFTA.vRadIdx(2))                // Don't propagate result (so it won't mess up other results)
+  val n0e = n0eTemp ? (!r2_1)
+
   val n0f = x(2) - (x(5),dly(0))
   val n0g = x(0).pipe(dly(0))
   val n0 = Vec(n0a,n0b,n0c,n0d,n0e,n0f,n0g)
@@ -205,6 +215,9 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
 
   val n2a = n1a + (n1i,dly(2))
   val n2b = n1e + (n1j,dly(2))
+
+  val X1b = n2b.pipe(dly.drop(3).sum)                 // ** X1 output of the second butterfly
+
   val n2c = Mux(s1_2,n1h,n1b).pipe(dly(2))
   val n2d = n1b.pipe(dly(2))
   val n2e = n1c.pipe(dly(2))
@@ -287,10 +300,10 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
 
   io.y(0) := y(0).trim(Complex.getFrac)
   io.y(1) := Mux(r2o,y(5),y(1)).trim(Complex.getFrac)
-  if (maxRad > 2)
-    io.y(2) := (((y(6) ? r3o) | (y(3) ? r4o)) | ((y(5) ? r5o) | (y(2) ? r7o))).trim(Complex.getFrac)
-  if (maxRad > 3)
-    io.y(3) := ((y(2) ? r5o) | (y(3) ? r7o) | (y(5) ? r4o)).trim(Complex.getFrac)
+  if (maxRad > 2)                                                                                                   // **
+    io.y(2) := (((y(6) ? r3o) | (y(3) ? r4o)) | ((y(5) ? r5o) | (y(2) ? r7o)) | (X0b ? r2o) ).trim(Complex.getFrac)
+  if (maxRad > 3)                                                                                                   // **
+    io.y(3) := (((y(2) ? r5o) | (y(3) ? r7o)) | ((y(5) ? r4o) | (X1b ? r2o))).trim(Complex.getFrac)
   if (maxRad > 4)
     io.y(4) := ((y(6) ? r5o) | (y(4) ? r7o)).trim(Complex.getFrac)
   if (maxRad > 5)
@@ -301,4 +314,5 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   // Total pipeline delay through WFTA butterfly
   val delay = io.getOutDelay-inputDelay
 
+  // TODO: Check fftSizes = List(2) by itself case; change contains(2) to separate var 'isUsed2'
 }
