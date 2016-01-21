@@ -482,7 +482,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
       val temp = Params.getIO.primes(i)
       val rad = if (temp == 2) 4 else temp
       DSPModule(new BaseNLUT(x, rad = rad))
-    }}
+	}}
   val qDIFis =Vec(qDIFiLUTs.zipWithIndex.map{ case(x,i) => {
     x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
     val tempOut = x.io.dout.cloneType
@@ -563,19 +563,15 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     else x
   }})
   // registered here?
+	// Need to be same length to address properly (really Chisel should error)
+	val colLengths = iDIFtemp1.map(x => x.length).max
   val iDIFtemp = Vec(iDIFtemp1.map(x => {
     val set = x.map(y => {y.reg()})
-    BaseN(set, x.rad)
+    BaseN(set, x.rad).padTo(colLengths)
+		//Vec(set) // basen gets misinterpretted?
   }))
   iDIFtemp.foreach{debug(_)}
-
-
-
-
-  (0 until generalConstants.maxNumStages).map (i => {
-
-    DSPUInt(i) <
-  })
+	// when doing addr, warn when not vec col nto same length
 
 
 
@@ -583,28 +579,57 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-    for (z <- generalConstants.validRadices.length-1 to 0 by -1){
-      when(stageRadix(y)===UInt(generalConstants.validRadices(z))){
-        if (generalConstants.validRadices(z) == 2){ 				// Coprime 2^N always handled first
-          iDIFn(y) := iDIFNewCounts(0)(0) 						// LSB of count associated with 2^N coprime (indicates if multiple of 2)
-        }
-        else if (generalConstants.validRadices(z) == 4){
-          iDIFn(y) := Cat(rad4iDIFNewCount(UInt(rad4startingBit(y)+UInt(1),width=Helper.bitWidth(pow2NewMaxCountBits-1))),rad4iDIFNewCount(rad4startingBit(y)))
-          // Grouped in 2 bits (base 4)
-        }
-        else{
-          //  Eg: radix-3 stages if existing; codes in ternary (0 to 2); highest set of 3 (like MSB) stored left-most stage-wise
-          if (generalConstants.rad4Used){
-            iDIFn(y) := dec2xAryDIFi(z-1)(stageSumM1(z)-UInt(y))
-          }
-          else{
-            iDIFn(y) := dec2xAryDIFi(z)(stageSumM1(z)-UInt(y))
-          }
-        }
-      }
-    }
-    debug(iDIFn(y))														// Note: 1 cycle delay
-  }
+
+
+
+
+  // StageRadix === should be just series of Bools
+	// table use2 YN? but otherwise lump stage cnt into 4 -- stage sum should not separate 4,2 (should be by coprime)
+	// bad assumption here (i.e. 4 must be first)
+	val newStageSum = {
+		if (generalConstants.validRadices.contains(2) && generalConstants.validRadices.contains(4))
+			Vec(stageSum.tail)
+		else stageSum
+	}
+	debug(newStageSum)
+
+  val ions = Vec((0 until generalConstants.maxNumStages).map (i => {
+    val primeVal = {
+			if (Params.getBF.rad.contains(4)) {
+				// Mux has problems interpretting without doing explicit .toBool, etc.?
+				Mux((stageRadix(i) === UInt(4)).toBool, UInt(2), stageRadix(i)).toUInt
+			}
+			else stageRadix(i)
+		}
+    val primes = Params.getIO.primes.zipWithIndex
+		// Mutually exclusive conditions
+		val primeIdx = primes.tail.foldLeft (
+			DSPUInt(primes.head._2) ? DSPBool(primeVal === UInt(primes.head._1))
+		)((b,a) => {
+			val selIdx = DSPUInt(a._2) ? DSPBool(primeVal === DSPUInt(a._1))
+			selIdx /| b
+		})
+		// Why all these explicit conversions?!
+		// primeIdx defaults to 0 when prime unused (which has smallest sum value so muxes to 0 if unused)
+		val currStageSum = newStageSum(primeIdx.toUInt).toUInt			// NOT MINUS 1 (since 0 - 1 = 3)
+		val activeStage = (UInt(i) < currStageSum).toBool
+		val digitIdx = (currStageSum-UInt(1+i)).toUInt
+		// Addressing Vec should mark as used (override vec)
+
+		val countSet = Vec(iDIFtemp(primeIdx.toUInt).map(x => x.toUInt))
+		val digit = countSet(digitIdx).toUInt
+		Mux(activeStage, digit, UInt(0)).toUInt
+		// := auto pads if right range smaller?
+		// Seems searchable vec needs to be made of uints only?
+
+  }))
+	ions.foreach{debug(_)}
+	//separate mux??? don't need bc newstagesumm1(0) has smallest val
+
+
+
+
+
 
 
 
@@ -838,11 +863,23 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 		debug(iDIFn(y))														// Note: 1 cycle delay
 	}
 
+
+
+
+
+
+
+
+
+
+
+
+
 	// n1,n2,n3... -> input DIF address/banks
 
 	val iDIFnToBankAddr = Module(new nToBankAddr(toAddrBankDly(1)))
 	for (i <- 0 until generalConstants.maxNumStages){
-		iDIFnToBankAddr.io.n(i) := iDIFn(i)
+		iDIFnToBankAddr.io.n(i) := ions(i)
 		iDIFnToBankAddr.io.addrConstant(i) := addressConstant(i)
 	}
 	iDIFnToBankAddr.io.maxRadix := maxRadix									// two kinds of max radices: generalConstants.maxRadix = overall max radix for generator; maxRadix = max radix for current FFT

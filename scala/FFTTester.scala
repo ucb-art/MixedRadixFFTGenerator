@@ -241,8 +241,15 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     //c.ioFinalCounts.foreach{peek(_)}
     //println("idifmodcount")
     //peek(c.iDIFModCounts)
-    c.iDIFtemp.foreach{peek(_)}
-    peek(c.iDIFn)
+    //c.iDIFtemp.foreach{peek(_)}
+    val t1 = peek(c.iDIFn)
+    //peek(c.ions)
+    val t2 = peek(c.ions)
+
+    //if (t1 != t2) Error("sadface")
+    //peek(c.newStageSum)
+
+
     traceOn = false
 
     //peek(c.memBanks.io.calcBank)
