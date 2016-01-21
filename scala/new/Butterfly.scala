@@ -13,6 +13,7 @@ class PEIO[T <: DSPQnm[T]](gen : => T) extends WFTAIO(gen,outDlyMatch=false) {
 
   // TODO: Check unused x, twiddles are 0ed externally, case out when FFTN <= 7 (no twiddles)
   // TODO: Pass input delays?
+  // Double check for rad = 2, twiddles are all 1
 
   // Twiddle factors (one less than target radix)
   val twiddles = Vec(maxRad-1,Complex(gen).asInput)
@@ -25,14 +26,16 @@ class PEIO[T <: DSPQnm[T]](gen : => T) extends WFTAIO(gen,outDlyMatch=false) {
   */
 class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0) extends GenDSPModule (gen) {
 
-  // Turn off pipeline delay check because of feedback
-  CheckDelay.off()
+  CheckDelay.on()
 
   // Processing element IO
   override val io = new PEIO(gen)
 
   // WFTA butterfly (note that input delay is always initialized to 0 unless otherwise specified)
   val wfta = DSPModule(new WFTA(gen,num), nameExt = num.toString)
+
+  // Turn off pipeline delay check because of feedback
+  CheckDelay.off()
 
   // Pipeline delay for complex multiplication
   // TODO: Handle 3 muls for complex multiply

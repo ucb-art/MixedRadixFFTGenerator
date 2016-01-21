@@ -12,7 +12,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
   //runTo(60)
-  //run(243)
+  //run(24)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
 
@@ -216,6 +216,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
     //** Starts counting cycle after START_FIRST_FRAME asserted
 
+    //traceOn = true
+
     val start_symbol = peek(c.io.FIRST_OUT)					    // k,n = 0 IO
 
     if (start_symbol && !Tracker.startSymbol){
@@ -245,6 +247,33 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     //val t1 = peek(c.iDIFn)
     //peek(c.ions)
     //val t2 = peek(c.ions)
+<<<<<<< HEAD
+=======
+    /*peek(c.rad)
+    if ( peek(c.rad) == 2) {
+      println("xyz")
+      //peek(c.eq2)
+      //peek(c.butterfly.t)
+      //c.butterfly.io.twiddles.flatten.map(x => peek(x._2))//c.butterfly.io.twiddles.foreach{ x => peek(x)}
+      for (i <- 0 until 3) {
+        //expect(c.butterfly.io.twiddles(i),Complex(1.0,0.0),"ss","ssss")
+        //if (c.butterfly.io.twiddles(i) != Complex(1.0, 0.0)) Error("blah")
+      }
+    }*/
+    //peek(c.currentRadixD2)
+    //peek(c.memBanks.io.currRad)
+
+    //peek(c.calcAddr)
+    //peek(c.memBanks.io.calcAddr)
+    //peek(c.rad2Dbl)
+    //peek(c.newCalcAddr)
+    //peek(c.memBanks.io.calcBank)
+    //peek(c.twiddleAddrTemp)
+    //peek(c.maxStageCount)
+    //peek(c.newMaxStageCount)
+
+
+>>>>>>> rad2x2
 
     //if (t1 != t2) Error("sadface")
     //peek(c.newStageSum)
@@ -252,7 +281,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     //if (peek(c.sss)) Error("blahhhh")
 
 
-    traceOn = false
+    traceOn = true
 
     //peek(c.memBanks.io.calcBank)
     //peek(c.memBanks.io.calcAddr)
@@ -275,7 +304,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
     /*peek(c.memBanks.io.Din)
     peek(c.memBanks.io.Dout)*/
-    /*peek(c.memBanks.io.x(0))
+    /*peek(c.butterfly.io.currRad.get)
+    peek(c.memBanks.io.x(0))
       peek(c.memBanks.io.x(1))
       peek(c.memBanks.io.x(2))
       peek(c.memBanks.io.x(3))
@@ -289,6 +319,33 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     peek(c.butterfly.io.twiddles(1))
     peek(c.butterfly.io.twiddles(2))
     peek(c.butterfly.io.twiddles(3))*/
+
+
+/*
+
+  poke(c.bfio.twiddles(0),Complex(1.0,0.0))
+    poke(c.bfio.twiddles(1),Complex(1.0,0.0))
+    poke(c.bfio.twiddles(2),Complex(1.0,0.0))
+    poke(c.bfio.twiddles(3),Complex(1.0,0.0))
+    poke(c.bfio.calcDIT,false)
+    poke(c.bfio.currRad.get(1),true)
+    poke(c.bfio.x(0),in1(0))
+    poke(c.bfio.x(1),in1(1))
+    poke(c.bfio.x(2),in1(0))
+    poke(c.bfio.x(3),in1(1))
+
+      expect(c.bfio.y(0), out1(0),"sss","sss")
+      expect(c.bfio.y(1), out1(1),"sss","sss")
+      expect(c.bfio.y(2), out1(0),"sss","sss")
+      expect(c.bfio.y(3), out1(1),"sss","sss")
+      peek(c.bfio.y(4))
+    peek(c.butterfly2.wfta.n0eTemp)
+    peek(c.butterfly2.wfta.n1e) //n0f)
+*/
+
+
+
+
 
     /*peek(c.memBanks.mems(1)(0).dIn)
     peek(c.memBanks.mems(1)(0).dOut)
@@ -350,6 +407,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     peek(c.twiddleLUT(0)(0).dout)*/
 
 
+    traceOn = false
 
 
     if (Tracker.outValid){

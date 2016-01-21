@@ -1,6 +1,12 @@
 // August 19, 2015
 
+<<<<<<< HEAD
 package FFT
+=======
+// TODO: NOTE CURRENT IMPLEMENTATION REQUIRES 4^n
+
+package FFT 
+>>>>>>> rad2x2
 import Chisel.{Pipe =>_,Complex => _,Mux => _, _}
 import DSP._
 import scala.math._
@@ -879,7 +885,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 	val iDIFnToBankAddr = Module(new nToBankAddr(toAddrBankDly(1)))
 	for (i <- 0 until generalConstants.maxNumStages){
-		iDIFnToBankAddr.io.n(i) := ions(i)
+		iDIFnToBankAddr.io.n(i) := iDIFn(i)//ions(i)
 		iDIFnToBankAddr.io.addrConstant(i) := addressConstant(i)
 	}
 	iDIFnToBankAddr.io.maxRadix := maxRadix									// two kinds of max radices: generalConstants.maxRadix = overall max radix for generator; maxRadix = max radix for current FFT
@@ -1028,6 +1034,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	debug(oDIFAddr)															// Note: total delay 2 cycles second is toAddrBankDly(1); after difcount is (0)
 	debug(oDIFBank)
 
+<<<<<<< HEAD
 	////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Calculation Addressing
 
@@ -1062,15 +1069,105 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
+=======
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Calculation Addressing
+
+  val calcMemChangeCond = (iDIFCountWrap(0) && iDIFCounters(0).changeCond)	// IO counters all wrapping
+  
+  
+  
+  
+  
+  
+  
+  val calcControl = Module( new calc() )
+
+
+  val calcAddr = calcControl.io.calcAddr
+  val currentRadix = calcControl.io.currentRadix          // not delayed internally
+  val currentStage = calcControl.io.currentStage          // not delayed internally
+  val calcMemB = calcControl.io.calcMemB
+  val calcDoneFlag = calcControl.io.calcDoneFlag          // not delayed internally
+  val calcResetCond = calcControl.io.calcResetCond        // not delayed internally
+  val ioDIT = calcControl.io.ioDIT
+  val calcDIT = calcControl.io.calcDIT                    // not delayed internally
+  val discardCalcWrite = calcControl.io.discardCalcWrite  // not delayed internally
+
+
+  val rad2DblOrig = (currentRadix.toUInt === UInt(2)).toBool & (numPower(0).toUInt =/= UInt(0)).toBool
+  val newMaxStageCount = Vec(maxStageCount.zipWithIndex.map{case (e,i) => {
+    val temp = {
+      if (i == 0) {
+        Mux(rad2DblOrig, UInt(1), e.toUInt).toUInt
+      }
+      else e
+    }
+    Mux(numPower(3) === UInt(0), temp, e)
+  }})
+  debug(newMaxStageCount)
+
+// **** CHANGED
+
+  // Mux(numPower(3) === UInt(0),newMaxStageCount.asOutput,maxStageCount)
+
+
+  calcControl.io.calcMemChangeCond := calcMemChangeCond
+  calcControl.io.startFirstFrame := io.START_FIRST_FRAME
+
+
+
+  calcControl.io.maxStageCount := newMaxStageCount.asOutput
+
+  //Mux(numPower(3) === UInt(0),newMaxStageCount.asOutput,maxStageCount)
+>>>>>>> rad2x2
 
 
 
 
 
+<<<<<<< HEAD
 	// Twiddle addressing
 
 	val twiddleAddrMax = 2000
 
+=======
+  //maxStageCount //newMaxStageCount.asOutput //maxStageCount
+  calcControl.io.stageSumM1 := stageSumM1
+  calcControl.io.addressConstant := addressConstant
+  calcControl.io.maxRadix := maxRadix
+  calcControl.io.stageRadix := stageRadix
+
+
+
+
+
+
+
+
+
+
+  val calcBank = calcControl.io.calcBank
+
+
+
+
+
+  
+  
+  
+  
+  
+  
+  
+ 
+   
+
+// Twiddle addressing
+
+val twiddleAddrMax = 2000
+	
+>>>>>>> rad2x2
 	val twiddleCountMaxUsed = UInt(twiddleCount(currentStage),width=maxTwiddleCountBitWidth)
 	val twiddleSubCountMaxUsed = UInt(width=Helper.bitWidth(fftSizes.fftSizeArray.max))
 	// Note for subcount, power of 2 is default.
@@ -1318,8 +1415,31 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	memBanks.io.ioAddr := ioAddr
 	memBanks.io.calcMemB:= calcMemB
 	memBanks.io.calcDoneFlag := calcDoneFlagD
+
+
+  val currentRadixD2 = Reg(next = currentRadixD1)
+
+
+
+
+  // ASSUMES 4 ALWAYS EXISTS (BAD ASSUMPTION)
+  // 4 is used and current radix = 2
+  val rad2Dbl = (currentRadixD2.toUInt === UInt(2)).toBool & (numPower(0).toUInt =/= UInt(0)).toBool
+  val newCalcAddr = Vec(calcAddr.zipWithIndex.map {case (e,i) => {
+    val eNew = e.cloneType
+    eNew := e.toUInt
+    if (i == 2 || i == 3){
+      val temp = calcAddr(i-2).cloneType
+      temp := calcAddr(i-2).toUInt
+      Mux(rad2Dbl,temp,e).toUInt
+    }
+    else eNew
+  }})
+  debug(newCalcAddr)
+
+
 	memBanks.io.calcBank := calcBank
-	memBanks.io.calcAddr := calcAddr
+	memBanks.io.calcAddr := newCalcAddr.asOutput   //calcAddr
 	memBanks.io.discardCalcWrite := Pipe(discardCalcWrite,toAddrBankDly.sum).asInstanceOf[Bool]
 
 	// If first value comes in when START_FIRST_FRAME is asserted high,
@@ -1373,8 +1493,13 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~io.START_FIRST_FRAME)
 	val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~io.START_FIRST_FRAME)							// Flag needs to be 2 fast clock cycles long
 	io.FIRST_OUT := ~io.START_FIRST_FRAME & Pipe((firstDataFlagD3	| firstDataFlagD4) && ~io.START_FIRST_FRAME,seqRdDly).asInstanceOf[Bool]													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
+<<<<<<< HEAD
 
 	val currentRadixD2 = Reg(next = currentRadixD1)
+=======
+	
+
+>>>>>>> rad2x2
 	val currentRadixD3 = Reg(next = currentRadixD2)
 	debug(currentRadixD3)
 
@@ -1387,19 +1512,46 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
+<<<<<<< HEAD
+=======
+	val rad = Pipe(currentRadixD2,toMemAddrDly+seqRdDly).asInstanceOf[UInt]
+
+
+>>>>>>> rad2x2
 
 	val peNum = 0
 	val butterfly = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)
 
 	CheckDelay.off()
 
+
+  val eq2 = DSPBool(rad.toUInt === UInt(2))
+
+
 	butterfly.io.twiddles.zipWithIndex.foreach{case (e,i) => {
-		if (i < generalConstants.maxRadix-1) {
+		/*if (i < generalConstants.maxRadix-1) {
 			println("xxx" + e.real.getRange + "," + e.imag.getRange + ",") //+ twiddleX(i).real.getRange)
 			e := twiddleX(i)
 
 			println("ttt" + e.real.getRange + "," + e.imag.getRange)
 			//e.imag := twiddleX(i).imag
+		}*/
+		/*if (Params.getBF.rad.contains(2)){
+			if (i == 1 || i == 2) {											// twiddle index is 1 off -- maybe not necessary? check always (1,0) for rad = 2
+
+				//val check2 = Mux(eq2,twiddleX(0),twiddleX(i))
+				//e :=  //Mux(eq2,twiddleX(0),twiddleX(i))
+        e.real := Mux(eq2,twiddleX(0).real,twiddleX(i).real)
+        e.imag := Mux(eq2,twiddleX(0).imag,twiddleX(i).imag)
+				//e := Complex(test.real,test.imag) //twiddleX(i)//Mux(DSPBool(rad.toUInt === UInt(2)),twiddleX(0),twiddleX(i))
+				//e := twiddleX(i)
+			}
+			else if (i < generalConstants.maxRadix-1){
+				e := twiddleX(i)
+			}
+		}     NOTE NEEDADDRESS AT 0 FOR RAD 2 twiddle!!!! for idx 0-3 seems i already did -- twiddles delayed earlier
+		else*/ if (i < generalConstants.maxRadix-1){
+			e := twiddleX(i)
 		}
 	}}
 
@@ -1416,10 +1568,26 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
+<<<<<<< HEAD
 	val rad = Pipe(currentRadixD2,toMemAddrDly+seqRdDly).asInstanceOf[UInt]
 
 
 	memBanks.io.currRad := currentRadixD2
+=======
+	// if radix 2 --> 4
+
+  val tempcurrRad = Mux(currentRadixD2 === UInt(2),UInt(4),currentRadixD2).toUInt
+
+    Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
+	memBanks.io.currRad := Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
+
+// *** CHANGED
+
+  //currentRadixD2 //Mux(currentRadixD2 === UInt(2),UInt(4),currentRadixD2).toUInt
+
+
+  //currentRadixD2
+>>>>>>> rad2x2
 	//memBanks.io.discardCalcWrite := Bool(false)
 
 
@@ -1442,6 +1610,28 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 	for (i <- 0 until generalConstants.numBanks){
 		memBanks.io.y(i) := pipeD(memBanks.io.x(i) * Complex(double2T(10.0),double2T(0)),pipeBFWriteDly).asInstanceOf[Complex[T]]
 	}*/
+<<<<<<< HEAD
+=======
+
+
+
+
+
+
+
+
+
+
+ /* val butterfly2 = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)
+  val bfio = new PEIO(gen)
+  bfio <> butterfly2.io*/
+
+// butterfly has 2x
+  // *** mem rad needs 4 to 2
+  // *** counter needs to be halved
+  // address is duplicated 01 -> 23
+  // *** needs to be changed to switch between versions i.e. support 3x, fail 120
+>>>>>>> rad2x2
 
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////
