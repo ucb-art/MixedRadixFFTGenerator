@@ -32,7 +32,7 @@ class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOB
 
   // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further, condition (**)
 
-  val p = ButterflyParams(rad = List(2,4))//Params.getBF CHANGED
+  val p = Params.getBF
   val maxRadAdj = if (p.rad.contains(2)) 4 else 0       // **
   val maxRad = p.rad.max.max(maxRadAdj)
 

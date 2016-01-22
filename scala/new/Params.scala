@@ -1,4 +1,5 @@
 // TODO: Check to see that user entered FFT sizes are unique (no repeated)
+// TODO: Make butterfly private again
 
 package FFT
 import ChiselDSP._

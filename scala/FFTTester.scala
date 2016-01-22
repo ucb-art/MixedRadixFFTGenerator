@@ -12,7 +12,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
   //runTo(60)
-  //run(15)
+  //run(2048)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
 
@@ -161,8 +161,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   def readSetupConstants(fftIndex:Int, exitTF:Int){
     expect(c.fftIndex,fftIndex)
     expect(c.fftTF,true)
-    expect(c.qDIFi,ioAddressConstants.qDIFiArray(fftIndex))
-    expect(c.qDIFo,ioAddressConstants.qDIFoArray(fftIndex))
+    //expect(c.qDIFi,ioAddressConstants.qDIFiArray(fftIndex))
+    //expect(c.qDIFo,ioAddressConstants.qDIFoArray(fftIndex))
     expect(c.numPower,generalConstants.numPowerArray(fftIndex))
     expect(c.coprimes,generalConstants.coprimesArray(fftIndex))
     expect(c.coprimesFlipped,generalConstants.coprimesArray(fftIndex).reverse)
