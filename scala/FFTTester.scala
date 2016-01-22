@@ -12,7 +12,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
   //runTo(60)
-  //run(16)
+  //run(15)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
 
@@ -193,7 +193,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     stepP(1, in1, out1)													// io Count starts here
     poke(c.io.START_FIRST_FRAME,false)
     // Continue checking for a few counts after full 2x FFT size (slow clk takes twice as long as fast clock) -- both phases
-    for (i <- 0 until 4){
+    for (i <- 0 until 5){
       for (i <- 0 until 2*fftSizes.fftSizeArray(fftIndex)){
         stepP(1, in1, out1)
       }
@@ -228,7 +228,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
 
     traceOn = true
-    //println("ioIncCOunts")
+    //println("ioIncCounts")
     //c.ioIncCounts.foreach{peek(_)}
     //c.ioIncCounters.foreach{x => peek(x.io.primeDigits)}
 
@@ -277,6 +277,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
 
     traceOn = true
+
+    //if (peek(c.ions).equals(peek(c.iDIFn))) Warn( "sadface")
 
     //peek(c.memBanks.io.calcBank)
     //peek(c.memBanks.io.calcAddr)

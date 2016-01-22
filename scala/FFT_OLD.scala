@@ -495,15 +495,17 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // debug list of stuff
   // CHANGE ALL REG TO PIPE -- should there be an enclosing vec? for all iterables
 	val coprimeCols = Params.getIO.coprimes.transpose
+  println(coprimeCols)
 	// Always have at least 1 'digit' even when a particular prime isn't used
 	val primeDigitsTbl = coprimeCols.zipWithIndex.map { case (x, i) =>
 		x.map(y => {
       // take max count allowed to determine how many digits need to be represented
 			val temp = (y-1)
       // seems i use length pretty frequently how about wrapper function?
-			BaseN.toIntList(temp, Params.getIO.primes(i)).length
+      BaseN.numDigits(temp,Params.getIO.primes(i))
 		})
 	}
+  println(primeDigitsTbl)
 	val primeDigitsLUT = DSPModule(new IntLUT2D(primeDigitsTbl.transpose))
 	primeDigitsLUT.io.addr := DSPUInt(fftIndex,Params.getFFT.sizes.length-1)
 	val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
@@ -881,7 +883,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 	val iDIFnToBankAddr = Module(new nToBankAddr(toAddrBankDly(1)))
 	for (i <- 0 until generalConstants.maxNumStages){
-		iDIFnToBankAddr.io.n(i) := iDIFn(i)//ions(i)
+		iDIFnToBankAddr.io.n(i) := ions(i)//iDIFn(i)//ions(i)
 		iDIFnToBankAddr.io.addrConstant(i) := addressConstant(i)
 	}
 	iDIFnToBankAddr.io.maxRadix := maxRadix									// two kinds of max radices: generalConstants.maxRadix = overall max radix for generator; maxRadix = max radix for current FFT
@@ -1033,7 +1035,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Calculation Addressing
 
-  val calcMemChangeCond = (iDIFCountWrap(0) && iDIFCounters(0).changeCond)	// IO counters all wrapping
+  val calcMemChangeCond = Bool(OUTPUT)
+  calcMemChangeCond := ioIncCounters.head.oCtrl.change   // (iDIFCountWrap(0) && iDIFCounters(0).changeCond)	// IO counters all wrapping
   
   
   
