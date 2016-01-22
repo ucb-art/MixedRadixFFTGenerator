@@ -12,7 +12,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
   //runTo(60)
-  //run(24)
+  //run(16)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
 
@@ -314,6 +314,22 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     peek(c.butterfly.io.twiddles(1))
     peek(c.butterfly.io.twiddles(2))
     peek(c.butterfly.io.twiddles(3))*/
+
+
+/*
+    peek(c.memBanks.io.x(0))
+    peek(c.memBanks.io.x(1))
+    peek(c.memBanks.io.x(2))
+    peek(c.memBanks.io.x(3))
+    peek(c.memBanks.io.x(4))
+    peek(c.memBanks.io.y(0))
+    peek(c.memBanks.io.y(1))
+    peek(c.memBanks.io.y(2))
+    peek(c.memBanks.io.y(3))
+    peek(c.memBanks.io.y(4))
+*/
+
+
 
 
 /*

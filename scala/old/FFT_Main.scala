@@ -62,7 +62,7 @@ object FFTGenerator {
 
     //customFFTSizes = Array(243)
     //customFFTSizes = Array(2,4*4*2,24,15,16)
-    //customFFTSizes = Array(120,16)
+    customFFTSizes = Array(16,5,3)
     customFFTSizes = Array()
     fftSizes.generate(customFFTSizes,true,true)
     //fftSizes.generate(customFFTSizes,false,false)

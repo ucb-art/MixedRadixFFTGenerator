@@ -148,7 +148,7 @@ class memBanks[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // Memories
   val mems = Vec((0 until 2).map( a => {Vec((0 until numBanks).map( b =>
-  {val m = DSPModule(new Memory(Complex(gen),depth = memLengths(b)), nameExt = +a+"_"+b)
+  {val m = DSPModule(new Memory(Complex(gen),depth = memLengths(b), seqRead = true, outReg = false), nameExt = +a+"_"+b)
     m.io}   ))}))
   // TODO: assign properly
   val seqRdDly = 1 //mems(0)(0).delay
