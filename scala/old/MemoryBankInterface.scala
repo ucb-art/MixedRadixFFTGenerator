@@ -13,7 +13,7 @@ import Count._
 
 object memBanks{
 
-  val maxRad = 4//Params.getBF.rad.max // CHANGED
+  val maxRad = Params.getBF.rad.max // CHANGED
 
   // Extra write delay due to butterfly pipelining
   var pipeBFWriteDly = 0  
@@ -42,8 +42,8 @@ class memBanks[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-  memBanks.numBanks = 4
-  memBanks.bankMax = 4-1
+  //memBanks.numBanks = 4
+  //memBanks.bankMax = 4-1
 
   CheckDelay.off()
 

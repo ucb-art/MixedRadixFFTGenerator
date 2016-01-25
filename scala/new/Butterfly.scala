@@ -6,6 +6,8 @@ Module => _, ModuleOverride => _, when => _, switch => _, is => _, unless => _, 
 import ChiselDSP._
 // ------- Imports END -- OK TO MODIFY BELOW
 
+// TODO: Radix 2 extension should use rad 4 hardware
+
 /** Processing element IO: twiddle factors, calcDIT -> true if in DIT calculation phase or false if in DIF phase,
   * (WFTA) x = input, y = output, currRad = current butterfly radix
   */
