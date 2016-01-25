@@ -6,6 +6,8 @@ Module => _, ModuleOverride => _, when => _, switch => _, is => _, unless => _, 
 import ChiselDSP._
 // ------- Imports END -- OK TO MODIFY BELOW
 
+// TODO: Radix 2 extension should use rad 4 hardware
+
 /** Processing element IO: twiddle factors, calcDIT -> true if in DIT calculation phase or false if in DIF phase,
   * (WFTA) x = input, y = output, currRad = current butterfly radix
   */
@@ -24,7 +26,9 @@ class PEIO[T <: DSPQnm[T]](gen : => T) extends WFTAIO(gen,outDlyMatch=false) {
 /** Processing element includes both DIT/DIF twiddle multiplication and WFTA butterfly
   * num = butterfly index
   */
-class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0) extends GenDSPModule (gen) {
+class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) extends GenDSPModule (gen) {
+
+  // TODO: Support pipeDin
 
   CheckDelay.on()
 
@@ -71,6 +75,6 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0) extends GenDSPModule (gen) {
   CheckDelay.on()
 
   // Total delay through the whole processing element
-  val delay = twiddleDelay + wfta.delay
+  val delay = twiddleDelay + wfta.delay // + (if (pipeDin) 1 else 0)
 
 }

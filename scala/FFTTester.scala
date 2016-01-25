@@ -12,7 +12,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
   //runTo(60)
-  //run(24)
+  //run(2048)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
 
@@ -161,8 +161,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   def readSetupConstants(fftIndex:Int, exitTF:Int){
     expect(c.fftIndex,fftIndex)
     expect(c.fftTF,true)
-    expect(c.qDIFi,ioAddressConstants.qDIFiArray(fftIndex))
-    expect(c.qDIFo,ioAddressConstants.qDIFoArray(fftIndex))
+    //expect(c.qDIFi,ioAddressConstants.qDIFiArray(fftIndex))
+    //expect(c.qDIFo,ioAddressConstants.qDIFoArray(fftIndex))
     expect(c.numPower,generalConstants.numPowerArray(fftIndex))
     expect(c.coprimes,generalConstants.coprimesArray(fftIndex))
     expect(c.coprimesFlipped,generalConstants.coprimesArray(fftIndex).reverse)
@@ -193,7 +193,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     stepP(1, in1, out1)													// io Count starts here
     poke(c.io.START_FIRST_FRAME,false)
     // Continue checking for a few counts after full 2x FFT size (slow clk takes twice as long as fast clock) -- both phases
-    for (i <- 0 until 4){
+    for (i <- 0 until 5){
       for (i <- 0 until 2*fftSizes.fftSizeArray(fftIndex)){
         stepP(1, in1, out1)
       }
@@ -228,7 +228,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
 
     traceOn = true
-    //println("ioIncCOunts")
+    //println("ioIncCounts")
     //c.ioIncCounts.foreach{peek(_)}
     //c.ioIncCounters.foreach{x => peek(x.io.primeDigits)}
 
@@ -247,8 +247,6 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     //val t1 = peek(c.iDIFn)
     //peek(c.ions)
     //val t2 = peek(c.ions)
-<<<<<<< HEAD
-=======
     /*peek(c.rad)
     if ( peek(c.rad) == 2) {
       println("xyz")
@@ -273,15 +271,14 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     //peek(c.newMaxStageCount)
 
 
->>>>>>> rad2x2
 
     //if (t1 != t2) Error("sadface")
     //peek(c.newStageSum)
 
-    //if (peek(c.sss)) Error("blahhhh")
-
 
     traceOn = true
+
+    //if (peek(c.ions).equals(peek(c.iDIFn))) Warn( "sadface")
 
     //peek(c.memBanks.io.calcBank)
     //peek(c.memBanks.io.calcAddr)
@@ -321,27 +318,43 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     peek(c.butterfly.io.twiddles(3))*/
 
 
-/*
+    /*
+        peek(c.memBanks.io.x(0))
+        peek(c.memBanks.io.x(1))
+        peek(c.memBanks.io.x(2))
+        peek(c.memBanks.io.x(3))
+        peek(c.memBanks.io.x(4))
+        peek(c.memBanks.io.y(0))
+        peek(c.memBanks.io.y(1))
+        peek(c.memBanks.io.y(2))
+        peek(c.memBanks.io.y(3))
+        peek(c.memBanks.io.y(4))
+    */
 
-  poke(c.bfio.twiddles(0),Complex(1.0,0.0))
-    poke(c.bfio.twiddles(1),Complex(1.0,0.0))
-    poke(c.bfio.twiddles(2),Complex(1.0,0.0))
-    poke(c.bfio.twiddles(3),Complex(1.0,0.0))
-    poke(c.bfio.calcDIT,false)
-    poke(c.bfio.currRad.get(1),true)
-    poke(c.bfio.x(0),in1(0))
-    poke(c.bfio.x(1),in1(1))
-    poke(c.bfio.x(2),in1(0))
-    poke(c.bfio.x(3),in1(1))
 
-      expect(c.bfio.y(0), out1(0),"sss","sss")
-      expect(c.bfio.y(1), out1(1),"sss","sss")
-      expect(c.bfio.y(2), out1(0),"sss","sss")
-      expect(c.bfio.y(3), out1(1),"sss","sss")
-      peek(c.bfio.y(4))
-    peek(c.butterfly2.wfta.n0eTemp)
-    peek(c.butterfly2.wfta.n1e) //n0f)
-*/
+
+
+    /*
+
+      poke(c.bfio.twiddles(0),Complex(1.0,0.0))
+        poke(c.bfio.twiddles(1),Complex(1.0,0.0))
+        poke(c.bfio.twiddles(2),Complex(1.0,0.0))
+        poke(c.bfio.twiddles(3),Complex(1.0,0.0))
+        poke(c.bfio.calcDIT,false)
+        poke(c.bfio.currRad.get(1),true)
+        poke(c.bfio.x(0),in1(0))
+        poke(c.bfio.x(1),in1(1))
+        poke(c.bfio.x(2),in1(0))
+        poke(c.bfio.x(3),in1(1))
+
+          expect(c.bfio.y(0), out1(0),"sss","sss")
+          expect(c.bfio.y(1), out1(1),"sss","sss")
+          expect(c.bfio.y(2), out1(0),"sss","sss")
+          expect(c.bfio.y(3), out1(1),"sss","sss")
+          peek(c.bfio.y(4))
+        peek(c.butterfly2.wfta.n0eTemp)
+        peek(c.butterfly2.wfta.n1e) //n0f)
+    */
 
 
 

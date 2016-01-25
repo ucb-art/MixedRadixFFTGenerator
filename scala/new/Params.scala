@@ -1,4 +1,5 @@
 // TODO: Check to see that user entered FFT sizes are unique (no repeated)
+// TODO: Make butterfly private again
 
 package FFT
 import ChiselDSP._
@@ -74,7 +75,6 @@ case class IOParams (
   var coprimes:List[List[Int]] = List.fill(10)(List(2,3,5)),
   // Maximum 2^a,3^b,5^c used to support all generator sizes
   var maxCoprimes: List[Int] = List(2,3,5)
-
 )
 
 case class CalcParams (
@@ -84,11 +84,9 @@ case class CalcParams (
   var radPow:List[List[Int]] = List.fill(10)(List(1,1,1,1)),
   // -- Maximum # of radix stages to support all Ns
   var maxStages: Int = 6
-
 )
 
 case class TwiddleParams (
-
 )
 
 case class ButterflyParams (

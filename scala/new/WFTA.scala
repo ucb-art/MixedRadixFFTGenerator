@@ -318,8 +318,5 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   // Total pipeline delay through WFTA butterfly
   val delay = io.getOutDelay-inputDelay
 
-<<<<<<< HEAD
-=======
   // TODO: Check fftSizes = List(2) by itself case; change contains(2) to separate var 'isUsed2'
->>>>>>> rad2x2
 }
