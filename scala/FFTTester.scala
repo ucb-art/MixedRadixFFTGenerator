@@ -11,6 +11,10 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   // Set tolerance for comparing expected values
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
+
+  // TEST Pull
+
+
   //runTo(60)
   //run(2048)
   //List(2,5).foreach{run(_)}
