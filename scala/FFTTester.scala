@@ -12,7 +12,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
   //runTo(60)
-  //run(2048)
+  //run(24)
   //List(2,5).foreach{run(_)}
   ////////////////////////////////////////////////////////////////////////
 
@@ -278,6 +278,21 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
     traceOn = true
 
+    //println("xxx")
+    //peek(c.oDIFtemp1)
+    //println(peek(c.oDIFn).equals(peek(c.ons)))
+    //peek(c.ons)
+    ///println("yyy")
+
+    //peek(c.oDIFtemp)
+    //peek(c.oFinalCounts)
+    //peek(c.oDIFNewCounts)
+    //peek(c.qDIFos)
+    //peek(c.qDIFo)
+    //peek(c.oIncCounts)
+    //peek(c.oDIFCounts)
+    //peek(c.oModCounts)
+    //peek(c.oDIFModCounts)
     //if (peek(c.ions).equals(peek(c.iDIFn))) Warn( "sadface")
 
     //peek(c.memBanks.io.calcBank)

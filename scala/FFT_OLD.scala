@@ -708,234 +708,9 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // OUTPUT
 
 
-  /*
 
 
-    val qDIFoTbl = ioAddressConstants.qDIFoArray.toList.transpose.map(x => x.toList)									// Columns
-    val qDIFoLUTs = qDIFoTbl.zipWithIndex.map{case (x,i) => {
-        val temp = Params.getIO.primes.reverse(i)
-        val rad = if (temp == 2) 4 else temp
-        DSPModule(new BaseNLUT(x, rad = rad))
-      }}
-    val qDIFos =Vec(qDIFoLUTs.zipWithIndex.map{ case(x,i) => {
-      x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
-      val tempOut = x.io.dout.cloneType
-      tempOut := x.io.dout
-      //Reg(tempOut) weirdest reg problem ever/!??!
-      BaseN(tempOut.map(x => x.reg()), tempOut.rad)
-    }})
 
-    val primeDigitsFlipped = Vec(primeDigitsTemp.reverse.map(x => x.reg()))
-
-    val (oIncCounters,oModCounters) = Params.getIO.maxCoprimes.reverse.zipWithIndex.map{case (x,i) => {
-
-      val temp = Params.getIO.primes.reverse(i)
-      // TODO: Generalize rad also reused? temp rad
-      val rad = if (temp == 2) 4 else temp
-      val c1 = BaseNIncCounter(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString)
-      val c2 = {
-        if (x != Params.getIO.maxCoprimes.reverse.last)
-          Some(BaseNAccWithWrap(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString))
-        else
-          None
-      }
-      (c1,c2)
-    }}.unzip
-
-    // Right-most counter is "least significant"
-    val oIncCounts = Vec(oIncCounters.zipWithIndex.map{ case (e,i) => {
-      val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
-      e.iCtrl.change := iChange
-      e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
-      // Should not need? can also trim to io.primDigits length
-      e.io.primeDigits := primeDigitsFlipped(i).shorten(e.io.primeDigits.getRange.max)
-      val temp = e.io.out.cloneType
-      temp := e.io.out
-      temp
-    }})
-
-    // Do zip together
-    val oModCounts = Vec(oModCounters.init.zipWithIndex.map{ case (etemp,i) => {
-      val e = etemp.get
-      e.iCtrl.change := DSPBool(slwClkEn)
-      e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
-      // Should not need? can also trim to io.primDigits length
-      e.io.primeDigits := primeDigitsFlipped(i).shorten(e.io.primeDigits.getRange.max)
-      e.io.inc.get := qDIFos(i).padTo(e.io.inc.get.length).asOutput // ???
-      e.iCtrl.wrap.get := oIncCounters(i).iCtrl.change
-      val temp = e.io.out.cloneType
-      temp := e.io.out
-      temp
-    }})
-    // Should try to minimize mem output length and pad where there is width mismatch
-    // CAN PIPELINE DELAY ioFinalConuts
-    val oFinalCounts = Vec(Params.getIO.maxCoprimes.reverse.zipWithIndex.map{case (x,i) => {
-      if (x == Params.getIO.maxCoprimes.reverse.last) oIncCounts(i)
-      else (oIncCounts(i) + oModCounts(i)).maskWithMaxCheck(primeDigitsFlipped(i))._1
-    }})
-    debug(oFinalCounts)
-*/
-
-
-  /*
-
-
-    val oDIFtemp1 = Vec(oFinalCounts.zipWithIndex.map{ case (x,i) => {
-      if (Params.getBF.rad.contains(2) && Params.getIO.primes.reverse(i) == 2 && Params.getBF.rad.contains(4)){
-        // switch to getBF.rad(i) == 2  ????
-        // Convert to Mixed radix [4,...4,2] if current FFT size requires radix 2 stage & operating on 2^n coprime
-        // FOR DIF 2 always follows 4 and it's the only one with list of length 2
-        Mux(DSPBool(numPower(i+1)(0)),x.toRad42(),x)
-      }
-      else x
-    }})
-    // registered here?
-    // Need to be same length to address properly (really Chisel should error)
-    val colLengths = iDIFtemp1.map(x => x.length).max
-    val iDIFtemp = Vec(iDIFtemp1.map(x => {
-      val set = x.map(y => {y.reg()})
-      BaseN(set, x.rad).padTo(colLengths)
-      //Vec(set) // basen gets misinterpretted?
-    }))
-    iDIFtemp.foreach{debug(_)}
-    // when doing addr, warn when not vec col nto same length
-
-    // StageRadix === should be just series of Bools
-    // table use2 YN? but otherwise lump stage cnt into 4 -- stage sum should not separate 4,2 (should be by coprime)
-    // bad assumption here (i.e. 4 must be first)
-    val newStageSum = {
-      if (generalConstants.validRadices.contains(2) && generalConstants.validRadices.contains(4))
-        Vec(stageSum.tail)
-      else stageSum
-    }
-    debug(newStageSum)
-
-    val ions = Vec((0 until generalConstants.maxNumStages).map (i => {
-      val primeVal = {
-        if (Params.getBF.rad.contains(4)) {
-          // Mux has problems interpretting without doing explicit .toBool, etc.?
-          Mux((stageRadix(i) === UInt(4)).toBool, UInt(2), stageRadix(i)).toUInt
-        }
-        else stageRadix(i)
-      }
-      val primes = Params.getIO.primes.zipWithIndex
-      // Mutually exclusive conditions
-      val primeIdx = primes.tail.foldLeft (
-        DSPUInt(primes.head._2) ? DSPBool(primeVal === UInt(primes.head._1))
-      )((b,a) => {
-        val selIdx = DSPUInt(a._2) ? DSPBool(primeVal === DSPUInt(a._1))
-        selIdx /| b
-      })
-      // Why all these explicit conversions?!
-      // primeIdx defaults to 0 when prime unused (which has smallest sum value so muxes to 0 if unused)
-      val currStageSum = newStageSum(primeIdx.toUInt).toUInt			// NOT MINUS 1 (since 0 - 1 = 3)
-      val activeStage = (UInt(i) < currStageSum).toBool
-      val digitIdx = (currStageSum-UInt(1+i)).toUInt
-      // Addressing Vec should mark as used (override vec)
-
-      val countSet = Vec(iDIFtemp(primeIdx.toUInt).map(x => x.toUInt))
-      val digit = countSet(digitIdx).toUInt
-      Mux(activeStage, digit, UInt(0)).toUInt
-      // := auto pads if right range smaller?
-      // Seems searchable vec needs to be made of uints only?
-
-    }))
-    ions.foreach{debug(_)}
-    //separate mux??? don't need bc newstagesumm1(0) has smallest val
-
-  */
-
-
-  // Switch rows/cols so Scala doesn't complain (originally columns are associated with n1...n6, but want to address "column" first -> tranpose)
-  var dec2xAryArray = Array.ofDim[Int](generalConstants.validPrimes.length, 0, 0)
-  for (i <- 0 until dec2xAryArray.length) {
-    dec2xAryArray(i) = ioAddressConstants.dec2xAryArray(i).transpose
-  }
-
-  val dec2xAryLUT = Vec((0 until dec2xAryArray.length).map(y => {
-    Vec((0 until dec2xAryArray(y).length).map(x => Module(new UInt2LUT(dec2xAryArray(y)(x))).io))
-  }))
-
-  // For max 2^N = 2048, max count = 2047 -> 11 bits (worst case # of bits needed)
-  val pow2MaxCountBits = (log(generalConstants.maxCoprime(0)) / log(2)).toInt // If radix 4 is used, guaranteed first coprime is related to 2^N
-
-
-  ////// DIF OUTPUT
-  // DIF O Counters -- uses reverse coprime factorization
-  val oDIFCounts = Vec.fill(coprimesColCount) {
-    UInt()
-  }
-  val oDIFCounters = Vec((0 until coprimesColCount).map(x => Module(new accumulator(Helper.bitWidth(generalConstants.maxCoprime.reverse(x) - 1))).io))
-  val oDIFCountWrap = Vec.fill(coprimesColCount) {
-    Bool()
-  }
-  for (i <- coprimesColCount - 1 to 0 by -1) {
-    // Wrap after reached max count
-    oDIFCountWrap(i) := (oDIFCounters(i).out === coprimesFlipped(i) - UInt(1))
-    oDIFCounters(i).inc := UInt(1, width = 1)
-    // If right-most count, change only on slowClk = 0
-    // Otherwise, only change when previous (right) counters are about to wrap around
-    if (i == coprimesColCount - 1) {
-      oDIFCounters(i).changeCond := slwClkEn
-    }
-    else {
-      oDIFCounters(i).changeCond := oDIFCounters(i + 1).changeCond && oDIFCountWrap(i + 1)
-    }
-    oDIFCounters(i).globalReset := io.START_FIRST_FRAME // Reset counts to 0 on next clk cycle after START_FIRST_FRAME high
-    oDIFCounters(i).wrapCond := oDIFCountWrap(i)
-    oDIFCounts(i) := oDIFCounters(i).out
-    debug(oDIFCounts(i))
-  }
-
-  // output DIF counts: See iDIF calculations for explanation
-  // Note order of coprimes used is backwards
-
-  val maxCoprimeFlipped = generalConstants.maxCoprime.reverse
-
-
-  val oDIFModCounters = (0 until coprimesColCount - 1).map(x => ModCounter(maxCoprimeFlipped(x) - 1,
-    maxCoprimeFlipped(x) - 1, inputDelay = 0, nameExt = "oDIF" + maxCoprimeFlipped(x).toString))
-
-  val oDIFModCounts = Vec(oDIFModCounters.zipWithIndex.map {
-    case (e, i) => {
-      e.io.inc.get := DSPUInt(qDIFo(i), maxCoprimeFlipped(i) - 1)
-      e.io.modN.get := DSPUInt(coprimesFlipped(i), maxCoprimeFlipped(i))
-      e.iCtrl.change.get := DSPBool(slwClkEn)
-      e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
-      e.iCtrl.wrap.get := DSPBool(oDIFCounters(i).changeCond)
-      e.io.out.toUInt
-    }
-  })
-
-  // nxpp
-
-  val oDIFNewCounts = Vec((0 until coprimesColCount).map(
-    i => {
-      val out = {
-        if (i == coprimesColCount - 1) oDIFCounts(i)
-        else {
-          Mod(DSPUInt(oDIFCounts(i), maxCoprimeFlipped(i) - 1) + DSPUInt(oDIFModCounts(i), maxCoprimeFlipped(i) - 1), DSPUInt(coprimesFlipped(i), maxCoprimeFlipped(i)))._1
-        }
-      }
-      out.toUInt
-    }
-  ))
-
-  val dec2xAryDIFo = Vec((0 until dec2xAryArray.length).map(y => {
-    Vec.fill(dec2xAryArray(y).length) {
-      UInt()
-    }
-  }))
-  for (i <- 0 until dec2xAryArray.length;
-       j <- 0 until dec2xAryArray(i).length) {
-    // i corresponds to particular coprime; j corresponds to which constant brought out; all constants for particular coprime brought out with same address in
-    // Note: n1pp is used for radix 5 constants instead of n3pp
-    dec2xAryLUT(i)(j).addr2 := oDIFNewCounts(dec2xAryArray.length - 1 - i)
-    dec2xAryDIFo(i)(j) := dec2xAryLUT(i)(j).dout2
-  }
-  val oDIFn = Vec.fill(generalConstants.maxNumStages) {
-    Reg(UInt(width = Helper.bitWidth(generalConstants.maxRadix - 1)))
-  }
 
   // To get in-place IO addressing, recall for N1,N2,N3 coprime, you have a mapping of (see ioAddressConstants)
   // n1 (2) -> k3
@@ -953,54 +728,194 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // 2 being associated with n3p instead of n1p; note also that a is also swapped with b which implies that rather than starting with the highest coprime grouping (bit, ternary, etc.)
   // first, you start with the lowest grouping first; by first, i mean left (opposite of the iDIF case)
 
-  var pow2NewMaxCountBitso = 0
-  if ((pow2MaxCountBits % 2) == 0) {
-    // If even # of bits needed
-    pow2NewMaxCountBitso = pow2MaxCountBits
-  }
-  else {
-    // If odd # of bits needed: i.e. if 2048 = 2^N = 4^5*2 for max 2^N
-    pow2NewMaxCountBitso = pow2MaxCountBits + 1 // Because 4-ary requires groups of 2 bits, pad with 0 for worst case (i.e. 11 bits -> 12 bits)
-  }
-  // Doesn't handle 2 separately
 
-  val rad4startingBito = Vec.fill(generalConstants.maxNumStages) {
-    UInt()
-  }
-  val rad4oDIFNewCount = UInt(width = pow2NewMaxCountBitso)
-  rad4oDIFNewCount := oDIFNewCounts(coprimesColCount - 1) // 2^N is right-most when order flipped
 
-  if (generalConstants.rad4Used) {
-    for (y <- 0 until generalConstants.maxNumStages) {
-      rad4startingBito(y) := UInt(y) << UInt(1) // *2 because we're grouping in 2 bits
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  val qDIFoTbl = ioAddressConstants.qDIFoArray.toList.transpose.map(x => x.toList)
+  // Columns
+  val qDIFoLUTs = qDIFoTbl.zipWithIndex.map { case (x, i) => {
+    val temp = Params.getIO.primes.reverse(i)
+    val rad = if (temp == 2) 4 else temp
+    DSPModule(new BaseNLUT(x, rad = rad))
+  }
+  }
+  val qDIFos = Vec(qDIFoLUTs.zipWithIndex.map { case (x, i) => {
+    x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
+    val tempOut = x.io.dout.cloneType
+    tempOut := x.io.dout
+    //Reg(tempOut) weirdest reg problem ever/!??!
+    BaseN(tempOut.map(x => x.reg()), tempOut.rad)
+  }
+  })
+  // debug list of stuff
+  // CHANGE ALL REG TO PIPE -- should there be an enclosing vec? for all iterables
+
+  val (oIncCounters, oModCounters) = Params.getIO.maxCoprimes.reverse.zipWithIndex.map { case (x, i) => {
+    val temp = Params.getIO.primes.reverse(i)
+    // TODO: Generalize rad also reused? temp rad
+    val rad = if (temp == 2) 4 else temp
+    val c1 = BaseNIncCounter(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString)
+    val c2 = {
+      if (x != Params.getIO.maxCoprimes.reverse.last)
+        Some(BaseNAccWithWrap(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString))
+      else
+        None
     }
-
+    (c1, c2)
   }
+  }.unzip
 
-  for (y <- 0 until generalConstants.maxNumStages) {
-    oDIFn(y) := UInt(0) // Unused stages
-    for (z <- generalConstants.validRadices.length - 1 to 0 by -1) {
-      when(stageRadix(y) === UInt(generalConstants.validRadices(z))) {
-        // 4,2 associated with z 0,1
-        if (generalConstants.validRadices(z) == 4 || generalConstants.validRadices(z) == 2) {
-          oDIFn(y) := Cat(rad4oDIFNewCount(UInt(rad4startingBito(y) + UInt(1), width = Helper.bitWidth(pow2NewMaxCountBitso - 1))), rad4oDIFNewCount(rad4startingBito(y)))
-          // Grouped in 2 bits (base 4)
-        }
-        else {
-          //  Eg: radix-3 stages if existing; codes in ternary (0 to 2); lowest set of 3 stored left-most
-          if (generalConstants.rad4Used) {
-            oDIFn(y) := dec2xAryDIFo(z - 1)(UInt(y) - stageSum(z - 1))
-          }
-          else {
-            oDIFn(y) := dec2xAryDIFo(z)(UInt(y) - stageSum(z - 1))
-          }
-        }
+  // Right-most counter is "least significant"
+  val oIncCounts = Vec(oIncCounters.zipWithIndex.map { case (e, i) => {
+    val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
+    e.iCtrl.change := iChange
+    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    // Should not need? can also trim to io.primDigits length
+    e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
+    val temp = e.io.out.cloneType
+    temp := e.io.out
+    temp
+  }
+  })
+  // Do zip together
+  val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
+    val e = etemp.get
+    e.iCtrl.change := DSPBool(slwClkEn)
+    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    // Should not need? can also trim to io.primDigits length
+    e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
+    e.io.inc.get := qDIFos(i).padTo(e.io.inc.get.length).asOutput // ???
+    e.iCtrl.wrap.get := oIncCounters(i).iCtrl.change
+    val temp = e.io.out.cloneType
+    temp := e.io.out
+    temp
+  }
+  })
+  // Should try to minimize mem output length and pad where there is width mismatch
+  // CAN PIPELINE DELAY ioFinalConuts
+  val oFinalCounts = Vec(Params.getIO.maxCoprimes.reverse.zipWithIndex.map { case (x, i) => {
+    if (x == Params.getIO.maxCoprimes.reverse.last) oIncCounts(i)
+    else (oIncCounts(i) + oModCounts(i)).maskWithMaxCheck(Vec(primeDigits.reverse)(i))._1
+  }
+  })
+  debug(oFinalCounts)
+
+  val oDIFtemp1 = Vec(oFinalCounts.zipWithIndex.map { case (x, i) => {
+    if (Params.getBF.rad.contains(2) && Params.getIO.primes.reverse(i) == 2 && Params.getBF.rad.contains(4)) {
+      // switch to getBF.rad(i) == 2  ????
+      // Convert to Mixed radix [4,...4,2] if current FFT size requires radix 2 stage & operating on 2^n coprime
+      // FOR DIF 2 always follows 4 and it's the only one with list of length 2
+      /// FIX BETTER PARAM
+
+      // WHY DOES OUT NOT NEED CONVERSION TO RAD42?
+      //Mux(DSPBool(numPower(1)(0)), x.toRad42(), x)
+      x
+    }
+    else x
+  }
+  })
+
+  ///// UP to here is right
+
+  // registered here?
+  // Need to be same length to address properly (really Chisel should error)
+  val colLengthso = oDIFtemp1.map(x => x.length).max
+  val oDIFtemp = Vec(oDIFtemp1.map(x => {
+    val set = x.map(y => {
+      y.reg()
+    })
+    BaseN(set, x.rad).padTo(colLengthso)
+    //Vec(set) // basen gets misinterpretted?
+  }).reverse).asOutput                                         // NOTE REVERSED HERE TO MATTCH ADDRESS
+
+  // can't mix constants + vals
+  oDIFtemp.foreach {
+    debug(_)
+  }
+  // when doing addr, warn when not vec col nto same length
+
+  // StageRadix === should be just series of Bools
+  // table use2 YN? but otherwise lump stage cnt into 4 -- stage sum should not separate 4,2 (should be by coprime)
+  // bad assumption here (i.e. 4 must be first)
+
+
+
+
+
+  // for output , to match /w address, keep other logic same, just flip order of oDIFtemp and also their internal digits
+
+  val ons = Vec((0 until generalConstants.maxNumStages).map(i => {
+    val primeVal = {
+      if (Params.getBF.rad.contains(4)) {
+        // Mux has problems interpretting without doing explicit .toBool, etc.?
+        Mux((stageRadix(i) === UInt(4)).toBool, UInt(2), stageRadix(i)).toUInt
       }
+      else stageRadix(i)
     }
-    debug(oDIFn(y)) // Note: 1 cycle delay
+
+    val primes = Params.getIO.primes.zipWithIndex
+    // Mutually exclusive conditions
+    val primeIdx = primes.tail.foldLeft(
+      DSPUInt(primes.head._2) ? DSPBool(primeVal === UInt(primes.head._1))
+    )((b, a) => {
+      val selIdx = DSPUInt(a._2) ? DSPBool(primeVal === DSPUInt(a._1))
+      selIdx /| b
+    })
+
+
+    // Why all these explicit conversions?!
+    // primeIdx defaults to 0 when prime unused (which has smallest sum value so muxes to 0 if unused)
+
+    val currStageSum = newStageSum(primeIdx.toUInt).toUInt // NOT MINUS 1 (since 0 - 1 = 3)
+
+    val countSet = Vec(oDIFtemp(primeIdx.toUInt).map(x => x.toUInt))
+
+    val activeStage = (UInt(i) < currStageSum).toBool
+
+    //val prevstgidx = Mux((stageRadix(i) === UInt(2)).toBool,(primeIdx.toUInt-UInt(2)).toUInt,(primeIdx.toUInt-UInt(1)).toUInt).toUInt
+    val prevStageSumidx = primeIdx.toUInt-UInt(1) //Mux((primeIdx.toUInt ===UInt(0)).toBool,UInt(0),primeIdx.toUInt-UInt(1)).toUInt  //if (i == 0) UInt(0) else newStageSum(primeIdx.toUInt-UInt(1)).toUInt
+    val prevStageSum =Mux((primeIdx.toUInt ===UInt(0)).toBool,UInt(0),newStageSum(prevStageSumidx).toUInt)
+
+    val digitIdx = (UInt(i)-prevStageSum).toUInt //    (currStageSum - UInt(1 + i)).toUInt
+    // Addressing Vec should mark as used (override vec)
+
+
+    val digit = countSet(digitIdx).toUInt
+    Mux(activeStage, digit, UInt(0)).toUInt
+    // := auto pads if right range smaller?
+    // Seems searchable vec needs to be made of uints only?
+
+  }))
+  ons.foreach {
+    debug(_)
   }
 
-  // n1,n2,n3... -> output DIF address/banks
+// store rad by index instead of rad
+
+
+
+
+
+
+
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Calculation Addressing
@@ -1059,7 +974,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
   val oDIFnToBankAddr = Module(new nToBankAddr(toAddrBankDly(1)))
   for (i <- 0 until generalConstants.maxNumStages) {
-    oDIFnToBankAddr.io.n(i) := oDIFn(i)
+    oDIFnToBankAddr.io.n(i) := ons(i)//oDIFn(i)
     oDIFnToBankAddr.io.addrConstant(i) := addressConstant(i)
   }
   oDIFnToBankAddr.io.maxRadix := maxRadix
