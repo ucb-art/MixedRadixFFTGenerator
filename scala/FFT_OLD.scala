@@ -1155,10 +1155,10 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val e0Complex = Complex(double2T(1), double2T(0))
 
   val twiddleXReal = Vec.fill(generalConstants.maxRadix - 1) {
-    gen.cloneType
+    gen.cloneType()
   }
   val twiddleXImag = Vec.fill(generalConstants.maxRadix - 1) {
-    gen.cloneType
+    gen.cloneType()
   }
 
   // Radix-M requires M-1 twiddle factors
