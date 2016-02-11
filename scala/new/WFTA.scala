@@ -302,18 +302,18 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
 
   // Assign outputs when used
 
-  io.y(0) := y(0).trim(Complex.getFrac)
-  io.y(1) := Mux(r2o,y(5),y(1)).trim(Complex.getFrac)
+  io.y(0) := y(0).trim(gen.getFracWidth)
+  io.y(1) := Mux(r2o,y(5),y(1)).trim(gen.getFracWidth)
   if (maxRad > 2)                                                                                                   // **
-    io.y(2) := (((y(6) ? r3o) | (y(3) ? r4o)) | ((y(5) ? r5o) | (y(2) ? r7o)) | (X0b ? r2o) ).trim(Complex.getFrac)
+    io.y(2) := (((y(6) ? r3o) | (y(3) ? r4o)) | ((y(5) ? r5o) | (y(2) ? r7o)) | (X0b ? r2o) ).trim(gen.getFracWidth)
   if (maxRad > 3)                                                                                                   // **
-    io.y(3) := (((y(2) ? r5o) | (y(3) ? r7o)) | ((y(5) ? r4o) | (X1b ? r2o))).trim(Complex.getFrac)
+    io.y(3) := (((y(2) ? r5o) | (y(3) ? r7o)) | ((y(5) ? r4o) | (X1b ? r2o))).trim(gen.getFracWidth)
   if (maxRad > 4)
-    io.y(4) := ((y(6) ? r5o) | (y(4) ? r7o)).trim(Complex.getFrac)
+    io.y(4) := ((y(6) ? r5o) | (y(4) ? r7o)).trim(gen.getFracWidth)
   if (maxRad > 5)
-    io.y(5) := (y(5) ? r7o).trim(Complex.getFrac)
+    io.y(5) := (y(5) ? r7o).trim(gen.getFracWidth)
   if (maxRad > 6)
-    io.y(6) := (y(6) ? r7o).trim(Complex.getFrac)
+    io.y(6) := (y(6) ? r7o).trim(gen.getFracWidth)
 
   // Total pipeline delay through WFTA butterfly
   val delay = io.getOutDelay-inputDelay

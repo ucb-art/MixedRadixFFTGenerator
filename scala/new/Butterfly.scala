@@ -64,11 +64,11 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) exte
       if (i == 0) e.pipe(twiddleDelay)
       else e * io.twiddles(i-1)
     }
-    temp.trim(Complex.getFrac)
+    temp.trim(gen.getFracWidth)
   }})
 
   wfta.io.x.zipWithIndex.foreach{case (e,i) => {
-    e :=  Mux(io.calcDIT,twiddleMulOut(i),io.x(i)).shortenTo(Complex.getInt)
+    e :=  Mux(io.calcDIT,twiddleMulOut(i),io.x(i)).shortenTo(gen.getIntWidth)
   }}
   io.y.zipWithIndex.foreach{case (e,i) => e := Mux(io.calcDIT,wfta.io.y(i),twiddleMulOut(i))}
 

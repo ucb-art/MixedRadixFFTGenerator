@@ -1078,7 +1078,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
     twiddleArray(i) = twiddleConstants.twiddleConstantsArray(i).transpose
   }
   val twiddleLUT = Vec((0 until twiddleArray.length).map(y => {
-    Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x), gen)).io))
+    Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x).toList, gen)).io))
   }))
   // For each radix, radix-1 twiddle factors being fed to butterfly (1 to radix-1)
 
@@ -1139,12 +1139,15 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
       Complex(gen, gen)
     }
   }))
+
+  // TODO: Rename LUTs
   for (i <- 0 until twiddleArray.length; j <- 0 until twiddleArray(i).length) {
     // i corresponds to particular coprime; j corresponds to which twiddle brought out; all twiddles for particular coprime brought out with same address in
     val DITtwiddleAddr = Count(null, twiddleAddrMax); DITtwiddleAddr := Pipe(twiddleAddrX(i), toAddrBankDly(1) + toMemAddrDly).asInstanceOf[UInt]
     // Twiddles delayed by wftaDly cycles in DIF (multiplication occurs after WFTA)
     val DIFtwiddleAddr = Count(null, twiddleAddrMax); DIFtwiddleAddr := Pipe(DITtwiddleAddr, wftaDly).asInstanceOf[UInt]
-    twiddleLUT(i)(j).addr := muxU(DIFtwiddleAddr, DITtwiddleAddr, calcDITD1)
+    val tempAddr = muxU(DIFtwiddleAddr, DITtwiddleAddr, calcDITD1)
+    twiddleLUT(i)(j).addr := DSPUInt(tempAddr,twiddleLUT(i)(j).addr.getRange.max )
     twiddles(i)(j) := twiddleLUT(i)(j).dout
     debug(twiddles(i)(j))
 
