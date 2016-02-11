@@ -5,7 +5,7 @@ package FFT
 import Chisel._
 import DSP._
 import Count._
-import ChiselDSP.{when => _, Reg => _,_}
+import ChiselDSP.{when => _,_}
 
 class accumulator (bitWidth: Int, resetVal:Int = 0) extends DSPModule {
     

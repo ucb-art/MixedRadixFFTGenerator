@@ -221,6 +221,12 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     //** Starts counting cycle after START_FIRST_FRAME asserted
 
     //traceOn = true
+    val tt = traceOn
+    //traceOn = true
+    //if (peek(c.calcMemChangeCond) == true) Error("blah")
+    //peek(c.io.START_FIRST_FRAME)
+
+    //traceOn = tt
 
     val start_symbol = peek(c.io.FIRST_OUT)					    // k,n = 0 IO
 

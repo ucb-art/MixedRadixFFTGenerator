@@ -13,7 +13,7 @@ import generator._
 
 import scala.reflect.runtime.universe._
 
-import ChiselDSP.{Reg => _, when => _, _}
+import ChiselDSP.{when => _, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 

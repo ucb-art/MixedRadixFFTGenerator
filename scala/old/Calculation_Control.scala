@@ -9,7 +9,7 @@ import generator._
 import DSP._
 import Count._
 import memBanks._
-import ChiselDSP.{Reg => _,when => _, _}
+import ChiselDSP.{when => _, _}
 
 object calc{
   var maxNumStages = 1

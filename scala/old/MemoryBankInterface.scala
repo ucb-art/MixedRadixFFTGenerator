@@ -4,7 +4,7 @@ package FFT
 
 import Chisel.{Complex => _, Mux => _, RegNext => _, RegInit => _, Pipe => _, Mem => _,
 Module => _, ModuleOverride => _, when => _, switch => _, is => _, unless => _, Round => _,  _}
-import ChiselDSP.{Reg =>_,_}
+import ChiselDSP.{_}
 import scala.math._
 import memBanks._
 import schedule._

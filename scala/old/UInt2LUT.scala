@@ -4,7 +4,7 @@
 package FFT 
 
 import Chisel._
-import ChiselDSP.{when => _, Reg => _,_}
+import ChiselDSP.{when => _,_}
 import Node._
 import scala.math._
 
