@@ -17,12 +17,12 @@ object generalConstants{
 
 	// Factorization into coprimes for each FFT length
 	// rows, cols
-	var coprimesArray = Array.ofDim[Int](fftSizes.count,validPrimes.length)
+	var coprimesArray = Array.ofDim[Int](Params.getFFT.nCount,validPrimes.length)
 
 	// If FFT N = 4^a1 * 2^a2 * 3^b * 5^c for validPrimes = [2 3 5] 
 	// then for each N, row has values [a1 a2 b c]
 	// Initialize (not final array size)
-	var numPowerArray = Array.ofDim[Int](fftSizes.count,validPrimes.length)
+	var numPowerArray = Array.ofDim[Int](Params.getFFT.nCount,validPrimes.length)
 		
 	// Max 2^a, 3^b, 5^c power used for determining twiddle memory size, coprime counter sizes needed, etc
 	var maxCoprime = new Array[Int](validPrimes.length)
@@ -58,7 +58,7 @@ object generalConstants{
 	// Returns array containing factor counts
 	def factorize(i:Int) : Array[Int] = {
 		
-		val FFTN:Int = fftSizes.fftSizeArray(i)
+		val FFTN:Int = Params.getFFT.sizes(i)
 		var num:Int = FFTN
 		var factorizationCount = new Array[Int](validPrimes.length)
 		
@@ -95,29 +95,29 @@ object generalConstants{
 
 		// Update sizes based off validPrimes length
  		maxCoprime = new Array[Int](validPrimes.length)
-		coprimesArray = Array.ofDim[Int](fftSizes.count,validPrimes.length)
+		coprimesArray = Array.ofDim[Int](Params.getFFT.nCount,validPrimes.length)
 
 		// Check if radix-4 needed (N%4 = 0)
-		if (fftSizes.fftSizeArray.map(_%4).min == 0){
+		if (Params.getFFT.sizes.map(_%4).min == 0){
 			rad4Used = true
 		}
 
 		// For calculating worst case # of memory banks and memory lengths
-		var maxRadixArray = new Array[Int](fftSizes.count)
+		var maxRadixArray = new Array[Int](Params.getFFT.nCount)
 
 		// Note that powers of 2 are split between powers of 4 [and 2 (if power of two is odd)]
 		// to take advantage of higher radix butterfly only if power of 2 is supported
 		if (pow2SupportedTF && rad4Used){
-			numPowerArray = Array.ofDim[Int](fftSizes.count,validPrimes.length+1)
+			numPowerArray = Array.ofDim[Int](Params.getFFT.nCount,validPrimes.length+1)
 			validRadices = Array(4) ++ validPrimes
 		}
 		else{
-			numPowerArray = Array.ofDim[Int](fftSizes.count,validPrimes.length)
+			numPowerArray = Array.ofDim[Int](Params.getFFT.nCount,validPrimes.length)
 			validRadices = validPrimes
 		}
 
 		// For all FFT sizes
-		for ( i <- 0 to fftSizes.count-1){
+		for ( i <- 0 to Params.getFFT.nCount-1){
 
 			// Number of times values in validPrimes can factor into FFT size
 			val factorizationCount = factorize(i)
@@ -177,9 +177,9 @@ object generalConstants{
 		memoryLengths = new Array[Int](numBanks)
 		// Sort lowest to highest ie. 2,3,4,5
 		val radicesOrdered = validRadices.sorted
-		for (i <- 0 to fftSizes.count-1){
+		for (i <- 0 to Params.getFFT.nCount-1){
 			// Memory length needed for given FFT size
-			val memLenTemp = fftSizes.fftSizeArray(i)/maxRadixArray(i)
+			val memLenTemp = Params.getFFT.sizes(i)/maxRadixArray(i)
 			// Map maximum radix for current FFT size to equivalent location in memoryLengths array if larger than stored value
 			// (Want to find maximum memory required for supporting each radix)
 			if (memLenTemp > memoryLengths(maxRadixArray(i)-1)){
@@ -220,11 +220,11 @@ object generalConstants{
 		// Debug
 		if (verboseTF){
 			println(Console.BLUE + Console.BOLD + s"\nArray of [${numCoprimes}] coprimes for all FFT sizes:")
-			for (i <- 0 to fftSizes.count-1){
+			for (i <- 0 to Params.getFFT.nCount-1){
 				println(Console.RESET + Console.BLUE + coprimesArray(i).mkString("\t"))
 			}
 			println(Console.BLUE + Console.BOLD + "\n\n" + validRadices.mkString("\t") + "\tpower counts for all FFT sizes:")
-			for (i <- 0 to fftSizes.count-1){
+			for (i <- 0 to Params.getFFT.nCount-1){
 				println(Console.RESET + Console.BLUE + numPowerArray(i).mkString("\t"))
 			}
 			println(Console.BLUE + Console.BOLD + "\n\nMaximum coprime values: [" + maxCoprime.mkString(", ") + "]\n")

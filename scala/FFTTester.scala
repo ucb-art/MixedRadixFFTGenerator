@@ -198,7 +198,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     poke(c.io.START_FIRST_FRAME,false)
     // Continue checking for a few counts after full 2x FFT size (slow clk takes twice as long as fast clock) -- both phases
     for (i <- 0 until 5){
-      for (i <- 0 until 2*fftSizes.fftSizeArray(fftIndex)){
+      for (i <- 0 until 2*Params.getFFT.sizes(fftIndex)){
         stepP(1, in1, out1)
       }
     }

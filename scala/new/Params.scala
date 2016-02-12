@@ -51,7 +51,9 @@ case class GeneratorParams(
 case class FFTParams (
   // FFT sizes supported
   sizes: List[Int] = List(2,3,4,5,7)
-)
+){
+  val nCount = sizes.length
+}
 
 /** Parameters for test */
 case class TestParams (

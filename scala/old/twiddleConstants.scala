@@ -19,7 +19,7 @@ object twiddleConstants{
 	var twiddleMemSize:Int = 0
 
 	// Twiddle counter max for each FFT stage for all FFT values
-	var twiddleCountMaxArray = Array.ofDim[Int](fftSizes.count,generalConstants.maxNumStages)
+	var twiddleCountMaxArray = Array.ofDim[Int](Params.getFFT.nCount,generalConstants.maxNumStages)
 
 	// Twiddle count base scale factor to renormalize to full twiddle memory size
 	var RadNTwiddleMulFactorArray = Array.ofDim[Int](generalConstants.validPrimes.length,0)
@@ -36,7 +36,7 @@ object twiddleConstants{
 		}
 
 		// For all FFT sizes, generate twiddle counter
-		for (i <- 0 to fftSizes.count-1){
+		for (i <- 0 to Params.getFFT.nCount-1){
 			
 			// Placeholder
 			var raised:Double = 0
@@ -150,7 +150,7 @@ object twiddleConstants{
 				}
 			}
 			println(Console.BLUE + Console.BOLD + s"\n\nTwiddle Counts for each stage:")
-			for (i <- 0 to fftSizes.count-1){
+			for (i <- 0 to Params.getFFT.nCount-1){
 				println(Console.RESET + Console.BLUE + twiddleCountMaxArray(i).mkString("\t"))
 			}
 			print("\n")

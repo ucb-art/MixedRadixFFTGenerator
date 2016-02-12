@@ -9,13 +9,13 @@ object ioAddressConstants{
 	// See GMR paper
 	// For each FFT size, get necessary q' values for input/output
 	// Because q' is derived from "grouping" coprimes, there are (# of coprimes -1) groups
-	var qDIFiArray = Array.ofDim[Int](fftSizes.count,generalConstants.numCoprimes-1)
-	var qDIFoArray = Array.ofDim[Int](fftSizes.count,generalConstants.numCoprimes-1)
+	var qDIFiArray = Array.ofDim[Int](Params.getFFT.nCount,generalConstants.numCoprimes-1)
+	var qDIFoArray = Array.ofDim[Int](Params.getFFT.nCount,generalConstants.numCoprimes-1)
 	var dec2xAryArray = Array.ofDim[Int](generalConstants.validPrimes.length,0,0)
 
 	// Generate constants
 	def generate(verboseTF:Boolean) : Unit = {
-		for (i <- 0 to fftSizes.count-1){
+		for (i <- 0 to Params.getFFT.nCount-1){
 			// Calculate q' values from coprimes of FFT N
 			val coprimeFactors = generalConstants.coprimesArray(i)
 			qDIFiArray(i) = qCalculate(coprimeFactors)
@@ -42,11 +42,11 @@ object ioAddressConstants{
 		// Debug
 		if (verboseTF){
 			println(Console.BLUE + Console.BOLD + s"\nDIF Q' In:")
-			for (i <- 0 to fftSizes.count-1){
+			for (i <- 0 to Params.getFFT.nCount-1){
 				println(Console.RESET + Console.BLUE + qDIFiArray(i).mkString("\t"))
 			}
 			println(Console.BLUE + Console.BOLD + "\n\nDIF Q' Out:")
-			for (i <- 0 to fftSizes.count-1){
+			for (i <- 0 to Params.getFFT.nCount-1){
 				println(Console.RESET + Console.BLUE + qDIFoArray(i).mkString("\t"))
 			}
 

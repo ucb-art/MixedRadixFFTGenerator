@@ -26,7 +26,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     // FFT_INDEX and FFT will be registered on the next rising clock edge
     // FFT = true -> FFT calculation; FFT = false -> IFFT calculation
     val SETUP_INIT = Bool(INPUT)
-    val FFT_INDEX = UInt(INPUT, width = Helper.bitWidth(fftSizes.count - 1))
+    val FFT_INDEX = UInt(INPUT, width = Helper.bitWidth(Params.getFFT.nCount - 1))
     val FFT = Bool(INPUT)
 
     // SETUP_DONE = true -> Ready to take FFT data
@@ -54,7 +54,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // Register inputs to FFT module
   // clk 1
-  val fftIndex = Reg(UInt(width = Helper.bitWidth(fftSizes.count - 1)))
+  val fftIndex = Reg(UInt(width = Helper.bitWidth(Params.getFFT.nCount - 1)))
   val fftTF = Reg(Bool())
   when(io.SETUP_INIT === Bool(true)) {
     fftIndex := io.FFT_INDEX
@@ -350,7 +350,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   }
   // poor man's pipeD
   val twiddleSubCountMax = Vec.fill(coprimesColCount) {
-    Reg(UInt(width = Helper.bitWidth(fftSizes.fftSizeArray.max)))
+    Reg(UInt(width = Helper.bitWidth(Params.getFFT.sizes.max)))
   }
   for (i <- coprimesColCount - 1 to 0 by -1) {
     if (i == coprimesColCount - 1) {
@@ -360,7 +360,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
       twiddleSubCountMaxTemp(coprimesColCount - 2) := coprimes(coprimesColCount - 1)
     }
     else if (i == 0) {
-      val tt = UInt(twiddleSubCountMaxTemp(i + 1) * coprimes(i + 1), width = Helper.bitWidth(fftSizes.fftSizeArray.max))
+      val tt = UInt(twiddleSubCountMaxTemp(i + 1) * coprimes(i + 1), width = Helper.bitWidth(Params.getFFT.sizes.max))
       twiddleSubCountMaxTemp(i) := tt //pipeD(tt,1).asInstanceOf[UInt]
     }
     else {
@@ -1034,7 +1034,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val twiddleAddrMax = 2000
 
   val twiddleCountMaxUsed = UInt(twiddleCount(currentStage), width = maxTwiddleCountBitWidth)
-  val twiddleSubCountMaxUsed = UInt(width = Helper.bitWidth(fftSizes.fftSizeArray.max))
+  val twiddleSubCountMaxUsed = UInt(width = Helper.bitWidth(Params.getFFT.sizes.max))
   // Note for subcount, power of 2 is default.
   // Power of 2 includes radix 4. Also note that when calculating
   // for the radix-2 stage, the overall twiddle count should be 0,
@@ -1052,7 +1052,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   // Non-scaled twiddle counters
   // Subcounter to handle coprimes (holds main count value)
   // Counter to deal with current coprime
-  val twiddleSubCounter = Module(new accumulator(Helper.bitWidth(fftSizes.fftSizeArray.max))).io
+  val twiddleSubCounter = Module(new accumulator(Helper.bitWidth(Params.getFFT.sizes.max))).io
   val twiddleCounter = Module(new accumulator(maxTwiddleCountBitWidth)).io
   val twiddleSubCounterWrap = (twiddleSubCounter.out === twiddleSubCountMaxUsed)
   val twiddleCounterWrap = (twiddleCounter.out === twiddleCountMaxUsed)

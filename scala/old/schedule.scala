@@ -110,7 +110,7 @@ object schedule{
 		}
 
 		// Iterate through all valid FFT sizes
-		for (idx <- 0 until fftSizes.count){
+		for (idx <- 0 until Params.getFFT.nCount){
 			initializeN(idx,BFcycles,SPTF,verboseTF2)			
 		}
 		
@@ -149,12 +149,12 @@ object schedule{
 		// Test schedule
 
 val FFTN:Int = 12500
-var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
+var idx:Int = Params.getFFT.sizes.indexOf(FFTN)
 
 
-		for (idx <- 0 until fftSizes.count){
+		for (idx <- 0 until Params.getFFT.nCount){
 			if (verboseTF){
-				println(Console.BLUE + Console.BOLD + "\nTesting schedule for FFTN = "+fftSizes.fftSizeArray(idx))
+				println(Console.BLUE + Console.BOLD + "\nTesting schedule for FFTN = "+Params.getFFT.sizes(idx))
 			}
 			test(idx,1,verboseTF)
 			test(idx,2,verboseTF)
@@ -205,7 +205,7 @@ var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
 		// For 1 butterfly
 		val extraCycles:Int = (stageCount-1) + overlap 
 		var cycleCnt1BF:Int = 0//extraCycles
-		val FFTN:Int = fftSizes.fftSizeArray(idx)
+		val FFTN:Int = Params.getFFT.sizes(idx)
 		for (i <- 0 until radixStages.length){
 			val r:Double = radixStages(i).toDouble
 			cycleCnt1BF = cycleCnt1BF + (BFcycles-overlap)*(FFTN/r).ceil.toInt
@@ -327,7 +327,7 @@ var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
 		}
 
 		// Go through all FFT sizes to figure out what is the worst case memory length needed for each bank
-		for (i <- 0 until fftSizes.count){
+		for (i <- 0 until Params.getFFT.nCount){
 			var banks:Int = 0
 			var memLen:Int = 0
 			if (SPTF){
@@ -373,7 +373,7 @@ var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
 		memBankLenArray = new Array[Int](maxbanks)
 
 		// Go through all FFT sizes to figure out what is the worst case memory length needed for each bank
-		for (i <- 0 until fftSizes.count){
+		for (i <- 0 until Params.getFFT.nCount){
 			var banks:Int = 0
 			var memLen:Int = 0
 
@@ -409,7 +409,7 @@ var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
 			printf("\t[Radix Stages]\n")
 		}
 
-		for(i <- 0 until fftSizes.count){
+		for(i <- 0 until Params.getFFT.nCount){
 			// Get leftover radices used after 1 element = max radix is removed from the list
 			// New # of banks = max radix * (one of the leftover radices) to keep FFTN divisible by # of banks (minimize wasted memory slots)
 			var temp:List[Int] = remove(radixStagesArray(i),maxRadixArray(i)).distinct.sorted
@@ -431,7 +431,7 @@ var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
 					}	
 				}
 				else{
-					println(Console.RED + Console.BOLD + "\nUpdate to generator needed to complete calculation in N cycles (if possible) for N = "+fftSizes.fftSizeArray(i)+". Currently, # of banks for a given FFTN = maxRadix * (A prime factor of {FFTN/maxRadix}).\n")
+					println(Console.RED + Console.BOLD + "\nUpdate to generator needed to complete calculation in N cycles (if possible) for N = "+Params.getFFT.sizes(i)+". Currently, # of banks for a given FFTN = maxRadix * (A prime factor of {FFTN/maxRadix}).\n")
 					exit()
 				}
 			}
@@ -475,7 +475,7 @@ var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
 
 			reorderedRadixStagesArray = reorderedRadixStagesArray :+ radixStages
 
-			val FFTN:Int = fftSizes.fftSizeArray(i)
+			val FFTN:Int = Params.getFFT.sizes(i)
 			val maxRadix = maxRadixArray(i)
 
 			var numBanks:Int = 0
@@ -530,7 +530,7 @@ var idx:Int = fftSizes.fftSizeArray.indexOf(FFTN)
 		val lastRadix:Int = radixStages.last
 		val numBFs:Int = optBFNumArray(idx)
 
-		val FFTN:Int = fftSizes.fftSizeArray(idx)
+		val FFTN:Int = Params.getFFT.sizes(idx)
 
 		// Go through default scheduling if first pass (normal routine assuming scheduling works)
 		if (pass == 1){
