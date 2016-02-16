@@ -24,6 +24,9 @@ object Main {
         overflowType  = Grow,
         mulFracGrowth = 3
       ),
+      clock = ClockParams(
+        periodx100ps  = 39
+      ),
       fft = FFTParams(
         sizes   = List(3,4,5,16,2048)
       ),

@@ -9,6 +9,9 @@
     "overflowType":"Grow",
     "mulFracGrowth":3
   },
+  "clock":{
+    "periodx100ps":39
+  },
   "fft":{
     "sizes":[2,4,3,5,7]
   },

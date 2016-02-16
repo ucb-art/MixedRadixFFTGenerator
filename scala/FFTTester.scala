@@ -4,28 +4,19 @@ package FFT
 import ChiselDSP._
 import Chisel.{Complex => _, _}
 
-/** Module tester that allows switching between fixed and floating point testing */
 class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
+  // Don't display peeks, pokes, etc.
   traceOn = false
   // Set tolerance for comparing expected values
   DSPTester.setTol(floTol = 0.00000001,fixedTol = (Complex.getFrac/3).toInt)
   runAll()
-
-  // TEST Pull
-
-
-  //runTo(60)
-  //run(24)
-  //List(2,5).foreach{run(_)}
-  ////////////////////////////////////////////////////////////////////////
 
   /** Run all tests for all FFTNs */
   def runAll() : Unit = runTo(Params.getFFT.sizes.last)
 
   /** Run for all FFT sizes until (and including) N */
   def runTo(n: Int): Unit = {
-    reset()
     val sizes = Params.getFFT.sizes
     val idx = sizes.indexOf(n)
     for (i <- 0 to idx) run(sizes(i))
@@ -34,111 +25,35 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   /** Run tests for desired FFTN */
   def run(n: Int) : Unit = {
     Tracker.reset(n)
-    if (traceOn) Status("FFTN = " + n)
+    Status("FFTN = " + n)
     stepThrough(n)
   }
 
+
+
+
+
+
+
+
   /** Step through test vectors for FFTN */
   def stepThrough(n: Int): Unit = {
+
     val idxN = Params.getFFT.sizes.indexOf(n)
     if (idxN < 0) Error("FFTN is not included in this generated output")
     val inVec = TestVectors.getIn(idxN)
     val outVec = TestVectors.getOut(idxN)
-
-    //println(inVec)
-    //println(outVec)
-    // TODO: Clean
     testFFTNio(idxN, fftTF = true, inVec,outVec)
-    /*
-    butterflyTest(inVec,outVec,calcDIT=true)
-    butterflyTest(inVec,outVec,calcDIT=false)
-    testMem(inVec)
-    */
-  }
-
-  /** Test full butterfly (DIT/DIF) */
-  /*
-  def butterflyTest(inVec: List[ScalaComplex],outVec: List[ScalaComplex], calcDIT: Boolean): Unit = {
-    val peIO = c.io
-    poke(peIO.calcDIT,calcDIT)
-    if (Tracker.FFTN <= Params.getBF.rad.max){
-      val radIdx = Params.getBF.rad.indexOf(Tracker.FFTN)
-      // # of twiddles is 1 less than radix
-      for ( i <- 0 until Tracker.FFTN-1) poke(peIO.twiddles(i),TestVectors.twiddles(i))
-      // Don't need a current radix flag if only 1 radix is used
-      if (Params.getBF.rad.length > 1) poke((peIO.currRad.get)(radIdx),true)
-      // Butterfly input
-      for ( i <- 0 until Tracker.FFTN) poke(peIO.x(i),inVec(i))
-      // DIT: twiddle multiplication output (into WFTA module)
-      val twiddleOutDIT = (0 until Tracker.FFTN).map(i => {
-        if (i == 0) inVec(i)
-        else inVec(i) * TestVectors.twiddles(i-1)
-      })
-      val outDIT = TestVectors.populateOut(twiddleOutDIT.toList,Tracker.FFTN)
-      // Wait pipeline delay
-      step(c.pe.delay)
-      for ( i <- 0 until Tracker.FFTN) {
-        val expectedOut = {
-          // DIT
-          if (calcDIT) outDIT(i)
-          // DIF
-          else if (i == 0) outVec(i)
-          else outVec(i) * TestVectors.twiddles(i-1)
-        }
-        expect(peIO.y(i), expectedOut, test = Tracker.FFTN.toString, error = "FFT out wrong")
-      }
-      if (Params.getBF.rad.length > 1) poke((peIO.currRad.get)(radIdx),false)
-    }
-  }
-  */
-
-  /** Test memory interface is expected */
-  /*
-  def testMem(inVec: List[ScalaComplex]): Unit = {
-
-    val memIO = c.memIO
-    if (c.mem.conflictHandling) poke(memIO.passThrough.get,true)
-    for ( i <- 0 until Tracker.FFTN) {
-      poke(memIO.dIn,inVec(i))
-      poke(memIO.wAddr,i)
-      poke(memIO.rAddr,i)
-      poke(memIO.WE,true)
-      // Sequential write (takes 1 clock cycle)
-      step()
-      // Peek inside memory
-      peekAt(c.mem.mem,i)
-      // Check that read/write conflict resolves itself
-      expect(memIO.dOut,inVec(i), test = Tracker.FFTN.toString, error = "Mem Test R/W Conflict Failed")
-      val j = (i-1).max(0)
-      poke(memIO.rAddr,j)
-      // Sequential read (takes 1 clock cycle)
-      step()
-      expect(memIO.dOut,inVec(j), test = Tracker.FFTN.toString, error = "Mem Test Failed")
-    }
 
   }
-  */
 
-  /** Peek butterfly internal signals */
-  /*
-  def peekWFTA(): Unit = {
-    val wfta = c.pe.wfta
-    for (i <- 0 until wfta.io.x.length) peek(wfta.io.x(i))
-    for (i <- 0 until wfta.x.length) peek(wfta.x(i))
-    for (i <- 0 until wfta.n0.length) peek(wfta.n0(i))
-    for (i <- 0 until wfta.n1.length) peek(wfta.n1(i))
-    for (i <- 0 until wfta.n2.length) peek(wfta.n2(i))
-    for (i <- 0 until wfta.n3.length) peek(wfta.n3(i))
-    for (i <- 0 until wfta.n4.length) peek(wfta.n4(i))
-    for (i <- 0 until wfta.n5.length) peek(wfta.n5(i))
-    for (i <- 0 until wfta.n6.length) peek(wfta.n6(i))
-    for (i <- 0 until wfta.y.length) peek(wfta.y(i))
-    for (i <- 0 until wfta.io.y.length) peek(wfta.io.y(i))
-    step()
-  }
-  */
 
-  // TODO: Uncomment + clear below
+
+
+
+
+
+
 
 
 
@@ -209,24 +124,40 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   }
 
 
-  // Always peek signals before stepping
-  def stepP(num:Int, in1:List[ScalaComplex],out1:List[ScalaComplex]){
 
-    // Every other time function is executed, change input data (IO "clock" slow)
-    val stepInC:Int = (Tracker.inStep)
-    val indexIn:Int = math.floor(stepInC/2).toInt
+
+
+
+
+
+
+  // Always peek signals before stepping
+    def stepP(num:Int, in1:List[ScalaComplex],out1:List[ScalaComplex]){
+
+      // Every other time function is executed, change input data (IO "clock" slow)
+      val stepInC:Int = (Tracker.inStep)
+      val indexIn:Int = math.floor(stepInC/2).toInt
     val in = in1(indexIn)
     poke(c.io.DATA_IN, in)
 
     //** Starts counting cycle after START_FIRST_FRAME asserted
 
-    //traceOn = true
-    val tt = traceOn
-    //traceOn = true
-    //if (peek(c.calcMemChangeCond) == true) Error("blah")
-    //peek(c.io.START_FIRST_FRAME)
 
-    //traceOn = tt
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     val start_symbol = peek(c.io.FIRST_OUT)					    // k,n = 0 IO
 
@@ -234,6 +165,10 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
       println("/////////////////////////// k = 0 Symbol Start ///////////////////////////")
       Tracker.outValid = true							// Output valid
     }
+
+
+
+
     Tracker.startSymbol = start_symbol  // Save old value
 
 

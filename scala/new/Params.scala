@@ -43,9 +43,10 @@ object Params {
 /** Composition of generator parameters (with default values!) -> should be in JSON file */
 case class GeneratorParams(
   complex: ComplexParams = ComplexParams(),
+  clock: ClockParams = ClockParams(),
   fft: FFTParams = FFTParams(),
   test: TestParams = TestParams()
-) extends JSONParams(complex)
+) extends JSONParams(complex,clock)
 
 /** Tuning knobs for the FFT generator */
 case class FFTParams (
