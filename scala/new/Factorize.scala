@@ -1,6 +1,6 @@
 package FFT
 import scala.math._
-import Chisel.Error
+import ChiselDSP.Error
 
 object Factorize {
 

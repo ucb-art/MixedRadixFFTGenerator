@@ -20,7 +20,7 @@
 package FFT
 import scala.math._
 import scala.util.control.Breaks._
-import Chisel.Error
+import ChiselDSP.Error
 
 object schedule{
 
