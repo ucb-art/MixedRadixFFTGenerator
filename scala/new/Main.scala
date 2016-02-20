@@ -28,7 +28,7 @@ object Main {
         periodx100ps  = 39
       ),
       fft = FFTParams(
-        sizes   = List(3,4,5,16,2048)
+        sizes   = List(2,3,5,16)
       ),
       test = TestParams(
         frames  = 8

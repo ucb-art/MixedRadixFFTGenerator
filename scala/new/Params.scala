@@ -77,7 +77,9 @@ case class IOParams (
   // Factorization into coprimes for each FFT length
   var coprimes:List[List[Int]] = List.fill(10)(List(2,3,5)),
   // Maximum 2^a,3^b,5^c used to support all generator sizes
-  var maxCoprimes: List[Int] = List(2,3,5)
+  var maxCoprimes: List[Int] = List(2,3,5),
+  // Ratio of fast clock (Calculation) to slow clock (IO) frequencies
+  var clkRatio: Int = 2
 )
 
 case class CalcParams (
