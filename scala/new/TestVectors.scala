@@ -1,4 +1,4 @@
-// TODO: IFFT, don't repeat same frame
+// TODO: IFFT
 
 package FFT
 import scala.math._
@@ -6,6 +6,12 @@ import scala.util.Random
 import ChiselDSP._
 
 object TestVectors{
+
+  // Config for random tests vs. mostly tones (only for non base radix FFTs)
+  var randomTests = true
+
+  // Minimum absolute value of expected outputs
+  var outAbsMin: List[Double] = List()
 
   private var in:List[List[ScalaComplex]] = List(List())
   private var out:List[List[ScalaComplex]] = List(List())
@@ -42,6 +48,9 @@ object TestVectors{
     val (i,o) = (for (e <- sizes) yield {apply(e,frames)}).unzip
     in = i
     out = o
+    outAbsMin = o.map(
+      _.map(x => math.abs(x.real).min(math.abs(x.imag))).min
+    )
   }
 
   /** Create list of inputs */
@@ -55,15 +64,30 @@ object TestVectors{
         }
       }
     }
-    // Larger FFT sizes
-    else{
+    // Larger tonal FFT sizes
+    else if (!randomTests){
       for (i <- 0 until FFTN){
         val r1 = (reala,realf).zipped.map( (a,f) => a*sin(2*Pi*f*i))
         val r2 = r1.foldLeft(0.0001+i.toDouble/FFTN/100)(_ + _)
         inProto = inProto :+ Complex(r2 + 0.001*Random.nextGaussian,0.04*Random.nextGaussian)
       }
     }
+    // Larger random tests
+    else {
+      // Offset processing gain (assume ADC output has fewer bits than FFT output)
+      val outRange = DSPFixed.toRange(DSPFixed.paramsToWidth(Complex.getFixedParams))
+      val std = DSPFixed.toDouble(outRange._1.abs.max(outRange._2.abs),Complex.getFrac)/FFTN
+      inProto = Array.fill(FFTN)(Complex(clamp(std*Random.nextGaussian,std),clamp(std*Random.nextGaussian,std)))
+    }
     inProto.toList
+  }
+
+  /** Restrict range */
+  def clamp(in:Double, absMax:Double): Double = {
+    val min = -1*absMax
+    val temp = if (in > absMax) absMax else if (in < min) min else in
+    // Restricts underflow
+    if (math.abs(temp) < math.pow(2,-1*Complex.getFrac)) 0.0 else temp
   }
 
   /** Create list of outputs */
@@ -86,12 +110,27 @@ object TestVectors{
 
   /** Create test vectors for particular FFTN */
   def apply(FFTN : Int, frames: Int) : Tuple2[List[ScalaComplex],List[ScalaComplex]] = {
-    val inProto = populateIn(FFTN)
-    val outProto = populateOut(inProto,FFTN)
-    // Repeat for specified # of frames
-    val inN = List.fill(frames)(inProto).flatten
-    val outN = List.fill(frames)(outProto).flatten
-    (inN,outN)
+    // Each frame is different; consists of random symbols
+    if (randomTests){
+      var inArray = Array.empty[List[ScalaComplex]]
+      var outArray = Array.empty[List[ScalaComplex]]
+      for (i <- 0 until frames){
+        val inProto = populateIn(FFTN)
+        val outProto = populateOut(inProto, FFTN)
+        inArray = inArray :+ inProto
+        outArray = outArray :+ outProto
+      }
+      (inArray.toList.flatten,outArray.toList.flatten)
+    }
+    // Each frame is the same; consists of tones
+    else {
+      val inProto = populateIn(FFTN)
+      val outProto = populateOut(inProto, FFTN)
+      // Repeat for specified # of frames
+      val inN = List.fill(frames)(inProto).flatten
+      val outN = List.fill(frames)(outProto).flatten
+      (inN, outN)
+    }
   }
 
 }

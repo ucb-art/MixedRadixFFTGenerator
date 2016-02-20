@@ -15,8 +15,8 @@ object Main {
     // Local generator params. Can use this instead of JSON values for design sweeps or Scala based parameter generation
     val defaultGenParams = GeneratorParams(
       complex = ComplexParams(
-        intBits       = 16,
-        fracBits      = 32,
+        intBits       = 1,
+        fracBits      = 14,
         use4Muls      = true,
         mulPipe       = 1,
         addPipe       = 0.0,
@@ -28,10 +28,11 @@ object Main {
         periodx100ps  = 39
       ),
       fft = FFTParams(
-        sizes   = List(2,3,5,16)
+        sizes   = List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
+                       60,120,240,480,960,180,360,720,300,600,1200,540,1080,900)
       ),
       test = TestParams(
-        frames  = 8
+        frames  = 5
       )
     )
 
