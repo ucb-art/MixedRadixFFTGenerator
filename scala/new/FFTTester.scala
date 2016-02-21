@@ -143,8 +143,9 @@ object Tracker {
     val idx = Params.getFFT.sizes.indexOf(n)
     val dblTol = TestVectors.outAbsMin(idx)
     // Set tolerance for comparing expected values
-    val fixedTol = (DSPFixed.toFixed(dblTol,Complex.getFrac).bitLength-Complex.getFrac/3).max(1)
-    DSPTester.setTol(floTol = (0.00000001).max(dblTol/n/1000),
+    // val fixedTol = (DSPFixed.toFixed(dblTol,Complex.getFrac).bitLength-2).max(1)
+    val fixedTol = Complex.getFrac/2
+    DSPTester.setTol(floTol = (0.00000001).max(dblTol/n/10000),
                      fixedTol = fixedTol)
 
     firstSymbol = false

@@ -16,13 +16,13 @@ object Main {
     val defaultGenParams = GeneratorParams(
       complex = ComplexParams(
         intBits       = 1,
-        fracBits      = 14,
+        fracBits      = 30,
         use4Muls      = true,
         mulPipe       = 1,
         addPipe       = 0.0,
         trimType      = Truncate,
         overflowType  = Grow,
-        mulFracGrowth = 3
+        mulFracGrowth = 4
       ),
       clock = ClockParams(
         periodx100ps  = 39

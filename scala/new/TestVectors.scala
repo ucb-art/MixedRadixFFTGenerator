@@ -76,22 +76,39 @@ object TestVectors{
     else {
       // Offset processing gain (assume ADC output has fewer bits than FFT output)
       val outRange = DSPFixed.toRange(DSPFixed.paramsToWidth(Complex.getFixedParams))
-      val std = DSPFixed.toDouble(outRange._1.abs.max(outRange._2.abs),Complex.getFrac)/FFTN
-      inProto = Array.fill(FFTN)(Complex(clamp(std*Random.nextGaussian,std),clamp(std*Random.nextGaussian,std)))
+      val std = DSPFixed.toDouble((outRange._1.abs).max(outRange._2.abs),Complex.getFrac)
+      inProto = Array.fill(FFTN)(Complex(
+        clamp(std/FFTN*Random.nextGaussian,std/FFTN),
+        clamp(std/FFTN*Random.nextGaussian,std/FFTN)
+      ))
     }
     inProto.toList
   }
 
-  /** Restrict range */
+  /** Restrict range, min absolute value */
   def clamp(in:Double, absMax:Double): Double = {
     val min = -1*absMax
     val temp = if (in > absMax) absMax else if (in < min) min else in
-    // Restricts underflow
-    if (math.abs(temp) < math.pow(2,-1*Complex.getFrac)) 0.0 else temp
+    // Restricts underflow (IMPORTANT! when comparing w/ double-precision calculated FFT --
+    // that input needs to be rounded)
+    val sigFrac = 1 << (Complex.getFrac/1.5).toInt
+    Math.round(temp * sigFrac).toDouble / sigFrac
   }
 
   /** Create list of outputs */
   def populateOut(inProto: List[ScalaComplex], FFTN: Int) : List[ScalaComplex] = {
+
+    import breeze.signal._
+    import breeze.linalg.DenseVector
+    import breeze.math.Complex
+
+    // Using Breeze FFT Cooley Tukey instead of slow DFT == WIN!
+
+    val breezeIn = DenseVector(inProto.map(x => breeze.math.Complex(x.real,x.imag)).toArray)
+    val breezeOut = fourierTr(breezeIn)
+    breezeOut.map(x => ChiselDSP.Complex(x.real,x.imag)).toArray.toList
+
+/*
     var outProto = Array.fill(FFTN){Complex(0.0,0.0)}
     // Direct (inefficient) FFT calculation
     // exp(ix) = cos(x) + i*sin(x)
@@ -106,6 +123,8 @@ object TestVectors{
       outProto(k).imag = outProto(k).imag + ii * c + ir * s
     }
     outProto.toList
+*/
+
   }
 
   /** Create test vectors for particular FFTN */
