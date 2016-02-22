@@ -90,7 +90,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
       // Checks when k = 0 is output (Detects transition to first symbol) & dumps input
       if (i == 0) {
         poke(c.io.DATA_IN, inVal)
-        val firstOut = peek(c.io.FIRST_OUT)
+        val firstOut = peek(c.io.FRAME_FIRST_OUT)
         if (firstOut && !Tracker.firstSymbol) {
           Status("///////////////////////////////////////// FRAME = %d, K = 0".format(Tracker.frameNum))
           // Streaming output valid after start of first output symbol detected
@@ -101,9 +101,9 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
         Tracker.firstSymbol = firstOut
       }
       else{
-        // FIRST_OUT should be held for clkRatio calc clk cycles if true
-        if (firstOutValid) expect(c.io.FIRST_OUT,true)
-        else expect(c.io.FIRST_OUT,false)
+        // FRAME_FIRST_OUT should be held for clkRatio calc clk cycles if true
+        if (firstOutValid) expect(c.io.FRAME_FIRST_OUT,true)
+        else expect(c.io.FRAME_FIRST_OUT,false)
       }
       // Read output if valid & check for error
       if (Tracker.outValid){

@@ -61,3 +61,12 @@ Detailed Timing Diagram
 - Hardware setup done (output, 1 IO clock) is in **purple**.
 - First input symbol (input, 1 IO clock) is in **pink**.
 - First output symbol of each output frame (output, 1 IO clock) is in **green**.
+
+> **Note**: The output symbols between **io_SETUP_INIT** assertion and the first subsequent**io_FRAME_FIRST_OUT** (following **io_SETUP_DONE** assertion) assertion should not be considered valid.
+
+
+
+
+
+
+

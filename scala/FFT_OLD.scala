@@ -39,7 +39,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     // Note that after the 1st symbol has been streamed to the FFT block,
     // the corresponding FFT output begins at the start of the 3rd input symbol
     // (lags a full symbol - 1 cycle for input, 1 cycle for calculation, starts outputting on 3rd cycle)
-    val FIRST_OUT = Bool(OUTPUT)
+    val FRAME_FIRST_OUT = Bool(OUTPUT)
 
     //val DATA_IN = new Complex(SInt(width = SDR_FFT.dataBitWidth),SInt(width = SDR_FFT.dataBitWidth)).asInput
     //val DATA_OUT = new Complex(SInt(width = SDR_FFT.dataBitWidth),SInt(width = SDR_FFT.dataBitWidth)).asOutput
@@ -1341,7 +1341,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~io.START_FIRST_FRAME)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
   val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~io.START_FIRST_FRAME)
   val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~io.START_FIRST_FRAME)							// Flag needs to be 2 fast clock cycles long
-  io.FIRST_OUT := ~io.START_FIRST_FRAME & Pipe((firstDataFlagD3	| firstDataFlagD4) && ~io.START_FIRST_FRAME,seqRdDly).asInstanceOf[Bool]													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
+  io.FRAME_FIRST_OUT := ~io.START_FIRST_FRAME & Pipe((firstDataFlagD3	| firstDataFlagD4) && ~io.START_FIRST_FRAME,seqRdDly).asInstanceOf[Bool]													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
 
 
   val currentRadixD3 = Reg(next = currentRadixD2)
