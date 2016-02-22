@@ -161,9 +161,13 @@ class calc extends DSPModule {
   // WE should be disabled (don't use results from stale data). @ First stage, set stallCount to max = pipeBFWriteDly-->
   // when stallCount is maxed, count change is enabled. 
 
-  val stallCounter = DSPModule( new accumulator(bw(pipeBFWriteDly),pipeBFWriteDly) ).io
+  val stallCounter = DSPModule( new accumulator(bw(pipeBFWriteDly),pipeBFWriteDly), nameExt = "blah" ).io
   val stallCount = stallCounter.out
-  val stallWrapCond = (stallCount === Count(pipeBFWriteDly))
+  val const = Count(pipeBFWriteDly)
+
+  println("sss" + stallCounter.out.getWidth + "," + const.getWidth)
+
+  val stallWrapCond = (stallCount === const)
   // After calculation done, stay at max value until end of first stage
   val stallChangeCond = ~stallWrapCond | (stageChangeCond & ~calcDoneChangeCond & ~calcDoneFlag) 
   stallCounter.inc := Count(1)
@@ -180,6 +184,12 @@ class calc extends DSPModule {
     calcCounters(i).globalReset := calcResetCond              // Reset counts to 0 when starting new FFT calculation 
     calcCounters(i).wrapCond := calcCountWrap(i)              // Wrap counter when reached max value
     calcn(i) := calcCounters(i).out
+
+
+    println("getw" + calcn(i).getWidth + "," + calcCounters(i).out.getWidth)
+    println("needw" + calcn(i).needWidth + "," + calcCounters(i).out.needWidth)
+
+
   }
 
   when(startFirstFrame){                              // Always start DIF (priority reset)
