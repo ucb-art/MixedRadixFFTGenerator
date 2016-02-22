@@ -25,7 +25,7 @@ object Main {
         mulFracGrowth = 4
       ),
       clock = ClockParams(
-        periodx100ps  = 39
+        periodx100ps  = Math.floor(162.76).toInt
       ),
       fft = FFTParams(
         sizes   = List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,

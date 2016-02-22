@@ -74,7 +74,7 @@ object TestVectors{
     }
     // Larger random tests
     else {
-      // Offset processing gain (assume ADC output has fewer bits than FFT output)
+      // Assume FFT input has fewer significant bits than FFT output
       val outRange = DSPFixed.toRange(DSPFixed.paramsToWidth(Complex.getFixedParams))
       val std = DSPFixed.toDouble((outRange._1.abs).max(outRange._2.abs),Complex.getFrac)
       inProto = Array.fill(FFTN)(Complex(
