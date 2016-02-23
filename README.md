@@ -60,7 +60,7 @@ Detailed Timing Diagram
 - FFT/IFFT setup configuration (input, 1 IO clock) is in **blue**.
 - Hardware setup done (output, 1 IO clock) is in **purple**.
 - First input symbol (input, 1 IO clock) is in **pink**.
-- First output symbol of each output frame (output, 1 IO clock) is in **green**.
+- First output symbol of each output frame (output, 1 IO clock) is in **green**. Note that for *N=12*, there are 12 symbols per frame (as indicated by the timing diagram).
 
 > **Note #1**: The output symbols between **io_SETUP_INIT** assertion and the first subsequent **io_FRAME_FIRST_OUT** (following **io_SETUP_DONE** assertion) assertion should not be considered valid.
 >
