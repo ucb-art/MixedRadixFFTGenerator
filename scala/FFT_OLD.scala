@@ -579,6 +579,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map { case (e, i) => {
     val iChange = if (e != ioIncCounters.last) ioIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
     e.iCtrl.change := iChange
+
+    // already delay 1
     e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
@@ -624,6 +626,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val colLengths = iDIFtemp1.map(x => x.length).max
   val iDIFtemp = Vec(iDIFtemp1.map(x => {
     val set = x.map(y => {
+      // delay 2 (calc clk)
       y.reg()
     })
     BaseN(set, x.rad).padTo(colLengths)
