@@ -64,4 +64,10 @@ Detailed Timing Diagram
 
 > **Note #1**: The output symbols between **io_SETUP_INIT** assertion and the first subsequent **io_FRAME_FIRST_OUT** (following **io_SETUP_DONE** assertion) assertion should not be considered valid.
 >
-> **Note #2**: Timing diagram was modified from [Xilinx](http://www.xilinx.com) simulator waveform.
+> **Note #2**: The Frame 1 output (k=0) will start streaming approximately (slightly later, depending on the amount of pipelining used) 2 frames after the Frame 1 input (n=0) started streaming. *Do not* count cycles when writing external control logic. Use the **io_FRAME_FIRST_OUT** flag to properly locate valid output.
+>
+> **Note #3**: Verilog validation with **tb.v** should be performed post-synthesis, given the particular platform you're on. The timing requirements of the memory you desire (ASIC SRAM, FPGA BRAM, FPGA Distributed RAM) may differ and cause testbench failure. You might need to readjust memory access pipelining (specifically memory read) accordingly.
+>
+> **Note #4**: Always synchronize to the slow IO clock rising edge (not the fast calculation clock) to guarantee correctness!
+>
+> **Note #5**: Timing diagram was modified from [Xilinx](http://www.xilinx.com) simulator waveform.

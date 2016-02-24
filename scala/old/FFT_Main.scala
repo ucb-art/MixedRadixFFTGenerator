@@ -24,22 +24,21 @@ object FFTGenerator {
     // True: minimize # of banks
     val minBankTF: Boolean = true
 
-      // Generate constants used by Chisel for desired FFT sizes
-      generalConstants.generate(validPrimesOverride,true)
+    // Generate constants used by Chisel for desired FFT sizes
+    generalConstants.generate(validPrimesOverride,true)
 
-      schedule.generate(Bcycles,SPTF,minBankTF,false) //verboseTF)
+    schedule.generate(Bcycles,SPTF,minBankTF,false) //verboseTF)
 
-      ioAddressConstants.generate(true)
-      twiddleConstants.generate(false)
-      updateMemConstants(generalConstants.numBanks,generalConstants.memoryLengths)
-      maxNumStages = generalConstants.maxNumStages
-      stageBranch = generalConstants.stageBranch
-      val numPowerArray = generalConstants.numPowerArray.transpose
-      powColCount = numPowerArray.length
-      // TODO: change
-      pipeBFWriteDly = 2//wftaDly.sum+butterfly.twDly
+    ioAddressConstants.generate(true)
+    twiddleConstants.generate(false)
+    updateMemConstants(generalConstants.numBanks,generalConstants.memoryLengths)
+    maxNumStages = generalConstants.maxNumStages
+    stageBranch = generalConstants.stageBranch
+    val numPowerArray = generalConstants.numPowerArray.transpose
+    powColCount = numPowerArray.length
+    // TODO: change
+    pipeBFWriteDly = 2//wftaDly.sum+butterfly.twDly
 
   }
 }
-
 

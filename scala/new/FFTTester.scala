@@ -7,8 +7,7 @@ import Chisel.{Complex => _, _}
 class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
   traceOn = false
-  //runAll()
-  run(12)
+  runAll()
 
   /** Run all tests for all FFTNs */
   def runAll() : Unit = runTo(Params.getFFT.sizes.last)

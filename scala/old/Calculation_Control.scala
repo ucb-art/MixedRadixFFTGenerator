@@ -161,9 +161,9 @@ class calc extends DSPModule {
   // WE should be disabled (don't use results from stale data). @ First stage, set stallCount to max = pipeBFWriteDly-->
   // when stallCount is maxed, count change is enabled. 
 
-  val stallCounter = DSPModule( new accumulator(bw(pipeBFWriteDly),pipeBFWriteDly)).io
+  val stallCounter = DSPModule( new accumulator(bw(pipeBFWriteDly +1),pipeBFWriteDly +1)).io // + 1 for mem out reg (?)
   val stallCount = stallCounter.out
-  val const = Count(pipeBFWriteDly)
+  val const = Count(pipeBFWriteDly + 1) // + 1 for mem out reg
 
   println("sss" + stallCounter.out.getWidth + "," + const.getWidth)
 

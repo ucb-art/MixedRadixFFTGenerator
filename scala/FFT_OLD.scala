@@ -18,7 +18,7 @@ import ChiselDSP.{when => _, _}
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   val wftaDly = 1
-  val seqRdDly = 1
+  val seqRdDly = 2
 
   override val io = new IOBundle {
 
@@ -911,7 +911,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     debug(_)
   }
 
-// store rad by index instead of rad
+  // store rad by index instead of rad
 
 
 
@@ -1301,8 +1301,8 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val DINusedreal = Mux(DSPBool(io.FFT), io.DATA_IN.real, io.DATA_IN.imag)
   val DINusedimag = Mux(DSPBool(io.FFT),io.DATA_IN.imag,io.DATA_IN.real)
   val DINused =  Complex(DINusedreal,DINusedimag)
-  io.DATA_OUT.real := Mux(DSPBool(io.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag)
-  io.DATA_OUT.imag := Mux(DSPBool(io.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real)
+  io.DATA_OUT.real := Mux(DSPBool(io.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).reg()
+  io.DATA_OUT.imag := Mux(DSPBool(io.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).reg()   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
   // START_FIRST_FRAME held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle START_FIRST_FRAME is low
   memBanks.io.Din := Pipe(DINused,ioToCalcClkRatio+toAddrBankDly.sum+toMemAddrDly).asInstanceOf[Complex[T]]
 
@@ -1344,7 +1344,12 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~io.START_FIRST_FRAME)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
   val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~io.START_FIRST_FRAME)
   val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~io.START_FIRST_FRAME)							// Flag needs to be 2 fast clock cycles long
-  io.FRAME_FIRST_OUT := ~io.START_FIRST_FRAME & Pipe((firstDataFlagD3	| firstDataFlagD4) && ~io.START_FIRST_FRAME,seqRdDly).asInstanceOf[Bool]													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
+  val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~io.START_FIRST_FRAME)
+  val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~io.START_FIRST_FRAME)
+
+
+  // note seqrd dly was already incremented so instead of originally starting at cycle 82 for 12, it starts at cycle 83, add 1 to make consistent w/ io
+  io.FRAME_FIRST_OUT := ~io.START_FIRST_FRAME & Pipe((firstDataFlagD3	| firstDataFlagD4) && ~io.START_FIRST_FRAME,seqRdDly +1).asInstanceOf[Bool]													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
 
 
   val currentRadixD3 = Reg(next = currentRadixD2)
@@ -1395,7 +1400,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
       }
     }     NOTE NEEDADDRESS AT 0 FOR RAD 2 twiddle!!!! for idx 0-3 seems i already did -- twiddles delayed earlier
     else*/ if (i < generalConstants.maxRadix-1){
-      e := twiddleX(i)
+      e := twiddleX(i).reg() // noob reg to match dly on data out of mem (should move to reg address instead of data)
     }
   }}
 
