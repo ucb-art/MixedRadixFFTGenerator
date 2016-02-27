@@ -35,7 +35,7 @@ External Interface
 
 **INPUTS**
 
-- **reset**: Only used for setting default values @ startup.
+- **reset**: Only used for setting default values + initializing memory @ startup.
 - **clk**: Calculation clock (currently, the frequency is 2x higher than IO, but this should become parameterizable.)
 - **io_SETUP_INIT**: Should go high for 1 IO clock cycle (2 **clk** cycles) to enable runtime reconfiguration at any time. Note that the FFTs currently being calculated will be trashed.
 - **io_FFT_INDEX**: This only needs to be valid when **io_SETUP_INIT** is high. The index corresponds to the particular FFT N that you want to currently operate with. The mapping of index to N can be found in the **asic/generator_out.json** or **fpga/generator_out.json** file after running `make asic` or `make fpga` respectively.
