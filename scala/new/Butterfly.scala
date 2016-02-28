@@ -67,6 +67,7 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) exte
     temp.trim(gen.getFracWidth)
   }})
 
+  // TODO: Use shorten instead of shortenTo?
   wfta.io.x.zipWithIndex.foreach{case (e,i) => {
     e :=  Mux(io.calcDIT,twiddleMulOut(i),io.x(i)).shortenTo(gen.getIntWidth)
   }}
