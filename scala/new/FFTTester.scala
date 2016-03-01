@@ -8,6 +8,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
   traceOn = false
   runAll()
+  Status("\nTested FFTs: [" + Tracker.testedFFTs.mkString(", ") + "]")
 
   /** Run all tests for all FFTNs */
   def runAll() : Unit = runTo(Params.getFFT.sizes.last)
@@ -21,6 +22,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
   /** Run tests for desired FFTN */
   def run(n: Int) : Unit = {
+    Tracker.testedFFTs = Tracker.testedFFTs :+ n
     Tracker.reset(n)
     Status("///////////////////////////////////////// FFTN = " + n)
     stepThrough(n)
@@ -136,6 +138,7 @@ object Tracker {
   var inStep = 0
   var outStep = 0
   var FFTN = 0
+  var testedFFTs = List[Int]()
 
   // Reset variables on new test
   def reset(n: Int) : Unit = {
@@ -145,8 +148,9 @@ object Tracker {
     // Set tolerance for comparing expected values
     // val fixedTol = (DSPFixed.toFixed(dblTol,Complex.getFrac).bitLength-2).max(1)
     val fixedTol = Complex.getFrac/2
-    DSPTester.setTol(floTol = (0.00000001).max(dblTol/n/10000),
-                     fixedTol = fixedTol)
+    // val floTol = (0.00000001).max(dblTol/n/100000)
+    val floTol = 0.0000000001
+    DSPTester.setTol(floTol = floTol, fixedTol = fixedTol)
 
     firstSymbol = false
     outValid = false
@@ -154,5 +158,6 @@ object Tracker {
     inStep = 0
     outStep = 0
     FFTN = n
+
   }
 }

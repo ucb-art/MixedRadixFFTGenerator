@@ -6,9 +6,13 @@ import memBanks._
 import calc._
 import generator._
 
+import ChiselDSP.Warn
+
 object FFTGenerator {
 
   def apply(): Unit = {
+
+    Warn.suppress = true
 
     // Valid primes override
     // NOTE: must be subset of those supported by butterflies (automatically gets intersection)
@@ -25,11 +29,12 @@ object FFTGenerator {
     val minBankTF: Boolean = true
 
     // Generate constants used by Chisel for desired FFT sizes
-    generalConstants.generate(validPrimesOverride,true)
+    generalConstants.generate(validPrimesOverride,false)
 
     schedule.generate(Bcycles,SPTF,minBankTF,false) //verboseTF)
 
-    ioAddressConstants.generate(true)
+
+
     twiddleConstants.generate(false)
     updateMemConstants(generalConstants.numBanks,generalConstants.memoryLengths)
     maxNumStages = generalConstants.maxNumStages

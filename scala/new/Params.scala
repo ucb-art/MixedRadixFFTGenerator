@@ -36,6 +36,9 @@ object Params {
     calc.radPow = radPow
     calc.maxStages = maxStages
     butterfly.rad = rad
+    val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes)
+    io.qDIF = qDIF
+    io.qDIT = qDIT
   }
 
 }
@@ -79,7 +82,11 @@ case class IOParams (
   // Maximum 2^a,3^b,5^c used to support all generator sizes
   var maxCoprimes: List[Int] = List(2,3,5),
   // Ratio of fast clock (Calculation) to slow clock (IO) frequencies
-  var clkRatio: Int = 2
+  var clkRatio: Int = 2,
+  // DIF Q
+  var qDIF: List[List[Int]] = List(List(1)),
+  // DIT Q
+  var qDIT: List[List[Int]] = List(List(1))
 )
 
 case class CalcParams (

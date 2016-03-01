@@ -286,22 +286,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // IO Q' LUTS
   // clk 2
-  val qDIFiArray = ioAddressConstants.qDIFiArray.transpose
-  val qColCount = qDIFiArray.length
 
-  val qDIFoArray = ioAddressConstants.qDIFoArray.transpose
-  val qDIFoLUT = Vec((0 until qColCount).map(x => Module(new UIntLUT(qDIFoArray(x))).io))
-  val qDIFo = Vec.fill(qColCount) {
-    Reg(UInt())
-  }
-  for (i <- 0 until qColCount) {
-
-    qDIFoLUT(i).addr := fftIndex
-    qDIFo(i) := qDIFoLUT(i).dout
-
-    debug(qDIFo(i))
-
-  }
 
   ////// Setup FFT length-dependent twiddle constants
   // Final setup constants are all registered
@@ -524,7 +509,14 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // debug(slwClkEn)
 
 
-  val qDIFiTbl = ioAddressConstants.qDIFiArray.toList.transpose.map(x => x.toList)
+
+
+
+ /* println(ioAddressConstants.qDIFiArray.toList.foreach{_.mkString(",")})
+  println(Params.getIO.qDIF.foreach{_.mkString(",")}) */
+
+
+  val qDIFiTbl = Params.getIO.qDIF.transpose.map(x => x.toList)
   // Columns
   val qDIFiLUTs = qDIFiTbl.zipWithIndex.map { case (x, i) => {
     val temp = Params.getIO.primes(i)
@@ -752,7 +744,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-  val qDIFoTbl = ioAddressConstants.qDIFoArray.toList.transpose.map(x => x.toList)
+  val qDIFoTbl = Params.getIO.qDIT.transpose.map(x => x.toList)
   // Columns
   val qDIFoLUTs = qDIFoTbl.zipWithIndex.map { case (x, i) => {
     val temp = Params.getIO.primes.reverse(i)
