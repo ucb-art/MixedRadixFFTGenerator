@@ -6,3 +6,4 @@ generator_out.json
 Makefrag
 constraints.xdc
 tb.v
+.idea/

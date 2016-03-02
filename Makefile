@@ -26,10 +26,10 @@ test: clean_test setup_test
 	mkdir -p test/generated-src
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --targetDir ./build/test" | tee console_out
 
-debug_novcd: clean_test setup_test
+debug: clean_test setup_test
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --targetDir ./build/test" | tee console_out
 
-debug: clean_test setup_test
+debug_vcd: clean_test setup_test
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --vcd --targetDir ./build/test" | tee console_out
 
 setup_%:
