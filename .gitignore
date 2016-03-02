@@ -1,2 +1,5 @@
-fpga/
-asic/
+build/
+console_out
+project/
+target/
+generator_out.json
