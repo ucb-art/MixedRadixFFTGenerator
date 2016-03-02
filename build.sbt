@@ -17,7 +17,8 @@ val prjSettings = Project.defaultSettings ++ Seq(
 )
 
 lazy val ChiselDSP = ProjectRef(
-  file("../ChiselEnvironment"), "chisel-dsp"
+  uri("git://github.com/ucb-art/ChiselDSP.git"),
+  "chisel-dsp"
 )
 
 lazy val root = Project(

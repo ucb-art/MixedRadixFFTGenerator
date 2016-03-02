@@ -56,7 +56,6 @@ Detailed Timing Diagram
 
 ![Timing Diagram from Xilinx Simulation](docs/timing.png)
 
-
 - FFT/IFFT setup configuration (input, 1 IO clock) is in **blue**.
 - Hardware setup done (output, 1 IO clock) is in **purple**.
 - First input symbol (input, 1 IO clock) is in **pink**.
@@ -71,3 +70,9 @@ Detailed Timing Diagram
 > **Note #4**: Always synchronize to the slow IO clock rising edge (not the fast calculation clock) to guarantee correctness!
 >
 > **Note #5**: Timing diagram was modified from [Xilinx](http://www.xilinx.com) simulator waveform.
+
+----------
+
+This code is maintained by [Angie](https://github.com/shunshou). Let me know if you have any questions/feedback!
+
+Copyright (c) 2015 - 2016 The Regents of the University of California. Released under the Modified (3-clause) BSD license.
