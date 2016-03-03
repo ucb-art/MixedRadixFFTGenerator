@@ -17,7 +17,7 @@ val prjSettings = Project.defaultSettings ++ Seq(
 )
 
 lazy val ChiselDSP = ProjectRef(
-  uri("git://github.com/ucb-art/ChiselDSP.git"),
+  uri("git://github.com/ucb-art/ChiselDSP.git#master"),
   "chisel-dsp"
 )
 
