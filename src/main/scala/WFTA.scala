@@ -30,6 +30,7 @@ case object Add extends StageType
 
 class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
 
+  // TODO: WFTA have more fractional widths than memory?
   // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further, condition (**)
 
   val p = Params.getBF

@@ -75,24 +75,26 @@ case class MemParams (
 )
 
 case class IOParams (
+  // TODO: Remove primes
   // Coprime bases used
   var primes: List[Int] = List(2,3,5),
-  // Factorization into coprimes for each FFT length
+  // -- Factorization into coprimes for each FFT length
   var coprimes:List[List[Int]] = List.fill(10)(List(2,3,5)),
-  // Maximum 2^a,3^b,5^c used to support all generator sizes
+  // -- Maximum 2^a,3^b,5^c used to support all generator sizes
+  // TODO: Remove maxCoprimes
   var maxCoprimes: List[Int] = List(2,3,5),
   // Ratio of fast clock (Calculation) to slow clock (IO) frequencies
   var clkRatio: Int = 2,
-  // DIF Q
+  // -- DIF Q
   var qDIF: List[List[Int]] = List(List(1)),
-  // DIT Q
+  // -- DIT Q
   var qDIT: List[List[Int]] = List(List(1))
 )
 
 case class CalcParams (
-  // Order of the calculation radix stages
+  // -- Order of the calculation radix stages
   var radOrder:List[List[Int]] = List.fill(10)(List(4,2,3,5)),
-  // i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [a1,a2,b,c]
+  // -- i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [[a1,a2],b,c]
   var radPow:List[List[Int]] = List.fill(10)(List(1,1,1,1)),
   // -- Maximum # of radix stages to support all Ns
   var maxStages: Int = 6
