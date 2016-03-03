@@ -3,12 +3,15 @@ package FFT
 object IOQ {
 
   /** Calculates the Q needed for PFA + CTA DIT/DIF IO (in-place)
-    * Inputs: # of FFT lengths and coprimes corresponding to the FFT sizes
-    * Outputs: DIF Q, DIT Q
+    * Inputs: # of FFT lengths,
+    *         coprimes corresponding to the FFT sizes [coprime, corresponding prime, # digits],
+    *         global [used prime, max radix associated with used prime, max coprime associated with used prime]
+    * Outputs: DIF Q with base, DIT Q with base
     */
-  def apply(nCount: Int, coprimes:List[List[Int]]): Tuple2[List[List[Int]],List[List[Int]]] = {
+  def apply(nCount: Int, coprimes:List[List[Tuple3[Int,Int,Int]]], global:List[Tuple3[Int,Int,Int]]):
+            Tuple2[List[List[Int]],List[List[Int]]] = {
     // N1,N2,N3 reversed between DIT/DIF
-    val temp = (0 until nCount).map{ i => (Q(coprimes(i)),Q(coprimes(i).reverse))}
+    val temp = (0 until nCount).map{ i => (Q(coprimes(i),global),Q(coprimes(i).reverse,global))}
     temp.toList.unzip
   }
 
@@ -26,7 +29,8 @@ object IOQ {
   }
 
   /** Calculate Q values for N = N1*N2*N3*... where Nx are coprimes */
-  def Q(coprimes: List[Int]): List[Int] ={
+  def Q(coprimesIn: List[Tuple3[Int,Int,Int]], global:List[Tuple3[Int,Int,Int]]): List[Int] ={
+    val coprimes = coprimesIn.map(_._1)
     // # of coprime decomposition equation sets is 1 less than # of coprimes
     (1 until coprimes.length).toList.map { i => {
       // Factor N into Na, Nb

@@ -29,14 +29,26 @@ object Params {
     fft = p.fft
     test = p.test
     TestVectors(fft.sizes,test.frames)
-    val (rad,radPow,maxStages,primes,coprimes,maxCoprimes) = Factorize(getFFT.sizes)
-    io.primes = primes
-    io.coprimes = coprimes
-    io.maxCoprimes = maxCoprimes
-    calc.radPow = radPow
-    calc.maxStages = maxStages
+
+    val (rad,radPow,radOrder,maxRad,maxStages,coprimes,global) = Factorize(getFFT.sizes)
     butterfly.rad = rad
-    val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes)
+    calc.radPow = radPow
+    calc.radOrder = radOrder
+    calc.maxRad = maxRad
+    calc.maxStages = maxStages
+    io.coprimes = coprimes
+    io.global = global
+
+
+
+
+
+
+
+
+
+
+    val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes,io.global)
     io.qDIF = qDIF
     io.qDIT = qDIT
   }
@@ -75,37 +87,42 @@ case class MemParams (
 )
 
 case class IOParams (
-  // TODO: Remove primes
-  // Coprime bases used
-  var primes: List[Int] = List(2,3,5),
-  // -- Factorization into coprimes for each FFT length
-  var coprimes:List[List[Int]] = List.fill(10)(List(2,3,5)),
-  // -- Maximum 2^a,3^b,5^c used to support all generator sizes
-  // TODO: Remove maxCoprimes
-  var maxCoprimes: List[Int] = List(2,3,5),
+  // Globally, all primes used, their associated max radices (bases), and their associated max coprimes (max
+  // 2^a,3^b,5^c used to support all generator sizes)
+  // [prime,maxRadix,maxCoprime]
+  var global: List[Tuple3[Int,Int,Int]] = List((1,1,1)),
+  // Factorization into coprimes for each FFT length, along with their associated base primes, and # of
+  // digits needed to represent a range of #'s up to the coprime value
+  // [coprime,prime,numDigits]
+  var coprimes:List[List[Tuple3[Int,Int,Int]]] = List.fill(10)(List((1,1,1))),
   // Ratio of fast clock (Calculation) to slow clock (IO) frequencies
   var clkRatio: Int = 2,
-  // -- DIF Q
+  // DIF Q
   var qDIF: List[List[Int]] = List(List(1)),
-  // -- DIT Q
+  // DIT Q
   var qDIT: List[List[Int]] = List(List(1))
 )
 
 case class CalcParams (
-  // -- Order of the calculation radix stages
+  // Order of the calculation radix stages
   var radOrder:List[List[Int]] = List.fill(10)(List(4,2,3,5)),
-  // -- i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [[a1,a2],b,c]
+  // i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [a1,a2,b,c]
   var radPow:List[List[Int]] = List.fill(10)(List(1,1,1,1)),
-  // -- Maximum # of radix stages to support all Ns
-  var maxStages: Int = 6
+  // Maximum # of radix stages to support all Ns
+  var maxStages: Int = 6,
+  // Maximum radix required for each FFTN, along with its index relative to radOrder positions
+  var maxRad: List[Tuple2[Int,Int]] = List((1,1))
+
 )
 
 case class TwiddleParams (
 )
 
 case class ButterflyParams (
-  // -- Radices actually needed
+  // Radices actually needed
   var rad: List[Int] = List(2,3,4,5,7),
   // Number of butterflies needed
   var num: Int = 1
 )
+
+// TODO: # butterflies, clk ratio, banks, length

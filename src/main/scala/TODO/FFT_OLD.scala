@@ -1355,7 +1355,6 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   // Current calcPhase configures twiddle input/output multiplication for DIT/DIF calculations
 
 
-
   val rad = Pipe(currentRadixD2,toMemAddrDly+seqRdDly).asInstanceOf[UInt]
 
 
