@@ -68,7 +68,7 @@ object Factorize {
 
     // Get used primes + corresponding maximum radix used
     val primes_maxRadix = WFTA.validRad.map( x => {
-      val intersection = x.intersect(radOut)
+      val intersection = x.intersect(globalRad)
       if (intersection.length != 0) (x.min,intersection.max)
       else (0,0)
     })
@@ -76,7 +76,7 @@ object Factorize {
     // Remove unused coprimes (globally, when the full coprime column = 1); associated w/ base primes + # of digits
     // for values represented up to the coprime
     val coprimes_primes_digits = coprimes.map( x => {
-      var temp = Array.empty[Tuple2[Int,Int]]
+      var temp = Array.empty[Tuple3[Int,Int,Int]]
       x.zipWithIndex.foreach { case (e, i) => {
         val prime = primes_maxRadix(i)._1
         if (prime != 0) {
@@ -89,8 +89,9 @@ object Factorize {
     })
 
     // System level: used primes, associated max radix, associated max coprime for each used prime
-    val maxCoprimes = coprimes_primes_digits.transpose.map(_.unzip._1.max)
-    val globalPrimes_maxRadix_maxCoprimes = primes_maxRadix.filter(_._1 != 0).zip(maxCoprimes)
+    val maxCoprimes = coprimes_primes_digits.transpose.map(_.map(_._1).max)
+    val tmp = primes_maxRadix.filter(_._1 != 0).zip(maxCoprimes)
+    val globalPrimes_maxRadix_maxCoprimes = tmp.map(x => (x._1._1,x._1._2,x._2))
 
     ( globalRad,
       radPow_rad_maxRad.map(_._1.map(_._1)),

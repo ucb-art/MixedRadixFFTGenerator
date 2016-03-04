@@ -8,8 +8,8 @@ object IOQ {
     *         global [used prime, max radix associated with used prime, max coprime associated with used prime]
     * Outputs: DIF Q with base, DIT Q with base
     */
-  def apply(nCount: Int, coprimes:List[List[Tuple3[Int,Int,Int]]], global:List[Tuple3[Int,Int,Int]]):
-            Tuple2[List[List[Int]],List[List[Int]]] = {
+  def apply(nCount: Int, coprimes:List[List[(Int,Int,Int)]], global:List[(Int,Int,Int)]):
+            Tuple2[List[List[Tuple2[Int,Int]]],List[List[Tuple2[Int,Int]]]] = {
     // N1,N2,N3 reversed between DIT/DIF
     val temp = (0 until nCount).map{ i => (Q(coprimes(i),global),Q(coprimes(i).reverse,global))}
     temp.toList.unzip
@@ -28,11 +28,20 @@ object IOQ {
     }
   }
 
-  /** Calculate Q values for N = N1*N2*N3*... where Nx are coprimes */
-  def Q(coprimesIn: List[Tuple3[Int,Int,Int]], global:List[Tuple3[Int,Int,Int]]): List[Int] ={
+  /** Calculate Q values for N = N1*N2*N3*... where Nx are coprimes
+    * Inputs:  coprimes [coprime, prime, # digits]
+    *          global [global prime, max radix, max coprime]
+    * Outputs: List of (Q,Base)
+    **/
+  def Q(coprimesIn: List[Tuple3[Int,Int,Int]], global:List[Tuple3[Int,Int,Int]]): List[Tuple2[Int,Int]] ={
+
     val coprimes = coprimesIn.map(_._1)
+    val correspondingPrimes = coprimesIn.map(_._2)
+    // Base associated with each Q
+    val base = correspondingPrimes.map(x => global.find(_._1 == x).get._2).init
+
     // # of coprime decomposition equation sets is 1 less than # of coprimes
-    (1 until coprimes.length).toList.map { i => {
+    val outTemp = (1 until coprimes.length).toList.map { i => {
       // Factor N into Na, Nb
       // where Na is a coprime and Nb is the product of the other coprimes
       val Na = coprimes(i-1)
@@ -50,5 +59,7 @@ object IOQ {
       else if (QPrime < 0) QPrime + Na  // Remainder can be negative; want only >= 0 modulus, so renormalize
       else QPrime
     }}
+
+    outTemp.zip(base)
 
   }}

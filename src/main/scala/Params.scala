@@ -38,16 +38,6 @@ object Params {
     calc.maxStages = maxStages
     io.coprimes = coprimes
     io.global = global
-
-
-
-
-
-
-
-
-
-
     val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes,io.global)
     io.qDIF = qDIF
     io.qDIT = qDIT
@@ -97,10 +87,10 @@ case class IOParams (
   var coprimes:List[List[Tuple3[Int,Int,Int]]] = List.fill(10)(List((1,1,1))),
   // Ratio of fast clock (Calculation) to slow clock (IO) frequencies
   var clkRatio: Int = 2,
-  // DIF Q
-  var qDIF: List[List[Int]] = List(List(1)),
-  // DIT Q
-  var qDIT: List[List[Int]] = List(List(1))
+  // DIF Q with corresponding base
+  var qDIF: List[List[Tuple2[Int,Int]]] = List(List((1,1))),
+  // DIT Q with corresponding base
+  var qDIT: List[List[Tuple2[Int,Int]]] = List(List((1,1)))
 )
 
 case class CalcParams (
