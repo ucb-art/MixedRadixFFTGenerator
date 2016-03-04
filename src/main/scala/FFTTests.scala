@@ -41,41 +41,42 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   def newSetup(fftIndex:Int, fftTF:Boolean){
     Status("///////////////////////////////////////// NEW SETUP")
     val initT = t
-    poke(c.io.SETUP_INIT,true)
-    poke(c.io.FFT_INDEX,fftIndex)
-    poke(c.io.FFT,fftTF)
+    poke(c.setup.SETUP_INIT,true)
+    poke(c.setup.FFT_INDEX,fftIndex)
+    poke(c.setup.FFT,fftTF)
     step(Params.getIO.clkRatio)
-    poke(c.io.SETUP_INIT,false)
-    poke(c.io.FFT_INDEX,0)
+    poke(c.setup.SETUP_INIT,false)
+    poke(c.setup.FFT_INDEX,0)
     // Wait until done setting up before checking setup constants (note that step size is not always 1 -- depends on
     // user parameters)
-    var setupDone = peek(c.io.SETUP_DONE)
+    var setupDone = peek(c.setup.SETUP_DONE)
     var whileCnt = 0
     while (!setupDone){
       whileCnt = whileCnt + 1
       if (whileCnt > 100) Error("Setup is not completing...")
       step(1)
-      setupDone = peek(c.io.SETUP_DONE)
+      setupDone = peek(c.setup.SETUP_DONE)
     }
     setupDebug()
     val modT = (t-initT)%Params.getIO.clkRatio
     if (modT != 0) Error("Setup done and other control signals should occur as expected from IO clock rate")
     // SETUP_DONE should be held for clkRatio calc clk cycles
-    for (i <- 0 until Params.getIO.clkRatio-1) {step(1);expect(c.io.SETUP_DONE,true)}
+    for (i <- 0 until Params.getIO.clkRatio-1) {step(1);expect(c.setup.SETUP_DONE,true)}
     Status("///////////////////////////////////////// SETUP DONE")
   }
 
   /** Feed in FFT inputs and read FFT outputs */
   def testFFTNio(fftIndex:Int, fftTF:Boolean, in:List[ScalaComplex], out:List[ScalaComplex]){
     // Safety initialize control signals to false
-    poke(c.io.START_FIRST_FRAME,false)
-    poke(c.io.SETUP_INIT,false)
+    poke(c.ctrl.ENABLE,true)
+    poke(c.ctrl.START_FIRST_FRAME,false)
+    poke(c.setup.SETUP_INIT,false)
     newSetup(fftIndex,fftTF)
     step(Params.getIO.clkRatio + 1)
     // After setup, start sending data to process (start on the second IO clock period after SETUP_DONE)
-    poke(c.io.START_FIRST_FRAME,true)
+    poke(c.ctrl.START_FIRST_FRAME,true)
     stepTrack(Params.getIO.clkRatio,in,out)
-    poke(c.io.START_FIRST_FRAME,false)
+    poke(c.ctrl.START_FIRST_FRAME,false)
     // Output k = 0 starts 2 frames after n = 0
     for (i <- 0 until Params.getTest.frames + 2; j <- 0 until Params.getFFT.sizes(fftIndex)){
       stepTrack(Params.getIO.clkRatio,in,out)
@@ -92,7 +93,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
       // Checks when k = 0 is output (Detects transition to first symbol) & dumps input
       if (i == 0) {
         poke(c.io.DATA_IN, inVal)
-        val firstOut = peek(c.io.FRAME_FIRST_OUT)
+        val firstOut = peek(c.ctrl.FRAME_FIRST_OUT)
         if (firstOut && !Tracker.firstSymbol) {
           Status("///////////////////////////////////////// FRAME = %d, K = 0".format(Tracker.frameNum))
           // Streaming output valid after start of first output symbol detected
@@ -104,8 +105,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
       }
       else{
         // FRAME_FIRST_OUT should be held for clkRatio calc clk cycles if true
-        if (firstOutValid) expect(c.io.FRAME_FIRST_OUT,true)
-        else expect(c.io.FRAME_FIRST_OUT,false)
+        if (firstOutValid) expect(c.ctrl.FRAME_FIRST_OUT,true)
+        else expect(c.ctrl.FRAME_FIRST_OUT,false)
       }
       // Read output if valid & check for error
       if (Tracker.outValid){

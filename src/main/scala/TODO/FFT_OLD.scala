@@ -20,7 +20,10 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val wftaDly = 1
   val seqRdDly = 2
 
-  override val io =
+  override val io = new FFTIO(gen)
+  val setup = new SetupIO
+  val ctrl = new FFTCtrlIO
+
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // FFT SIZE-DEPENDENT CONSTANTS (FROM LUTS) SETUP
@@ -37,9 +40,9 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-  when(io.SETUP_INIT) {
-    fftIndex := io.FFT_INDEX
-    fftTF := io.FFT
+  when(setup.SETUP_INIT.toBool) {
+    fftIndex := setup.FFT_INDEX
+    fftTF := setup.FFT
   }
   debug(fftIndex)
   debug(fftTF)
@@ -281,9 +284,15 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // Max twiddle address counter values for each stage
   // Note right most count always = 0
   // clk 2
-  val twiddleCountArray = twiddleConstants.twiddleCountMaxArray.transpose
+
+
+  println("aaa" + twiddleConstants.twiddleCountMaxArray.map(x => x.toList).toList)
+  println("bbb" + Params.getTw.twiddleCountMax)
+
+
+  val twiddleCountArray = Params.getTw.twiddleCountMax.transpose //twiddleConstants.twiddleCountMaxArray.transpose
   val twiddleCountColCount = twiddleCountArray.length
-  val twiddleCountLUT = Vec((0 until twiddleCountColCount).map(x => Module(new UIntLUT(twiddleCountArray(x))).io))
+  val twiddleCountLUT = Vec((0 until twiddleCountColCount).map(x => Module(new UIntLUT(twiddleCountArray(x).toArray)).io))
   val twiddleCount = Vec.fill(twiddleCountColCount) {
     Reg(UInt())
   }
@@ -351,12 +360,19 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // Base Twiddle Address Multiplier (Renormalize to Twiddle ROM size)
   // Unused signal should be optimized out in Verilog [ie Mul factor for powers of 2]
   // clk 3
-  val radNTwiddleMulArray = twiddleConstants.RadNTwiddleMulFactorArray
-  val radNTwiddleMulRowCount = radNTwiddleMulArray.length
-  val radNTwiddleMulLUT = Vec((0 until radNTwiddleMulRowCount).map(x => Module(new UIntLUT(radNTwiddleMulArray(x))).io))
+
+
+  println("ccc" + Params.getTw.twiddleLUTScale)
+  println("ddd" + twiddleConstants.RadNTwiddleMulFactorArray.map(x => x.toList).toList)
+
+
+  //val radNTwiddleMulArray = twiddleConstants.RadNTwiddleMulFactorArray
+  //val radNTwiddleMulRowCount = radNTwiddleMulArray.length
+  //val radNTwiddleMulLUT = Vec((0 until radNTwiddleMulRowCount).map(x => Module(new UIntLUT(radNTwiddleMulArray(x).toArray)).io))
   val radNTwiddleMul = Vec.fill(radNTwiddleMulRowCount) {
     Reg(UInt())
   }
+  /*
   for (i <- 0 until radNTwiddleMulRowCount) {
     var ip: Int = 0
     if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
@@ -392,7 +408,24 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
       }
     }
     debug(radNTwiddleMul(i))
-  }
+  }*/
+
+
+  val testRadNMul = DSPModule (new IntLUT2D(Params.getTw.twiddleLUTScale))
+  testRadNMul.io.addr := fftIndex
+  radNTwiddleMul := Vec(testRadNMul.io.dout.map(_.toUInt))
+
+
+
+
+
+
+
+
+
+
+
+
 
   // For DIF: Initial RadXTwiddleMulFactor due to scaling max memory
   // based off of max coprime N to the coprime N actually used (see address gen block)
@@ -469,11 +502,11 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val setupDoneTemp = (UInt(setupDoneCount) === setupCounter.io.out)
   setupCounter.io.inc := UInt(1, width = 1)
   setupCounter.io.changeCond := ~setupDoneTemp
-  setupCounter.io.globalReset := io.SETUP_INIT
+  setupCounter.io.globalReset := setup.SETUP_INIT
   setupCounter.io.wrapCond := Bool(false)
 
   val setupDoneTempD1 = Reg(next = setupDoneTemp)
-  io.SETUP_DONE := setupDoneTemp || setupDoneTempD1
+  setup.SETUP_DONE := DSPBool(setupDoneTemp || setupDoneTempD1)
   // Hold for 2 cycles
 
 
@@ -483,7 +516,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // Slow clock for IO (vs. fast clock for calculations)
   val slwClkCnt = Reg(init = UInt(0, width = 1))
-  when(io.START_FIRST_FRAME) {
+  when(ctrl.START_FIRST_FRAME.toBool) {
     slwClkCnt := UInt(1)
   }
     .otherwise {
@@ -510,10 +543,13 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     val base = x._2
     globalBases.indexOf(base)
   })
-  val primeIdxLUT = DSPModule(new IntLUT2D(primeIdx))
+
+  println(globalBases)
+  println(primeIdx)
+  //val primeIdxLUT = DSPModule(new IntLUT2D(primeIdx))
 
 
-
+  // HELP ?!?!? in coprimes am i storing base prime or base? i.e. 2 or 4? -- i think i messed it up, and it's diff from before
 
 
 
@@ -563,7 +599,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     e.iCtrl.change := iChange
 
     // already delay 1
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.reset := DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -575,7 +611,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val ioModCounts = Vec(ioModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
     e.iCtrl.change := DSPBool(slwClkEn)
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.reset := DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFis(i).padTo(e.io.inc.get.length).asOutput // ???
@@ -835,7 +871,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val oIncCounts = Vec(oIncCounters.zipWithIndex.map { case (e, i) => {
     val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
     e.iCtrl.change := iChange
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.reset := ctrl.START_FIRST_FRAME
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -847,7 +883,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
     e.iCtrl.change := DSPBool(slwClkEn)
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.reset := ctrl.START_FIRST_FRAME
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFos(i).padTo(e.io.inc.get.length).asOutput // ???
@@ -1091,7 +1127,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
   calcControl.io.calcMemChangeCond := calcMemChangeCond
-  calcControl.io.startFirstFrame := io.START_FIRST_FRAME
+  calcControl.io.startFirstFrame := ctrl.START_FIRST_FRAME
 
 
 
@@ -1376,11 +1412,11 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   // there is a delay until address to the memory is valid
   // IFFT --> real+imaginary inputs/outputs swapped
 
-  val DINusedreal = Mux(DSPBool(io.FFT), io.DATA_IN.real, io.DATA_IN.imag)
-  val DINusedimag = Mux(DSPBool(io.FFT),io.DATA_IN.imag,io.DATA_IN.real)
+  val DINusedreal = Mux(DSPBool(setup.FFT), io.DATA_IN.real, io.DATA_IN.imag)
+  val DINusedimag = Mux(DSPBool(setup.FFT),io.DATA_IN.imag,io.DATA_IN.real)
   val DINused =  Complex(DINusedreal,DINusedimag)
-  io.DATA_OUT.real := Mux(DSPBool(io.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).reg()
-  io.DATA_OUT.imag := Mux(DSPBool(io.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).reg()   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
+  io.DATA_OUT.real := Mux(DSPBool(setup.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).reg()
+  io.DATA_OUT.imag := Mux(DSPBool(setup.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).reg()   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
   // START_FIRST_FRAME held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle START_FIRST_FRAME is low
   memBanks.io.Din := Pipe(DINused,ioToCalcClkRatio+toAddrBankDly.sum+toMemAddrDly).asInstanceOf[Complex[T]]
 
@@ -1409,25 +1445,25 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
   memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).asInstanceOf[Bool]
 
-  val firstDataFlag = Reg(next = calcMemChangeCond && ~io.START_FIRST_FRAME)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
+  val firstDataFlag = Reg(next = calcMemChangeCond && ~ctrl.START_FIRST_FRAME.toBool)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
 
   val secondInPassedFlag = Reg(init = Bool(false))
-  when (io.START_FIRST_FRAME){
+  when (ctrl.START_FIRST_FRAME.toBool){
     secondInPassedFlag := Bool(false)										// Reset
   }.elsewhen(firstDataFlag){													// Will go high at the beginning of each new input symbol starting with the 2nd input symbol
     secondInPassedFlag := Bool(true)										// True indicates second input symbol has already been processed
   }
 
-  val firstDataFlagD1 = Reg(next = firstDataFlag && secondInPassedFlag && ~io.START_FIRST_FRAME)		// Output data only valid at the start of 3rd input symbol (when secondInPassedFlag is high)
-  val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~io.START_FIRST_FRAME)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
-  val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~io.START_FIRST_FRAME)
-  val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~io.START_FIRST_FRAME)							// Flag needs to be 2 fast clock cycles long
-  val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~io.START_FIRST_FRAME)
-  val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~io.START_FIRST_FRAME)
+  val firstDataFlagD1 = Reg(next = firstDataFlag && secondInPassedFlag && ~ctrl.START_FIRST_FRAME.toBool)		// Output data only valid at the start of 3rd input symbol (when secondInPassedFlag is high)
+  val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~ctrl.START_FIRST_FRAME.toBool)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
+  val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~ctrl.START_FIRST_FRAME.toBool)
+  val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~ctrl.START_FIRST_FRAME.toBool)							// Flag needs to be 2 fast clock cycles long
+  val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~ctrl.START_FIRST_FRAME.toBool)
+  val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~ctrl.START_FIRST_FRAME.toBool)
 
 
   // note seqrd dly was already incremented so instead of originally starting at cycle 82 for 12, it starts at cycle 83, add 1 to make consistent w/ io
-  io.FRAME_FIRST_OUT := ~io.START_FIRST_FRAME & Pipe((firstDataFlagD3	| firstDataFlagD4) && ~io.START_FIRST_FRAME,seqRdDly +1).asInstanceOf[Bool]													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
+  ctrl.FRAME_FIRST_OUT := !ctrl.START_FIRST_FRAME & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.START_FIRST_FRAME,seqRdDly +1)													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
 
 
   val currentRadixD3 = Reg(next = currentRadixD2)
