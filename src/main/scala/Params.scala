@@ -43,9 +43,15 @@ object Params {
     io.qDIF = qDIF
     io.qDIT = qDIT
 
-    val (twiddleCountMax,twiddleLUTScale) = Twiddles(io.coprimes,io.global,calc.radPow,calc.radOrder,calc.maxStages)
-    twiddle.twiddleCountMax = twiddleCountMax
-    twiddle.twiddleLUTScale = twiddleLUTScale
+    val (twiddleCountMax,twiddleLUTScale,twiddles,twiddleSubcountMax) = Twiddles(io.coprimes,
+                                                                                 io.global,
+                                                                                 calc.radPow,
+                                                                                 calc.radOrder,
+                                                                                 calc.maxStages)
+    twiddle.countMax = twiddleCountMax
+    twiddle.LUTScale = twiddleLUTScale
+    twiddle.vals = twiddles
+    twiddle.subcountMax = twiddleSubcountMax
 
   }
 
@@ -113,9 +119,14 @@ case class CalcParams (
 
 case class TwiddleParams (
   // Main twiddle count max for each calculation stage (CTA decomposition -- within a coprime)
-  var twiddleCountMax: List[List[Int]] = List(List(1)),
+  var countMax: List[List[Int]] = List(List(1)),
   // Base multiply amount to scale range of twiddle counts to full twiddle LUT size (associated w/ coprime)
-  var twiddleLUTScale: List[List[Int]] = List(List(1))
+  var LUTScale: List[List[Int]] = List(List(1)),
+  // Twiddles partitioned by coprimes, and then by corresponding radix (radix-1 sub-lists)
+  var vals: List[List[List[ScalaComplex]]] = List(List(List(Complex(0.0,0.0)))),
+  // Counts to hold twiddle (for PFA, based off of subsequent coprimes)
+  var subcountMax: List[List[Int]] = List(List(1))
+
 )
 
 case class ButterflyParams (

@@ -1,35 +1,24 @@
 package FFT
-import ChiselDSP._
+import ChiselDSP.ScalaComplex
 
 object Twiddles {
-  /** Input: powers for each used radix, order of used radices
-    *
-    * @param coprimesIn list of [coprime,prime,numDigits]
+  /** @param coprimesIn list of [coprime,prime,numDigits]
     * @param global list of [prime,maxRadix,maxCoprime]
     * @param radPow powers (exponent) for each used radix
     * @param radOrder order of used radices (base)
     * @param maxStages maximum # of stages for all FFT sizes
     * @return twiddleCountMax main twiddle count max for each calculation stage (CTA)
-    *         twiddleSubCountMax twiddle sub count max for each calculation stage (derived from PFA and coprimes)
     *         twiddleLUTScale base multiply amount to scale range of twiddle counts to full twiddle LUT size
     *         twiddles for each radix
+    *         twiddleSubcountMax is the sub count to hold the twiddle value when using PFA
     */
   def apply(coprimesIn:List[List[Tuple3[Int,Int,Int]]],
             global:List[Tuple3[Int,Int,Int]],
             radPow:List[List[Int]],
             radOrder:List[List[Int]],
-            maxStages:Int): Tuple2[List[List[Int]],List[List[Int]]] = {
-    // Gets the radices associated with each calculation stage from radPow and radOrder (decompression),
-    // also records the radix of the stage that came before (1 for first stage)
-    val stages_prevStages = radPow.zip(radOrder).map{ case (pow,rad) => {
-      val stageGen = pow.zip(rad)
-      val stagesTemp = stageGen.tail.foldLeft(
-        List.fill(stageGen.head._1)(stageGen.head._2)) ((b,a) => b ++ List.fill(a._1)(a._2))
-      val padding = List.fill(maxStages-stagesTemp.length)(0)
-      val stages = stagesTemp ++ padding
-      val prevStages = List(1) ++ stages.init
-      stages.zip(prevStages)
-    }}
+            maxStages:Int): Tuple4[List[List[Int]],List[List[Int]],List[List[List[ScalaComplex]]],List[List[Int]]] = {
+
+    val stages_prevStages = MemoryAccess.Stages_PrevStages(radPow,radOrder,maxStages)
 
     // Count max for CTA (within a coprime)
     val coprimes_primes = coprimesIn.map( x => x.map( y => (y._1,y._2)))
@@ -66,10 +55,39 @@ object Twiddles {
       if (coprime < maxRad) 0 else maxCoprime/coprime
     }})
 
+    // Calculate twiddle LUTs
+    val twiddles_lengths = global.map{case (prime,maxRadix,maxCoprime) => { twiddleN(maxRadix,maxCoprime)}}
+    Status("Twiddle Memory Size: " + twiddles_lengths.unzip._2.sum)
 
+    // Twiddle sub-count max is calculated by the product of the coprimes to the right of the current
+    // coprime.
+    val twiddleSubcountMax = coprimes_primes.map(_.unzip._1).map(x => {
+      val nextCoprimes = x.tail
+      (0 until nextCoprimes.length).toList.map(i => nextCoprimes.drop(i).product - 1)
+    })
 
+    (twiddleCountMax,twiddleLUTScale,twiddles_lengths.unzip._1,twiddleSubcountMax)
 
-    (twiddleCountMax,twiddleLUTScale)
+  }
+
+  /** Calculates twiddles associated with each coprime set */
+  def twiddleN(rad:Int,maxCoprime:Int): Tuple2[List[List[ScalaComplex]],Int] = {
+
+    // TODO: Can you expand out to radix-8?
+    // First stage of coprime calculation requires the most unique twiddles (coprime/radix)
+    // Subsequent stages use renormalized addresses
+    val twiddleNSize = maxCoprime/rad
+
+    val twiddles = (0 until twiddleNSize).toList.map{k => {
+      // Radix-n requires n-1 subsets of twiddles (1 to n-1); n = 0 is trivial
+      (0 until rad-1).toList.map{ n => {
+        // Twiddle W_N^(nk) = exp(-j*2*pi*n*k/N)
+        // exp(i*t) = cos(t) + i*sin(t)
+        val t = -2*math.Pi*k*(n+1)/maxCoprime
+        Complex(math.cos(t),math.sin(t))
+      }}
+    }}
+    (twiddles,twiddleNSize*(rad-1))
   }
 
 }

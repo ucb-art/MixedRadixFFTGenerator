@@ -35,7 +35,6 @@ object FFTGenerator {
 
 
 
-    twiddleConstants.generate(false)
     updateMemConstants(generalConstants.numBanks,generalConstants.memoryLengths)
     maxNumStages = generalConstants.maxNumStages
     stageBranch = generalConstants.stageBranch

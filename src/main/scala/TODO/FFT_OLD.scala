@@ -70,24 +70,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     debug(numPower(i))
   }
 
-  //  Coprimes: 2^N, 3^M, 5^k
-  // clk 2
-  val coprimesArray = generalConstants.coprimesArray.transpose
-  val coprimesColCount = coprimesArray.length
-  val coprimesLUT = Vec((0 until coprimesColCount).map(x => Module(new UIntLUT(coprimesArray(x))).io))
-  val coprimes = Vec.fill(coprimesColCount) {
-    Reg(UInt())
-  }
-  val coprimesFlipped = Vec.fill(coprimesColCount) {
-    Reg(UInt())
-  }
-  for (i <- 0 until coprimesColCount) {
-    coprimesLUT(i).addr := fftIndex
-    coprimes(i) := coprimesLUT(i).dout
-    coprimesFlipped(coprimesColCount - 1 - i) := coprimesLUT(i).dout
-    debug(coprimes(i))
-    debug(coprimesFlipped(i))
-  }
+
 
   // Ex: sum(0) = power(0)
   // sum(1) = power(0)+power(1)
@@ -286,11 +269,10 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // clk 2
 
 
-  println("aaa" + twiddleConstants.twiddleCountMaxArray.map(x => x.toList).toList)
-  println("bbb" + Params.getTw.twiddleCountMax)
 
 
-  val twiddleCountArray = Params.getTw.twiddleCountMax.transpose //twiddleConstants.twiddleCountMaxArray.transpose
+
+  val twiddleCountArray = Params.getTw.countMax.transpose //twiddleConstants.twiddleCountMaxArray.transpose
   val twiddleCountColCount = twiddleCountArray.length
   val twiddleCountLUT = Vec((0 until twiddleCountColCount).map(x => Module(new UIntLUT(twiddleCountArray(x).toArray)).io))
   val twiddleCount = Vec.fill(twiddleCountColCount) {
@@ -325,93 +307,46 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // to be calculated (product of coprimes to the right of current coprime)
   // Right-most count always = 0
   // clk 3
-  val twiddleSubCountMaxTemp = Vec.fill(coprimesColCount) {
-    Reg(UInt())
-  }
+
   // poor man's pipeD
-  val twiddleSubCountMax = Vec.fill(coprimesColCount) {
+  val twiddleSubCountMax = Vec.fill(3) {
     Reg(UInt(width = Helper.bitWidth(Params.getFFT.sizes.max)))
   }
-  for (i <- coprimesColCount - 1 to 0 by -1) {
-    if (i == coprimesColCount - 1) {
-      twiddleSubCountMaxTemp(coprimesColCount - 1) := UInt(0, width = 1)
-    }
-    else if (i == coprimesColCount - 2) {
-      twiddleSubCountMaxTemp(coprimesColCount - 2) := coprimes(coprimesColCount - 1)
-    }
-    else if (i == 0) {
-      val tt = UInt(twiddleSubCountMaxTemp(i + 1) * coprimes(i + 1), width = Helper.bitWidth(Params.getFFT.sizes.max))
-      twiddleSubCountMaxTemp(i) := tt //pipeD(tt,1).asInstanceOf[UInt]
-    }
-    else {
-      twiddleSubCountMaxTemp(i) := twiddleSubCountMaxTemp(i + 1) * coprimes(i + 1) //pipeD(twiddleSubCountMaxTemp(i+1)*coprimes(i+1),1).asInstanceOf[UInt]
-    }
-  }
-  for (i <- 0 until coprimesColCount) {
-    if (i < coprimesColCount - 1) {
-      twiddleSubCountMax(i) := twiddleSubCountMaxTemp(i) - UInt(1, width = 1) // Count max is -1 of product of coprimes
-    }
-    else {
-      twiddleSubCountMax(i) := twiddleSubCountMaxTemp(i)
-    }
-    debug(twiddleSubCountMax(i))
-  }
+
+
+
+
+
+
+  val twiddleSubcountLUT = DSPModule(new IntLUT2D(Params.getTw.subcountMax))
+  twiddleSubcountLUT.io.addr := fftIndex
+
+  twiddleSubCountMax.init.zipWithIndex.foreach{ case(x,i) => {
+    x := twiddleSubcountLUT.io.dout(i).toUInt
+  }}
+  twiddleSubCountMax.last := UInt(0,width=twiddleSubCountMax.last.getWidth)
+
+
+  //twiddleSubCountMax := Vec(twiddleSubcountLUT.io.dout.map(_.toUInt)) //twiddleSubcountLUT.io.dout
 
   // Base Twiddle Address Multiplier (Renormalize to Twiddle ROM size)
   // Unused signal should be optimized out in Verilog [ie Mul factor for powers of 2]
   // clk 3
 
 
-  println("ccc" + Params.getTw.twiddleLUTScale)
-  println("ddd" + twiddleConstants.RadNTwiddleMulFactorArray.map(x => x.toList).toList)
+  println("ccc" + Params.getTw.LUTScale)
 
 
   //val radNTwiddleMulArray = twiddleConstants.RadNTwiddleMulFactorArray
   //val radNTwiddleMulRowCount = radNTwiddleMulArray.length
   //val radNTwiddleMulLUT = Vec((0 until radNTwiddleMulRowCount).map(x => Module(new UIntLUT(radNTwiddleMulArray(x).toArray)).io))
-  val radNTwiddleMul = Vec.fill(radNTwiddleMulRowCount) {
+  val radNTwiddleMul = Vec.fill(3) {
     Reg(UInt())
   }
-  /*
-  for (i <- 0 until radNTwiddleMulRowCount) {
-    var ip: Int = 0
-    if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
-      // If radix-4 used, the indices 0+1 of numPow will be associated with rad 2
-      ip = i + 1
-    }
-    else {
-      ip = i
-    }
-    radNTwiddleMulLUT(i).addr := numPower(ip) // power of 2 address = don't care (LUT value unused)
-    if (i != 0) {
-      radNTwiddleMul(i) := radNTwiddleMulLUT(i).dout
-    }
-    else {
-      if (generalConstants.pow2SupportedTF) {
-        // If power of 2 is supported, will always be first
-        val pow2mTemp = (log(generalConstants.maxCoprime(0)) / log(generalConstants.validPrimes(0))).toInt
-        val pow2m = UInt(pow2mTemp, width = Helper.bitWidth(pow2mTemp))
-        val Num2 = UInt()
-        if (generalConstants.rad4Used) {
-          Num2 := numPower(1) + (numPower(0) << UInt(1)) // Multiply count associated with 4 by 2 to get total 2 count
-        }
-        else {
-          // Only radix 2 used (no 4)
-          Num2 := numPower(0)
-        }
-        val pow2 = UInt(pow2m - Num2)
-        radNTwiddleMul(i) := UInt(1, width = 1) << pow2 // Renormalize (reasoning in twiddleConstants)
-
-      }
-      else {
-        radNTwiddleMul(i) := radNTwiddleMulLUT(i).dout
-      }
-    }
-    debug(radNTwiddleMul(i))
-  }*/
 
 
-  val testRadNMul = DSPModule (new IntLUT2D(Params.getTw.twiddleLUTScale))
+
+  val testRadNMul = DSPModule (new IntLUT2D(Params.getTw.LUTScale))
   testRadNMul.io.addr := fftIndex
   radNTwiddleMul := Vec(testRadNMul.io.dout.map(_.toUInt))
 
@@ -447,8 +382,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
       // radix-4 is allowed but there is no radix-4 used in this FFT N
       // i.e. if the first stage is radix-2, don't care
 
-      twiddleMulTemp(0) := radNTwiddleMul(radNTwiddleMulRowCount - 1)
-      for (j <- radNTwiddleMulRowCount - 2 to 0 by -1) {
+      twiddleMulTemp(0) := radNTwiddleMul(3 - 1)
+      for (j <- 3 - 2 to 0 by -1) {
         if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
           when(stageSum(j + 1) != UInt(0)) {
             // Radix {(42)35} -> Primes{235} re-index
@@ -469,8 +404,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
         twiddleMulTemp(i) := UInt(0)
       }.elsewhen(stageRadix(i) != stageRadix(i - 1)) {
         // Current radix is different from previous radix --> need new Mul base
-        twiddleMulTemp(i) := radNTwiddleMul(radNTwiddleMulRowCount - 1)
-        for (j <- radNTwiddleMulRowCount - 2 to 1 by -1) {
+        twiddleMulTemp(i) := radNTwiddleMul(3 - 1)
+        for (j <- 3 - 2 to 1 by -1) {
           // If Rad2 (first) base mul was relevant, it would have already been used in stage 0
           if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
             when(stageSum(j) === UInt(i)) {
@@ -1189,13 +1124,16 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val twiddleMulUsed = twiddleMul(currentStage) // twiddle address scale factor
   debug(twiddleMulUsed)
 
+
   // Switch rows/cols so Scala doesn't complain (originally columns are associated with twiddle up to radix-1, but want to address "column" first -> tranpose)
-  var twiddleArray = Array.ofDim[ScalaComplex](generalConstants.validPrimes.length, 0, 0)
-  for (i <- 0 until twiddleArray.length) {
-    twiddleArray(i) = twiddleConstants.twiddleConstantsArray(i).transpose
-  }
+  var twiddleArray = Params.getTw.vals.map(
+    _.transpose
+  )//Array.ofDim[ScalaComplex](generalConstants.validPrimes.length, 0, 0)
+  /*for (i <- 0 until twiddleArray.length) {
+    twiddleArray(i) = Params.getTw.twiddles(i).transpose  //twiddleConstants.twiddleConstantsArray(i).transpose
+  }*/
   val twiddleLUT = Vec((0 until twiddleArray.length).map(y => {
-    Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x).toList, gen)).io))
+    Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x), gen)).io))
   }))
   // For each radix, radix-1 twiddle factors being fed to butterfly (1 to radix-1)
 
