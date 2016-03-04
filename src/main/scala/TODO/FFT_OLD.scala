@@ -3,7 +3,7 @@
 // TODO: NOTE CURRENT IMPLEMENTATION REQUIRES 4^n
 
 package FFT
-import Chisel.{Pipe =>_,Complex => _,Mux => _, _}
+import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 import DSP._
 import scala.math._
 import memBanks._
@@ -13,55 +13,41 @@ import generator._
 
 import scala.reflect.runtime.universe._
 
-import ChiselDSP.{when => _, _}
+import ChiselDSP.{when => _, BackwardsCompatibility, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   val wftaDly = 1
   val seqRdDly = 2
 
-  override val io = new IOBundle {
-
-    // SETUP_INIT should be true when new FFT_INDEX, FFT is presented.
-    // FFT_INDEX and FFT will be registered on the next rising clock edge
-    // FFT = true -> FFT calculation; FFT = false -> IFFT calculation
-    val SETUP_INIT = Bool(INPUT)
-    val FFT_INDEX = UInt(INPUT, width = Helper.bitWidth(Params.getFFT.nCount - 1))
-    val FFT = Bool(INPUT)
-
-    // SETUP_DONE = true -> Ready to take FFT data
-    val SETUP_DONE = Bool(OUTPUT)
-
-    // START_FIRST_FRAME should be high when 1st Frame Data_0 is input
-    val START_FIRST_FRAME = Bool(INPUT)
-
-    // High when first data of a valid symbol is output i.e. k = 0
-    // Note that after the 1st symbol has been streamed to the FFT block,
-    // the corresponding FFT output begins at the start of the 3rd input symbol
-    // (lags a full symbol - 1 cycle for input, 1 cycle for calculation, starts outputting on 3rd cycle)
-    val FRAME_FIRST_OUT = Bool(OUTPUT)
-
-    //val DATA_IN = new Complex(SInt(width = SDR_FFT.dataBitWidth),SInt(width = SDR_FFT.dataBitWidth)).asInput
-    //val DATA_OUT = new Complex(SInt(width = SDR_FFT.dataBitWidth),SInt(width = SDR_FFT.dataBitWidth)).asOutput
-    val DATA_IN = Complex(gen, gen).asInput
-    val DATA_OUT = Complex(gen, gen).asOutput
-    // DATA_OUT should be valid at the start of the next frame (streaming)
-
-  }
+  override val io =
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // FFT SIZE-DEPENDENT CONSTANTS (FROM LUTS) SETUP
 
   // Register inputs to FFT module
   // clk 1
-  val fftIndex = Reg(UInt(width = Helper.bitWidth(Params.getFFT.nCount - 1)))
-  val fftTF = Reg(Bool())
-  when(io.SETUP_INIT === Bool(true)) {
+
+
+
+
+  val fftIndex = RegInit(DSPUInt(0,Params.getFFT.nCount - 1)) //RegNext(io.FFT_INDEX,en)
+  val fftTF = RegInit(DSPBool(false))
+
+
+
+
+  when(io.SETUP_INIT) {
     fftIndex := io.FFT_INDEX
     fftTF := io.FFT
   }
   debug(fftIndex)
   debug(fftTF)
+
+
+
+
+
 
   ////// Setup FFT length-dependent general constants
   // Final setup constants are all registered
@@ -509,11 +495,28 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // debug(slwClkEn)
 
 
+////////////////////////////////////////////////
 
 
-  // CHANGE ALL REG TO PIPE -- should there be an enclosing vec? for all iterables
-  val primeDigitsTbl = Params.getIO.coprimes.map(_.map(_._3))
-  val primeDigitsLUT = DSPModule(new IntLUT2D(primeDigitsTbl))
+  // Used for masking to get coprime mod (when operating in Base N and not binary)
+  // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
+  // coprimes -> [coprime, corresponding base prime, digit mask]
+  val primeDigitsLUT = DSPModule(new IntLUT2D(Params.getIO.coprimes.map(_.map(_._3))))
+  // Indices indicating order of prime decomposition i.e. (3,2,5) might have indices (1,0,2) if
+  // Params.getIO.global has primes stored as (2,3,5)
+  // global -> [prime used, prime base (max radix), max coprime]
+  val globalBases = Params.getIO.global.map(_._2)
+  val primeIdx = Params.getIO.coprimes.map(_.map{ x =>
+    val base = x._2
+    globalBases.indexOf(base)
+  })
+  val primeIdxLUT = DSPModule(new IntLUT2D(primeIdx))
+
+
+
+
+
+
   primeDigitsLUT.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
   val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
   primeDigitsTemp := primeDigitsLUT.io.dout
@@ -522,7 +525,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-
+  // CHANGE ALL REG TO PIPE -- should there be an enclosing vec? for all iterables
   val qDIFiLUTs = Params.getIO.qDIF.transpose.map { x => {DSPModule(new MixedBaseLUT(x))}}
   val qDIFis = Vec(qDIFiLUTs.zipWithIndex.map { case (x, i) => {
     x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
