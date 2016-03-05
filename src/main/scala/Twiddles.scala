@@ -1,5 +1,5 @@
 package FFT
-import ChiselDSP.ScalaComplex
+import ChiselDSP._
 
 object Twiddles {
   /** @param coprimesIn list of [coprime,prime,numDigits]

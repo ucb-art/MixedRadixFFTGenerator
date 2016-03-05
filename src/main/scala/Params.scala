@@ -4,6 +4,8 @@
 package FFT
 import ChiselDSP._
 
+// TODO: Be less lazy with initial values
+
 /** Parameters for different components of the generator */
 object Params {
 
@@ -42,6 +44,9 @@ object Params {
     val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes,io.global)
     io.qDIF = qDIF
     io.qDIT = qDIT
+
+    val addrC = MemoryAccess(calc.radPow,calc.radOrder,calc.maxStages,calc.maxRad)
+    mem.addrC = addrC
 
     val (twiddleCountMax,twiddleLUTScale,twiddles,twiddleSubcountMax) = Twiddles(io.coprimes,
                                                                                  io.global,
@@ -85,7 +90,9 @@ case class MemParams (
   // # of memory banks to ensure conflict free access
   var banks: Int = 7,
   // Memory sizes for each bank
-  var lengths: List[Int] = List.fill(7)(32)
+  var lengths: List[Int] = List.fill(7)(32),
+  // Address constants for converting nx to memory bank addresses
+  var addrC: List[List[Int]] = List(List(1))
 )
 
 case class IOParams (
@@ -111,7 +118,7 @@ case class CalcParams (
   // i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [a1,a2,b,c]
   var radPow:List[List[Int]] = List.fill(10)(List(1,1,1,1)),
   // Maximum # of radix stages to support all Ns
-  var maxStages: Int = 6,
+  var maxStages: Int = 4,
   // Maximum radix required for each FFTN, along with its index relative to radOrder positions
   var maxRad: List[Tuple2[Int,Int]] = List((1,1))
 

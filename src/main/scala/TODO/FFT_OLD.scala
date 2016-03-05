@@ -161,96 +161,33 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     debug(maxStageCount(i))
   }
 
-  // Generate IO + Calculation memory address constants
-  // Ex: for 300 = 4*3*5*5, Address = 15n1 + 5n2 + (1n3 + 0n4)
-  // Note that because of banking with maxRadix banks (in the simplest case),
-  // each memory requires N/maxRadix addresses. This is accomplished
-  // by zero-ing the address constant associated with the max radix (right-most unless
-  // the max radix is 4, then left-most). You generate address constants starting
-  // from the right. The first non-zero address constant = 1.
-  // The second non-zero address constant is the radix
-  // associated with the first non-zero address constant. The third is the previous
-  // address constant (from the right) * the previous radix. See the trend.
-  // Address "grows" from right to left
-  // clk 5
-  val addressConstantTemp = Vec.fill(generalConstants.maxNumStages) {
-    Reg(UInt())
-  }
+
   // angie's noob piped
-  val addressConstant = Vec.fill(generalConstants.maxNumStages) {
+  /*val addressConstant = Vec.fill(generalConstants.maxNumStages) {
     Reg(UInt(width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt)))
   }
-  // To save logic, handle edge cases separately
-  // Chisel gives weird error with nested when -- need to specify initial condition
-  // Handle in-between cases
-  val highStageIndex = stageSumM1(powColCount - 1)
-  for (i <- generalConstants.maxNumStages - 1 to 0 by -1) {
-    if (i == generalConstants.maxNumStages - 1) {
-      addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(0, width = 1)
-      when(stageRadix(generalConstants.maxNumStages - 1) === UInt(0)) {
-        addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(0, width = 1) // Unused stage
-      }
-        .otherwise {
-          when(stageRadix(generalConstants.maxNumStages - 1) === maxRadix) {
-            addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(0, width = 1)
-          }
-            .otherwise {
-              addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(1, width = 1)
-            }
-        }
-    }
-    else if (i == 0) {
-      // Handle left-most stage -- some edge cases
-      when((stageRadix(0) === maxRadix) && (stageRadix(highStageIndex) != maxRadix)) {
-        // Note if 4x4, the right-most
-        // address constant is zero-ed first
-        addressConstantTemp(0) := UInt(0, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt))
-        // handles case when only 1 stage (AC = 0) i.e. 4
-        // handles 4x3, 4x3x3, 4x4x3, 5
-      }
-        .elsewhen(stageSum(powColCount - 1) === UInt(2)) {
-          // # of used stages
-          addressConstantTemp(0) := UInt(1, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt))
-          // For 2 stages with N1 = N2, N2 AC already 0ed so N1 AC = 1 i.e. 4x4
-          // handles 2x3, 4x5, 3x3, 3x5, 5x5
-        }
-        .otherwise {
-          addressConstantTemp(0) := UInt(stageRadix(1) * addressConstantTemp(1), width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt))
-          // when first, last are same radix and have more than just N1 = N2 (>2 stages)
-          // handles 4x4x4, 4x4x5, 2x3x3, 3x3x3, 3x5x5, 5x5x5
-        }
-    }
-    else {
-      when(stageRadix(i) === UInt(0)) {
-        // unused stage
-        addressConstantTemp(i) := UInt(0, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-      }
-        .elsewhen(UInt(i) === highStageIndex) {
-          when(stageRadix(i) === maxRadix) {
-            addressConstantTemp(i) := UInt(0, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-          }
-            .otherwise {
-              addressConstantTemp(i) := UInt(1, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-            }
-        }
-        .elsewhen(UInt(i) === stageSumM1(powColCount - 1) - UInt(1)) {
-          when(addressConstantTemp(i + 1) === UInt(1)) {
-            addressConstantTemp(i) := UInt(stageRadix(i + 1), width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-          }
-            .otherwise {
-              addressConstantTemp(i) := UInt(1, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-            }
-        }
-        .otherwise {
-          val tx = UInt(stageRadix(i + 1) * addressConstantTemp(i + 1), width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-          addressConstantTemp(i) := tx //pipeD(tx,1).asInstanceOf[UInt]
-        }
-    }
-  }
-  addressConstant := addressConstantTemp
+
+  //addressConstant := addressConstantTemp
   for (i <- 0 until generalConstants.maxNumStages) {
     debug(addressConstant(i))
-  }
+  }*/
+
+
+println(Params.getMem.addrC)
+
+
+  val addrConstantLUT = DSPModule(new IntLUT2D(Params.getMem.addrC))
+  addrConstantLUT.io.addr := fftIndex
+  //addressConstant := addrConstantLUT.io.dout
+
+  val addressConstant = Vec(addrConstantLUT.io.dout.map(_.cloneType.toUInt))
+  addressConstant := Vec(addrConstantLUT.io.dout.map(_.reg().toUInt))
+  /*
+  addressConstant.zipWithIndex.foreach{ case (e,i) => {
+    e := addrConstantLUT.io.dout(i)
+  }}*/
+
+
 
   ////// Setup FFT length-dependent address constants
   // Final setup constants are all registered
