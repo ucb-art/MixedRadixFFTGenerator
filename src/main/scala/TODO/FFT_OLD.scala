@@ -17,12 +17,23 @@ import ChiselDSP.{when => _, BackwardsCompatibility, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
-  val wftaDly = 1
-  val seqRdDly = 2
+
 
   override val io = new FFTIO(gen)
   val setup = new SetupIO
   val ctrl = new FFTCtrlIO
+
+  val clkDiv = DSPModule(new ClkDiv(Params.getIO.clkRatio))
+  val slowEn = clkDiv.io.slowEn
+
+
+
+
+
+
+
+  val wftaDly = 1
+  val seqRdDly = 2
 
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -182,28 +193,10 @@ println(Params.getMem.addrC)
 
   val addressConstant = Vec(addrConstantLUT.io.dout.map(_.cloneType.toUInt))
   addressConstant := Vec(addrConstantLUT.io.dout.map(_.reg().toUInt))
-  /*
-  addressConstant.zipWithIndex.foreach{ case (e,i) => {
-    e := addrConstantLUT.io.dout(i)
-  }}*/
 
 
 
-  ////// Setup FFT length-dependent address constants
-  // Final setup constants are all registered
-  // Array columns broken into separate LUTs
 
-  // IO Q' LUTS
-  // clk 2
-
-
-  ////// Setup FFT length-dependent twiddle constants
-  // Final setup constants are all registered
-  // Array columns broken into separate LUTs
-
-  // Max twiddle address counter values for each stage
-  // Note right most count always = 0
-  // clk 2
 
 
 
@@ -274,10 +267,7 @@ println(Params.getMem.addrC)
   println("ccc" + Params.getTw.LUTScale)
 
 
-  //val radNTwiddleMulArray = twiddleConstants.RadNTwiddleMulFactorArray
-  //val radNTwiddleMulRowCount = radNTwiddleMulArray.length
-  //val radNTwiddleMulLUT = Vec((0 until radNTwiddleMulRowCount).map(x => Module(new UIntLUT(radNTwiddleMulArray(x).toArray)).io))
-  val radNTwiddleMul = Vec.fill(3) {
+   val radNTwiddleMul = Vec.fill(3) {
     Reg(UInt())
   }
 
@@ -386,18 +376,31 @@ println(Params.getMem.addrC)
   // IO Addressing
 
 
-  // Slow clock for IO (vs. fast clock for calculations)
-  val slwClkCnt = Reg(init = UInt(0, width = 1))
-  when(ctrl.START_FIRST_FRAME.toBool) {
-    slwClkCnt := UInt(1)
-  }
-    .otherwise {
-      slwClkCnt := ~slwClkCnt
-    }
-  val slwClkEn = (slwClkCnt === UInt(0))
-  // = 0 next clock cycle after START_FIRST_FRAME high
-  val ioWriteFlag = slwClkEn
-  // debug(slwClkEn)
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  val ioWriteFlag = slowEn
+
+
+
+
+
+
+
+
+
+
+
 
 
 ////////////////////////////////////////////////
@@ -405,31 +408,52 @@ println(Params.getMem.addrC)
 
   // Used for masking to get coprime mod (when operating in Base N and not binary)
   // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
-  // coprimes -> [coprime, corresponding base prime, digit mask]
+  // coprimes -> [coprime, corresponding prime, digit mask]
   val primeDigitsLUT = DSPModule(new IntLUT2D(Params.getIO.coprimes.map(_.map(_._3))))
+  primeDigitsLUT.io.addr := fftIndex
+  val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
+  primeDigitsTemp := primeDigitsLUT.io.dout
+  val primeDigits = RegNext(primeDigitsTemp)
+
+
+
+
+
+
+
+
+  //:= RegNext(primeDigitsLUT.io.dout)
+
+
+
+
+
   // Indices indicating order of prime decomposition i.e. (3,2,5) might have indices (1,0,2) if
   // Params.getIO.global has primes stored as (2,3,5)
   // global -> [prime used, prime base (max radix), max coprime]
-  val globalBases = Params.getIO.global.map(_._2)
+  val globalBases = Params.getIO.global.map(_._1)
   val primeIdx = Params.getIO.coprimes.map(_.map{ x =>
     val base = x._2
     globalBases.indexOf(base)
   })
+  val primeIdxLUT = DSPModule(new IntLUT2D(primeIdx))
 
-  println(globalBases)
-  println(primeIdx)
-  //val primeIdxLUT = DSPModule(new IntLUT2D(primeIdx))
+
+
+
 
 
   // HELP ?!?!? in coprimes am i storing base prime or base? i.e. 2 or 4? -- i think i messed it up, and it's diff from before
 
 
 
-  primeDigitsLUT.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
-  val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
-  primeDigitsTemp := primeDigitsLUT.io.dout
+
+  //val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
+  //primeDigitsTemp := primeDigitsLUT.io.dout
   // vec reg has issues?!?!?!
-  val primeDigits = Vec(primeDigitsTemp.map(x => x.reg()))
+  //val primeDigits = Vec(primeDigitsTemp.map(x => x.reg()))
+
+  //val primeDigits = Reg(primeDigitsLUT.io.dout)
 
 
 
@@ -467,7 +491,7 @@ println(Params.getMem.addrC)
 
   // Right-most counter is "least significant"
   val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map { case (e, i) => {
-    val iChange = if (e != ioIncCounters.last) ioIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
+    val iChange = if (e != ioIncCounters.last) ioIncCounters(i + 1).oCtrl.change else DSPBool(slowEn)
     e.iCtrl.change := iChange
 
     // already delay 1
@@ -482,7 +506,7 @@ println(Params.getMem.addrC)
   // Do zip together
   val ioModCounts = Vec(ioModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
-    e.iCtrl.change := DSPBool(slwClkEn)
+    e.iCtrl.change := DSPBool(slowEn)
     e.iCtrl.reset := DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
@@ -741,7 +765,7 @@ println(Params.getMem.addrC)
 
   // Right-most counter is "least significant"
   val oIncCounts = Vec(oIncCounters.zipWithIndex.map { case (e, i) => {
-    val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
+    val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slowEn)
     e.iCtrl.change := iChange
     e.iCtrl.reset := ctrl.START_FIRST_FRAME
     // Should not need? can also trim to io.primDigits length
@@ -754,7 +778,7 @@ println(Params.getMem.addrC)
   // Do zip together
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
-    e.iCtrl.change := DSPBool(slwClkEn)
+    e.iCtrl.change := DSPBool(slowEn)
     e.iCtrl.reset := ctrl.START_FIRST_FRAME
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
@@ -1318,7 +1342,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
 
-  memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).asInstanceOf[Bool]
+  memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).toBool
 
   val firstDataFlag = Reg(next = calcMemChangeCond && ~ctrl.START_FIRST_FRAME.toBool)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
 
