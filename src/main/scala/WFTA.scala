@@ -4,6 +4,9 @@
 // all double negative cases, or figure out a way to have Chisel do arithmetic optimization i.e.
 // 0-(0-a) = a so no extra hardware is needed.
 
+// TODO: Don't rely on MulFracWidth in complex (gen should maybe carry that around as default...) -- bad for
+// multi project
+
 package FFT
 // TODO: Rework logic and vectorize from the start
 

@@ -9,7 +9,6 @@ import ChiselDSP._
 // IO used for setup
 class SetupIO extends IOBundle {
   // SETUP_INIT should be true when new FFT_INDEX, FFT is presented.
-  // FFT_INDEX and FFT will be registered on the next rising clock edge
   // FFT = true -> FFT calculation; FFT = false -> IFFT calculation
   val SETUP_INIT = DSPBool(INPUT)
   val FFT_INDEX = DSPUInt(INPUT,Params.getFFT.nCount - 1)
@@ -32,6 +31,6 @@ class FFTCtrlIO extends IOBundle {
 
 // FFT data IO
 class FFTIO[T <: DSPQnm[T]](gen : => T) extends IOBundle {
-  val DATA_IN = Complex(gen, gen).asInput
-  val DATA_OUT = Complex(gen, gen).asOutput
+  val DATA_IN = Complex(gen).asInput
+  val DATA_OUT = Complex(gen).asOutput
 }

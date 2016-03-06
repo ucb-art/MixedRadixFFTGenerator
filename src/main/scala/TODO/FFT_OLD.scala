@@ -17,10 +17,24 @@ import ChiselDSP.{when => _, BackwardsCompatibility, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
+
+
+  override val io = new FFTIO(gen)
+  val setup = new SetupIO
+  val ctrl = new FFTCtrlIO
+
+  val clkDiv = DSPModule(new ClkDiv(Params.getIO.clkRatio))
+  val slowEn = clkDiv.io.slowEn
+
+
+
+
+
+
+
   val wftaDly = 1
   val seqRdDly = 2
 
-  override val io =
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // FFT SIZE-DEPENDENT CONSTANTS (FROM LUTS) SETUP
@@ -37,9 +51,9 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-  when(io.SETUP_INIT) {
-    fftIndex := io.FFT_INDEX
-    fftTF := io.FFT
+  when(setup.SETUP_INIT.toBool) {
+    fftIndex := setup.FFT_INDEX
+    fftTF := setup.FFT
   }
   debug(fftIndex)
   debug(fftTF)
@@ -67,24 +81,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     debug(numPower(i))
   }
 
-  //  Coprimes: 2^N, 3^M, 5^k
-  // clk 2
-  val coprimesArray = generalConstants.coprimesArray.transpose
-  val coprimesColCount = coprimesArray.length
-  val coprimesLUT = Vec((0 until coprimesColCount).map(x => Module(new UIntLUT(coprimesArray(x))).io))
-  val coprimes = Vec.fill(coprimesColCount) {
-    Reg(UInt())
-  }
-  val coprimesFlipped = Vec.fill(coprimesColCount) {
-    Reg(UInt())
-  }
-  for (i <- 0 until coprimesColCount) {
-    coprimesLUT(i).addr := fftIndex
-    coprimes(i) := coprimesLUT(i).dout
-    coprimesFlipped(coprimesColCount - 1 - i) := coprimesLUT(i).dout
-    debug(coprimes(i))
-    debug(coprimesFlipped(i))
-  }
+
 
   // Ex: sum(0) = power(0)
   // sum(1) = power(0)+power(1)
@@ -175,115 +172,39 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     debug(maxStageCount(i))
   }
 
-  // Generate IO + Calculation memory address constants
-  // Ex: for 300 = 4*3*5*5, Address = 15n1 + 5n2 + (1n3 + 0n4)
-  // Note that because of banking with maxRadix banks (in the simplest case),
-  // each memory requires N/maxRadix addresses. This is accomplished
-  // by zero-ing the address constant associated with the max radix (right-most unless
-  // the max radix is 4, then left-most). You generate address constants starting
-  // from the right. The first non-zero address constant = 1.
-  // The second non-zero address constant is the radix
-  // associated with the first non-zero address constant. The third is the previous
-  // address constant (from the right) * the previous radix. See the trend.
-  // Address "grows" from right to left
-  // clk 5
-  val addressConstantTemp = Vec.fill(generalConstants.maxNumStages) {
-    Reg(UInt())
-  }
+
   // angie's noob piped
-  val addressConstant = Vec.fill(generalConstants.maxNumStages) {
+  /*val addressConstant = Vec.fill(generalConstants.maxNumStages) {
     Reg(UInt(width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt)))
   }
-  // To save logic, handle edge cases separately
-  // Chisel gives weird error with nested when -- need to specify initial condition
-  // Handle in-between cases
-  val highStageIndex = stageSumM1(powColCount - 1)
-  for (i <- generalConstants.maxNumStages - 1 to 0 by -1) {
-    if (i == generalConstants.maxNumStages - 1) {
-      addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(0, width = 1)
-      when(stageRadix(generalConstants.maxNumStages - 1) === UInt(0)) {
-        addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(0, width = 1) // Unused stage
-      }
-        .otherwise {
-          when(stageRadix(generalConstants.maxNumStages - 1) === maxRadix) {
-            addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(0, width = 1)
-          }
-            .otherwise {
-              addressConstantTemp(generalConstants.maxNumStages - 1) := UInt(1, width = 1)
-            }
-        }
-    }
-    else if (i == 0) {
-      // Handle left-most stage -- some edge cases
-      when((stageRadix(0) === maxRadix) && (stageRadix(highStageIndex) != maxRadix)) {
-        // Note if 4x4, the right-most
-        // address constant is zero-ed first
-        addressConstantTemp(0) := UInt(0, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt))
-        // handles case when only 1 stage (AC = 0) i.e. 4
-        // handles 4x3, 4x3x3, 4x4x3, 5
-      }
-        .elsewhen(stageSum(powColCount - 1) === UInt(2)) {
-          // # of used stages
-          addressConstantTemp(0) := UInt(1, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt))
-          // For 2 stages with N1 = N2, N2 AC already 0ed so N1 AC = 1 i.e. 4x4
-          // handles 2x3, 4x5, 3x3, 3x5, 5x5
-        }
-        .otherwise {
-          addressConstantTemp(0) := UInt(stageRadix(1) * addressConstantTemp(1), width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 2).toInt))
-          // when first, last are same radix and have more than just N1 = N2 (>2 stages)
-          // handles 4x4x4, 4x4x5, 2x3x3, 3x3x3, 3x5x5, 5x5x5
-        }
-    }
-    else {
-      when(stageRadix(i) === UInt(0)) {
-        // unused stage
-        addressConstantTemp(i) := UInt(0, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-      }
-        .elsewhen(UInt(i) === highStageIndex) {
-          when(stageRadix(i) === maxRadix) {
-            addressConstantTemp(i) := UInt(0, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-          }
-            .otherwise {
-              addressConstantTemp(i) := UInt(1, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-            }
-        }
-        .elsewhen(UInt(i) === stageSumM1(powColCount - 1) - UInt(1)) {
-          when(addressConstantTemp(i + 1) === UInt(1)) {
-            addressConstantTemp(i) := UInt(stageRadix(i + 1), width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-          }
-            .otherwise {
-              addressConstantTemp(i) := UInt(1, width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-            }
-        }
-        .otherwise {
-          val tx = UInt(stageRadix(i + 1) * addressConstantTemp(i + 1), width = Helper.bitWidth(pow(generalConstants.maxRadix, generalConstants.maxNumStages - 1 - i).toInt))
-          addressConstantTemp(i) := tx //pipeD(tx,1).asInstanceOf[UInt]
-        }
-    }
-  }
-  addressConstant := addressConstantTemp
+
+  //addressConstant := addressConstantTemp
   for (i <- 0 until generalConstants.maxNumStages) {
     debug(addressConstant(i))
-  }
-
-  ////// Setup FFT length-dependent address constants
-  // Final setup constants are all registered
-  // Array columns broken into separate LUTs
-
-  // IO Q' LUTS
-  // clk 2
+  }*/
 
 
-  ////// Setup FFT length-dependent twiddle constants
-  // Final setup constants are all registered
-  // Array columns broken into separate LUTs
+println(Params.getMem.addrC)
 
-  // Max twiddle address counter values for each stage
-  // Note right most count always = 0
-  // clk 2
-  val twiddleCountArray = twiddleConstants.twiddleCountMaxArray.transpose
+
+  val addrConstantLUT = DSPModule(new IntLUT2D(Params.getMem.addrC))
+  addrConstantLUT.io.addr := fftIndex
+  //addressConstant := addrConstantLUT.io.dout
+
+  val addressConstant = Vec(addrConstantLUT.io.dout.map(_.cloneType.toUInt))
+  addressConstant := Vec(addrConstantLUT.io.dout.map(_.reg().toUInt))
+
+
+
+
+
+
+
+
+
+  val twiddleCountArray = Params.getTw.countMax.transpose //twiddleConstants.twiddleCountMaxArray.transpose
   val twiddleCountColCount = twiddleCountArray.length
-  val twiddleCountLUT = Vec((0 until twiddleCountColCount).map(x => Module(new UIntLUT(twiddleCountArray(x))).io))
+  val twiddleCountLUT = Vec((0 until twiddleCountColCount).map(x => Module(new UIntLUT(twiddleCountArray(x).toArray)).io))
   val twiddleCount = Vec.fill(twiddleCountColCount) {
     Reg(UInt())
   }
@@ -316,83 +237,57 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // to be calculated (product of coprimes to the right of current coprime)
   // Right-most count always = 0
   // clk 3
-  val twiddleSubCountMaxTemp = Vec.fill(coprimesColCount) {
-    Reg(UInt())
-  }
+
   // poor man's pipeD
-  val twiddleSubCountMax = Vec.fill(coprimesColCount) {
+  val twiddleSubCountMax = Vec.fill(3) {
     Reg(UInt(width = Helper.bitWidth(Params.getFFT.sizes.max)))
   }
-  for (i <- coprimesColCount - 1 to 0 by -1) {
-    if (i == coprimesColCount - 1) {
-      twiddleSubCountMaxTemp(coprimesColCount - 1) := UInt(0, width = 1)
-    }
-    else if (i == coprimesColCount - 2) {
-      twiddleSubCountMaxTemp(coprimesColCount - 2) := coprimes(coprimesColCount - 1)
-    }
-    else if (i == 0) {
-      val tt = UInt(twiddleSubCountMaxTemp(i + 1) * coprimes(i + 1), width = Helper.bitWidth(Params.getFFT.sizes.max))
-      twiddleSubCountMaxTemp(i) := tt //pipeD(tt,1).asInstanceOf[UInt]
-    }
-    else {
-      twiddleSubCountMaxTemp(i) := twiddleSubCountMaxTemp(i + 1) * coprimes(i + 1) //pipeD(twiddleSubCountMaxTemp(i+1)*coprimes(i+1),1).asInstanceOf[UInt]
-    }
-  }
-  for (i <- 0 until coprimesColCount) {
-    if (i < coprimesColCount - 1) {
-      twiddleSubCountMax(i) := twiddleSubCountMaxTemp(i) - UInt(1, width = 1) // Count max is -1 of product of coprimes
-    }
-    else {
-      twiddleSubCountMax(i) := twiddleSubCountMaxTemp(i)
-    }
-    debug(twiddleSubCountMax(i))
-  }
+
+
+
+
+
+
+  val twiddleSubcountLUT = DSPModule(new IntLUT2D(Params.getTw.subcountMax))
+  twiddleSubcountLUT.io.addr := fftIndex
+
+  twiddleSubCountMax.init.zipWithIndex.foreach{ case(x,i) => {
+    x := twiddleSubcountLUT.io.dout(i).toUInt
+  }}
+  twiddleSubCountMax.last := UInt(0,width=twiddleSubCountMax.last.getWidth)
+
+
+  //twiddleSubCountMax := Vec(twiddleSubcountLUT.io.dout.map(_.toUInt)) //twiddleSubcountLUT.io.dout
 
   // Base Twiddle Address Multiplier (Renormalize to Twiddle ROM size)
   // Unused signal should be optimized out in Verilog [ie Mul factor for powers of 2]
   // clk 3
-  val radNTwiddleMulArray = twiddleConstants.RadNTwiddleMulFactorArray
-  val radNTwiddleMulRowCount = radNTwiddleMulArray.length
-  val radNTwiddleMulLUT = Vec((0 until radNTwiddleMulRowCount).map(x => Module(new UIntLUT(radNTwiddleMulArray(x))).io))
-  val radNTwiddleMul = Vec.fill(radNTwiddleMulRowCount) {
+
+
+  println("ccc" + Params.getTw.LUTScale)
+
+
+   val radNTwiddleMul = Vec.fill(3) {
     Reg(UInt())
   }
-  for (i <- 0 until radNTwiddleMulRowCount) {
-    var ip: Int = 0
-    if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
-      // If radix-4 used, the indices 0+1 of numPow will be associated with rad 2
-      ip = i + 1
-    }
-    else {
-      ip = i
-    }
-    radNTwiddleMulLUT(i).addr := numPower(ip) // power of 2 address = don't care (LUT value unused)
-    if (i != 0) {
-      radNTwiddleMul(i) := radNTwiddleMulLUT(i).dout
-    }
-    else {
-      if (generalConstants.pow2SupportedTF) {
-        // If power of 2 is supported, will always be first
-        val pow2mTemp = (log(generalConstants.maxCoprime(0)) / log(generalConstants.validPrimes(0))).toInt
-        val pow2m = UInt(pow2mTemp, width = Helper.bitWidth(pow2mTemp))
-        val Num2 = UInt()
-        if (generalConstants.rad4Used) {
-          Num2 := numPower(1) + (numPower(0) << UInt(1)) // Multiply count associated with 4 by 2 to get total 2 count
-        }
-        else {
-          // Only radix 2 used (no 4)
-          Num2 := numPower(0)
-        }
-        val pow2 = UInt(pow2m - Num2)
-        radNTwiddleMul(i) := UInt(1, width = 1) << pow2 // Renormalize (reasoning in twiddleConstants)
 
-      }
-      else {
-        radNTwiddleMul(i) := radNTwiddleMulLUT(i).dout
-      }
-    }
-    debug(radNTwiddleMul(i))
-  }
+
+
+  val testRadNMul = DSPModule (new IntLUT2D(Params.getTw.LUTScale))
+  testRadNMul.io.addr := fftIndex
+  radNTwiddleMul := Vec(testRadNMul.io.dout.map(_.toUInt))
+
+
+
+
+
+
+
+
+
+
+
+
 
   // For DIF: Initial RadXTwiddleMulFactor due to scaling max memory
   // based off of max coprime N to the coprime N actually used (see address gen block)
@@ -414,8 +309,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
       // radix-4 is allowed but there is no radix-4 used in this FFT N
       // i.e. if the first stage is radix-2, don't care
 
-      twiddleMulTemp(0) := radNTwiddleMul(radNTwiddleMulRowCount - 1)
-      for (j <- radNTwiddleMulRowCount - 2 to 0 by -1) {
+      twiddleMulTemp(0) := radNTwiddleMul(3 - 1)
+      for (j <- 3 - 2 to 0 by -1) {
         if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
           when(stageSum(j + 1) != UInt(0)) {
             // Radix {(42)35} -> Primes{235} re-index
@@ -436,8 +331,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
         twiddleMulTemp(i) := UInt(0)
       }.elsewhen(stageRadix(i) != stageRadix(i - 1)) {
         // Current radix is different from previous radix --> need new Mul base
-        twiddleMulTemp(i) := radNTwiddleMul(radNTwiddleMulRowCount - 1)
-        for (j <- radNTwiddleMulRowCount - 2 to 1 by -1) {
+        twiddleMulTemp(i) := radNTwiddleMul(3 - 1)
+        for (j <- 3 - 2 to 1 by -1) {
           // If Rad2 (first) base mul was relevant, it would have already been used in stage 0
           if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
             when(stageSum(j) === UInt(i)) {
@@ -469,11 +364,11 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val setupDoneTemp = (UInt(setupDoneCount) === setupCounter.io.out)
   setupCounter.io.inc := UInt(1, width = 1)
   setupCounter.io.changeCond := ~setupDoneTemp
-  setupCounter.io.globalReset := io.SETUP_INIT
+  setupCounter.io.globalReset := setup.SETUP_INIT
   setupCounter.io.wrapCond := Bool(false)
 
   val setupDoneTempD1 = Reg(next = setupDoneTemp)
-  io.SETUP_DONE := setupDoneTemp || setupDoneTempD1
+  setup.SETUP_DONE := DSPBool(setupDoneTemp || setupDoneTempD1)
   // Hold for 2 cycles
 
 
@@ -481,18 +376,31 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // IO Addressing
 
 
-  // Slow clock for IO (vs. fast clock for calculations)
-  val slwClkCnt = Reg(init = UInt(0, width = 1))
-  when(io.START_FIRST_FRAME) {
-    slwClkCnt := UInt(1)
-  }
-    .otherwise {
-      slwClkCnt := ~slwClkCnt
-    }
-  val slwClkEn = (slwClkCnt === UInt(0))
-  // = 0 next clock cycle after START_FIRST_FRAME high
-  val ioWriteFlag = slwClkEn
-  // debug(slwClkEn)
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  val ioWriteFlag = slowEn
+
+
+
+
+
+
+
+
+
+
+
 
 
 ////////////////////////////////////////////////
@@ -500,12 +408,30 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // Used for masking to get coprime mod (when operating in Base N and not binary)
   // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
-  // coprimes -> [coprime, corresponding base prime, digit mask]
+  // coprimes -> [coprime, corresponding prime, digit mask]
   val primeDigitsLUT = DSPModule(new IntLUT2D(Params.getIO.coprimes.map(_.map(_._3))))
+  primeDigitsLUT.io.addr := fftIndex
+  val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
+  primeDigitsTemp := primeDigitsLUT.io.dout
+  val primeDigits = RegNext(primeDigitsTemp)
+
+
+
+
+
+
+
+
+  //:= RegNext(primeDigitsLUT.io.dout)
+
+
+
+
+
   // Indices indicating order of prime decomposition i.e. (3,2,5) might have indices (1,0,2) if
   // Params.getIO.global has primes stored as (2,3,5)
   // global -> [prime used, prime base (max radix), max coprime]
-  val globalBases = Params.getIO.global.map(_._2)
+  val globalBases = Params.getIO.global.map(_._1)
   val primeIdx = Params.getIO.coprimes.map(_.map{ x =>
     val base = x._2
     globalBases.indexOf(base)
@@ -517,11 +443,17 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-  primeDigitsLUT.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
-  val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
-  primeDigitsTemp := primeDigitsLUT.io.dout
+  // HELP ?!?!? in coprimes am i storing base prime or base? i.e. 2 or 4? -- i think i messed it up, and it's diff from before
+
+
+
+
+  //val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
+  //primeDigitsTemp := primeDigitsLUT.io.dout
   // vec reg has issues?!?!?!
-  val primeDigits = Vec(primeDigitsTemp.map(x => x.reg()))
+  //val primeDigits = Vec(primeDigitsTemp.map(x => x.reg()))
+
+  //val primeDigits = Reg(primeDigitsLUT.io.dout)
 
 
 
@@ -559,11 +491,11 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // Right-most counter is "least significant"
   val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map { case (e, i) => {
-    val iChange = if (e != ioIncCounters.last) ioIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
+    val iChange = if (e != ioIncCounters.last) ioIncCounters(i + 1).oCtrl.change else DSPBool(slowEn)
     e.iCtrl.change := iChange
 
     // already delay 1
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.reset := DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -574,8 +506,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // Do zip together
   val ioModCounts = Vec(ioModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
-    e.iCtrl.change := DSPBool(slwClkEn)
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.change := DSPBool(slowEn)
+    e.iCtrl.reset := DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFis(i).padTo(e.io.inc.get.length).asOutput // ???
@@ -833,9 +765,9 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // Right-most counter is "least significant"
   val oIncCounts = Vec(oIncCounters.zipWithIndex.map { case (e, i) => {
-    val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slwClkEn)
+    val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slowEn)
     e.iCtrl.change := iChange
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.reset := ctrl.START_FIRST_FRAME
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -846,8 +778,8 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // Do zip together
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
-    e.iCtrl.change := DSPBool(slwClkEn)
-    e.iCtrl.reset := DSPBool(io.START_FIRST_FRAME)
+    e.iCtrl.change := DSPBool(slowEn)
+    e.iCtrl.reset := ctrl.START_FIRST_FRAME
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFos(i).padTo(e.io.inc.get.length).asOutput // ???
@@ -1091,7 +1023,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
   calcControl.io.calcMemChangeCond := calcMemChangeCond
-  calcControl.io.startFirstFrame := io.START_FIRST_FRAME
+  calcControl.io.startFirstFrame := ctrl.START_FIRST_FRAME
 
 
 
@@ -1153,13 +1085,16 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val twiddleMulUsed = twiddleMul(currentStage) // twiddle address scale factor
   debug(twiddleMulUsed)
 
+
   // Switch rows/cols so Scala doesn't complain (originally columns are associated with twiddle up to radix-1, but want to address "column" first -> tranpose)
-  var twiddleArray = Array.ofDim[ScalaComplex](generalConstants.validPrimes.length, 0, 0)
-  for (i <- 0 until twiddleArray.length) {
-    twiddleArray(i) = twiddleConstants.twiddleConstantsArray(i).transpose
-  }
+  var twiddleArray = Params.getTw.vals.map(
+    _.transpose
+  )//Array.ofDim[ScalaComplex](generalConstants.validPrimes.length, 0, 0)
+  /*for (i <- 0 until twiddleArray.length) {
+    twiddleArray(i) = Params.getTw.twiddles(i).transpose  //twiddleConstants.twiddleConstantsArray(i).transpose
+  }*/
   val twiddleLUT = Vec((0 until twiddleArray.length).map(y => {
-    Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x).toList, gen)).io))
+    Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x), gen)).io))
   }))
   // For each radix, radix-1 twiddle factors being fed to butterfly (1 to radix-1)
 
@@ -1376,11 +1311,11 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   // there is a delay until address to the memory is valid
   // IFFT --> real+imaginary inputs/outputs swapped
 
-  val DINusedreal = Mux(DSPBool(io.FFT), io.DATA_IN.real, io.DATA_IN.imag)
-  val DINusedimag = Mux(DSPBool(io.FFT),io.DATA_IN.imag,io.DATA_IN.real)
+  val DINusedreal = Mux(DSPBool(setup.FFT), io.DATA_IN.real, io.DATA_IN.imag)
+  val DINusedimag = Mux(DSPBool(setup.FFT),io.DATA_IN.imag,io.DATA_IN.real)
   val DINused =  Complex(DINusedreal,DINusedimag)
-  io.DATA_OUT.real := Mux(DSPBool(io.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).reg()
-  io.DATA_OUT.imag := Mux(DSPBool(io.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).reg()   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
+  io.DATA_OUT.real := Mux(DSPBool(setup.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).reg()
+  io.DATA_OUT.imag := Mux(DSPBool(setup.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).reg()   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
   // START_FIRST_FRAME held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle START_FIRST_FRAME is low
   memBanks.io.Din := Pipe(DINused,ioToCalcClkRatio+toAddrBankDly.sum+toMemAddrDly).asInstanceOf[Complex[T]]
 
@@ -1407,27 +1342,27 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
 
-  memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).asInstanceOf[Bool]
+  memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).toBool
 
-  val firstDataFlag = Reg(next = calcMemChangeCond && ~io.START_FIRST_FRAME)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
+  val firstDataFlag = Reg(next = calcMemChangeCond && ~ctrl.START_FIRST_FRAME.toBool)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
 
   val secondInPassedFlag = Reg(init = Bool(false))
-  when (io.START_FIRST_FRAME){
+  when (ctrl.START_FIRST_FRAME.toBool){
     secondInPassedFlag := Bool(false)										// Reset
   }.elsewhen(firstDataFlag){													// Will go high at the beginning of each new input symbol starting with the 2nd input symbol
     secondInPassedFlag := Bool(true)										// True indicates second input symbol has already been processed
   }
 
-  val firstDataFlagD1 = Reg(next = firstDataFlag && secondInPassedFlag && ~io.START_FIRST_FRAME)		// Output data only valid at the start of 3rd input symbol (when secondInPassedFlag is high)
-  val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~io.START_FIRST_FRAME)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
-  val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~io.START_FIRST_FRAME)
-  val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~io.START_FIRST_FRAME)							// Flag needs to be 2 fast clock cycles long
-  val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~io.START_FIRST_FRAME)
-  val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~io.START_FIRST_FRAME)
+  val firstDataFlagD1 = Reg(next = firstDataFlag && secondInPassedFlag && ~ctrl.START_FIRST_FRAME.toBool)		// Output data only valid at the start of 3rd input symbol (when secondInPassedFlag is high)
+  val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~ctrl.START_FIRST_FRAME.toBool)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
+  val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~ctrl.START_FIRST_FRAME.toBool)
+  val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~ctrl.START_FIRST_FRAME.toBool)							// Flag needs to be 2 fast clock cycles long
+  val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~ctrl.START_FIRST_FRAME.toBool)
+  val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~ctrl.START_FIRST_FRAME.toBool)
 
 
   // note seqrd dly was already incremented so instead of originally starting at cycle 82 for 12, it starts at cycle 83, add 1 to make consistent w/ io
-  io.FRAME_FIRST_OUT := ~io.START_FIRST_FRAME & Pipe((firstDataFlagD3	| firstDataFlagD4) && ~io.START_FIRST_FRAME,seqRdDly +1).asInstanceOf[Bool]													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
+  ctrl.FRAME_FIRST_OUT := !ctrl.START_FIRST_FRAME & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.START_FIRST_FRAME,seqRdDly +1)													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
 
 
   val currentRadixD3 = Reg(next = currentRadixD2)
