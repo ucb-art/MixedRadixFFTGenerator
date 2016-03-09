@@ -38,7 +38,12 @@ object IOQ {
     val coprimes = coprimesIn.map(_._1)
     val correspondingPrimes = coprimesIn.map(_._2)
     // Base associated with each Q
-    val base = correspondingPrimes.map(x => global.find(_._1 == x).get._2).init
+    val base = correspondingPrimes.map(x => {
+      // When for an FFTN, a coprime = 1 (therefore prime = 1), doing a search in global
+      // will not have any results (1 is not in global), therefore force rad = 1 in that case
+      val tempRad = global.find(_._1 == x).getOrElse((1,1,1))
+      tempRad._2
+    }).init
 
     // # of coprime decomposition equation sets is 1 less than # of coprimes
     val outTemp = (1 until coprimes.length).toList.map { i => {

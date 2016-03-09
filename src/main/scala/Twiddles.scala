@@ -49,10 +49,12 @@ object Twiddles {
     // Initial coprime twiddle count renormalization (multiply count)
     // To renormalize twiddle count to the full twiddle LUT range i.e. addr. 2 of 4 --> addr. 4 of 8
     // max coprime / current coprime (same base), except when current coprime < max radix (associated w/
-    // the coprime) i.e. no twiddle used
+    // the coprime) or coprime = 1 i.e. no twiddle used
     val twiddleLUTScale = coprimes_primes.map( _.map{ case (coprime,prime) => {
-      val (a,maxRad,maxCoprime) = global.find(_._1 == prime).get
-      if (coprime < maxRad) 0 else maxCoprime/coprime
+      // If a coprime slot is "unused" for a given FFT size, prime = 1 and global.find will return nothing
+      // In that case, twiddles are unused, so just use a scale of 0
+      val (a,maxRad,maxCoprime) = global.find(_._1 == prime).getOrElse((1,1,1))
+      if (coprime == 1 || coprime < maxRad) 0 else maxCoprime/coprime
     }})
 
     // Calculate twiddle LUTs

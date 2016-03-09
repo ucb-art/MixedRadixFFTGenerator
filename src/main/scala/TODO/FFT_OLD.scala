@@ -17,14 +17,171 @@ import ChiselDSP.{when => _, BackwardsCompatibility, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
+  println("blahhhh" + Params.getIO.coprimes.map(_.map(_._3)))
 
+  CheckDelay.off()
 
+//////////////////////////////////////////////////////////////////
+
+  // Data IO, setup IO, Operating controls
   override val io = new FFTIO(gen)
   val setup = new SetupIO
   val ctrl = new FFTCtrlIO
 
+  // Derive IO clock from main clock
   val clkDiv = DSPModule(new ClkDiv(Params.getIO.clkRatio))
   val slowEn = clkDiv.io.slowEn
+
+  // Length + FFT/IFFT setup
+  val setupEn = slowEn & setup.SETUP_INIT
+  val fftIndex = RegInit(DSPUInt(0,Params.getFFT.nCount - 1))
+  val fftTF = RegInit(DSPBool(false))
+  fftIndex := Mux(setupEn,setup.FFT_INDEX,fftIndex)
+  fftTF := Mux(setupEn,setup.FFT,fftTF)
+
+  // Setup location valid an IO clock cycle after (used to derive the remaining setup constants)
+  val setupEnDly = setupEn.pipe(Params.getIO.clkRatio)
+
+  // Make sure that IO reset on the right fast clock cycle
+  val startFirstFrame = slowEn & ctrl.START_FIRST_FRAME
+
+  // IO constants
+
+  // Used for masking to get coprime mod (when operating in Base N and not binary)
+  // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
+  // coprimes -> [coprime, corresponding prime, digit mask]
+  val primeDigitsLUT = DSPModule(new IntLUT2D(Params.getIO.coprimes.map(_.map(_._3))), "primeDigits")
+  primeDigitsLUT.io.addr := fftIndex
+  val primeDigits = primeDigitsLUT.io.dout.cloneType
+  primeDigits := RegNext(Mux(setupEnDly,primeDigitsLUT.io.dout,primeDigits))
+
+  // Indices indicating order of prime decomposition i.e. (3,2,5) might have indices (1,0,2) if
+  // Params.getIO.global has primes stored as (2,3,5)
+  // global -> [prime used, prime base (max radix), max coprime]
+  // globalPrimes(0) associated with unused
+  val globalPrimes = List(1) ++ Params.getIO.global.map(_._1)
+  val globalRads = List(0) ++ Params.getIO.global.map(_._2)
+  val primeIndices = Params.getIO.coprimes.map(_.map{ x =>
+    val prime = x._2
+    globalPrimes.indexOf(prime)
+  })
+  val primeIdxLUT = DSPModule(new IntLUT2D(primeIndices), "primeIdx")
+  primeIdxLUT.io.addr := fftIndex
+  val primeIdx = primeIdxLUT.io.dout.cloneType
+  primeIdx := RegNext(Mux(setupEnDly,primeIdxLUT.io.dout,primeIdx))
+
+  // TODO: Reduce redundant code
+  // IO Q DIF + DIT
+  val qDIFLUT = Params.getIO.qDIF.transpose.zipWithIndex.map{
+    case (x,i) => DSPModule(new MixedBaseLUT(x), "qDIF_" + i.toString)
+  }
+  val qDITLUT = Params.getIO.qDIT.transpose.zipWithIndex.map{
+    case (x,i) => DSPModule(new MixedBaseLUT(x), "qDIT_" + i.toString)
+  }
+  val qDIF = Vec(qDIFLUT.map{ x => {
+    x.io.addr := fftIndex
+    // out is a Vec series of BaseN's
+    val out = x.io.dout.cloneType
+    out := RegNext(Mux(setupEnDly,x.io.dout,out))
+    out
+  }})
+  val qDIT = Vec(qDITLUT.map{ x => {
+    x.io.addr := fftIndex
+    // out is a Vec series of BaseN's
+    val out = x.io.dout.cloneType
+    out := RegNext(Mux(setupEnDly,x.io.dout,out))
+    out
+  }})
+
+  // IO Mod N counters (first set does (n+1)%coprime, second set does (r+Q)%coprime, with wrap
+  // condition off of the first set; reused for DIT/DIF)
+  val (ioIncCounters, ioQCounters) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
+    val c1 = BaseNIncCounter(rad, maxCoprime, nameExt = "ioInc_rad_" + rad.toString)
+    val c2 = BaseNAccWithWrap(rad, maxCoprime, nameExt = "ioQ_rad_" + rad.toString)
+    c1.iCtrl.reset := startFirstFrame
+    c2.iCtrl.reset := startFirstFrame
+    (c1, c2)
+  }}.unzip
+
+
+
+
+
+
+
+
+
+
+
+  val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map { case (e, i) => {
+    // Each counter operates on a fixed radix, previous = to the right
+    val counterRad = e.rad
+    val counterRadIdx = DSPUInt(globalRads.indexOf(counterRad))
+    val matchLoc = Vec(primeIdx.map(_ === counterRadIdx))
+    val matchLocRight = Vec(Seq(DSPBool(false)) ++ matchLoc.init)
+    val prevRadIdxInterm = Vec(primeIdx.zip(matchLocRight).map{case (idx,matchLoc) => idx ? matchLoc})
+    val prevRadIdx = prevRadIdxInterm.tail.foldLeft(prevRadIdxInterm.head)(_ | _)
+    val matchPrevCounter = Vec((0 until ioIncCounters.length).map(x => DSPUInt(x + 1) === prevRadIdx))
+    val ioIncChangeOut = Vec(ioIncCounters.map(_.oCtrl.change))
+    val prevChangeOutInterm = Vec(ioIncChangeOut.zip(matchPrevCounter).map{
+      case (changeOut,matchPrev) => changeOut ? matchPrev
+    })
+    val (temp1,temp2) = prevChangeOutInterm.splitAt(i)
+    val prevChangeOutOthers = temp1 ++ temp2.tail
+    val prevChangeOut = prevChangeOutOthers.tail.foldLeft(prevChangeOutOthers.head)(_ | _)
+    // TODO: can discount index of current e
+    //e.iCtrl.change := Mux(matchLoc.last,slowEn,prevChangeOut)
+    val primeDigitsInterm = Vec(primeDigits.zip(matchLoc).map{case (digits,matchLoc) => digits ? matchLoc})
+    val currentPrimeDigits = primeDigitsInterm.tail.foldLeft(primeDigitsInterm.head)(_ | _)
+    e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)
+    val out = e.io.out.cloneType
+    out := e.io.out
+    out
+    // branch
+ }})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  val qDIFis = Vec(qDIFLUT.zipWithIndex.map { case (x, i) => {
+    x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
+    val rad = if (i == 0) 4 else 3
+    val usedOut = x.io.dout.find(_.rad == rad).get
+    val tempOut = usedOut.cloneType
+
+    println(usedOut.length)
+    println(tempOut.length)
+
+    tempOut := usedOut
+    //Reg(tempOut) weirdest reg problem ever/!??!
+    BaseN(tempOut.map(x => x.reg()), tempOut.rad)
+  }
+  })
+
+
+
+
+
+
 
 
 
@@ -36,27 +193,13 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val seqRdDly = 2
 
 
-  /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  // FFT SIZE-DEPENDENT CONSTANTS (FROM LUTS) SETUP
-
-  // Register inputs to FFT module
-  // clk 1
 
 
 
 
-  val fftIndex = RegInit(DSPUInt(0,Params.getFFT.nCount - 1)) //RegNext(io.FFT_INDEX,en)
-  val fftTF = RegInit(DSPBool(false))
 
 
 
-
-  when(setup.SETUP_INIT.toBool) {
-    fftIndex := setup.FFT_INDEX
-    fftTF := setup.FFT
-  }
-  debug(fftIndex)
-  debug(fftTF)
 
 
 
@@ -406,14 +549,6 @@ println(Params.getMem.addrC)
 ////////////////////////////////////////////////
 
 
-  // Used for masking to get coprime mod (when operating in Base N and not binary)
-  // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
-  // coprimes -> [coprime, corresponding prime, digit mask]
-  val primeDigitsLUT = DSPModule(new IntLUT2D(Params.getIO.coprimes.map(_.map(_._3))))
-  primeDigitsLUT.io.addr := fftIndex
-  val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
-  primeDigitsTemp := primeDigitsLUT.io.dout
-  val primeDigits = RegNext(primeDigitsTemp)
 
 
 
@@ -422,61 +557,24 @@ println(Params.getMem.addrC)
 
 
 
-  //:= RegNext(primeDigitsLUT.io.dout)
-
-
-
-
-
-  // Indices indicating order of prime decomposition i.e. (3,2,5) might have indices (1,0,2) if
-  // Params.getIO.global has primes stored as (2,3,5)
-  // global -> [prime used, prime base (max radix), max coprime]
-  val globalBases = Params.getIO.global.map(_._1)
-  val primeIdx = Params.getIO.coprimes.map(_.map{ x =>
-    val base = x._2
-    globalBases.indexOf(base)
-  })
-  val primeIdxLUT = DSPModule(new IntLUT2D(primeIdx))
 
 
 
 
 
 
-  // HELP ?!?!? in coprimes am i storing base prime or base? i.e. 2 or 4? -- i think i messed it up, and it's diff from before
 
 
 
 
-  //val primeDigitsTemp = primeDigitsLUT.io.dout.cloneType
-  //primeDigitsTemp := primeDigitsLUT.io.dout
-  // vec reg has issues?!?!?!
-  //val primeDigits = Vec(primeDigitsTemp.map(x => x.reg()))
-
-  //val primeDigits = Reg(primeDigitsLUT.io.dout)
 
 
 
-  // CHANGE ALL REG TO PIPE -- should there be an enclosing vec? for all iterables
-  val qDIFiLUTs = Params.getIO.qDIF.transpose.map { x => {DSPModule(new MixedBaseLUT(x))}}
-  val qDIFis = Vec(qDIFiLUTs.zipWithIndex.map { case (x, i) => {
-    x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
-    val rad = if (i == 0) 4 else 3
-    val usedOut = x.io.dout.find(_.rad == rad).get
-    val tempOut = usedOut.cloneType
-
-    println(usedOut.length)
-    println(tempOut.length)
-
-    tempOut := usedOut
-    //Reg(tempOut) weirdest reg problem ever/!??!
-    BaseN(tempOut.map(x => x.reg()), tempOut.rad)
-  }
-  })
 
 
 
-  val (ioIncCounters, ioModCounters) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
+
+  val (ioIncCounters1, ioModCounters1) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
     val c1 = BaseNIncCounter(rad, maxCoprime, nameExt = "rad_" + rad.toString)
     val c2 = {
       if (maxCoprime != Params.getIO.global.last._3)
@@ -490,12 +588,12 @@ println(Params.getMem.addrC)
 
 
   // Right-most counter is "least significant"
-  val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map { case (e, i) => {
-    val iChange = if (e != ioIncCounters.last) ioIncCounters(i + 1).oCtrl.change else DSPBool(slowEn)
+  val ioIncCounts1 = Vec(ioIncCounters1.zipWithIndex.map { case (e, i) => {
+    val iChange = if (e != ioIncCounters1.last) ioIncCounters1(i + 1).oCtrl.change else DSPBool(slowEn)
     e.iCtrl.change := iChange
 
     // already delay 1
-    e.iCtrl.reset := DSPBool(ctrl.START_FIRST_FRAME)
+    e.iCtrl.reset := startFirstFrame //DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -504,14 +602,14 @@ println(Params.getMem.addrC)
   }
   })
   // Do zip together
-  val ioModCounts = Vec(ioModCounters.init.zipWithIndex.map { case (etemp, i) => {
+  val ioModCounts1 = Vec(ioModCounters1.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
     e.iCtrl.change := DSPBool(slowEn)
-    e.iCtrl.reset := DSPBool(ctrl.START_FIRST_FRAME)
+    e.iCtrl.reset := startFirstFrame.pipe(0) //DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFis(i).padTo(e.io.inc.get.length).asOutput // ???
-    e.iCtrl.wrap.get := ioIncCounters(i).iCtrl.change
+    e.iCtrl.wrap.get := ioIncCounters1(i).iCtrl.change
     val temp = e.io.out.cloneType
     temp := e.io.out
     temp
@@ -525,8 +623,8 @@ println(Params.getMem.addrC)
   // Should try to minimize mem output length and pad where there is width mismatch
   // CAN PIPELINE DELAY ioFinalConuts
   val ioFinalCounts = Vec(Params.getIO.global.map(_._3).zipWithIndex.map { case (x, i) => {
-    if (x == Params.getIO.global.last._3) ioIncCounts(i)
-    else (ioIncCounts(i) + ioModCounts(i)).maskWithMaxCheck(primeDigits(i))._1
+    if (x == Params.getIO.global.last._3) ioIncCounts1(i)
+    else (ioIncCounts1(i) + ioModCounts1(i)).maskWithMaxCheck(primeDigits(i))._1
   }
   })
   debug(ioFinalCounts)
@@ -767,7 +865,7 @@ println(Params.getMem.addrC)
   val oIncCounts = Vec(oIncCounters.zipWithIndex.map { case (e, i) => {
     val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slowEn)
     e.iCtrl.change := iChange
-    e.iCtrl.reset := ctrl.START_FIRST_FRAME
+    e.iCtrl.reset := startFirstFrame
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -779,7 +877,7 @@ println(Params.getMem.addrC)
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
     e.iCtrl.change := DSPBool(slowEn)
-    e.iCtrl.reset := ctrl.START_FIRST_FRAME
+    e.iCtrl.reset := ctrl.START_FIRST_FRAME.pipe(0)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFos(i).padTo(e.io.inc.get.length).asOutput // ???
@@ -934,7 +1032,7 @@ println(Params.getMem.addrC)
   // Calculation Addressing
 
   val calcMemChangeCond = Bool(OUTPUT)
-  calcMemChangeCond := ioIncCounters.head.oCtrl.change
+  calcMemChangeCond := ioIncCounters1.head.oCtrl.change
   // (iDIFCountWrap(0) && iDIFCounters(0).changeCond)	// IO counters all wrapping
 
   val calcControl = Module(new calc())
@@ -1313,9 +1411,9 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
   val DINusedreal = Mux(DSPBool(setup.FFT), io.DATA_IN.real, io.DATA_IN.imag)
   val DINusedimag = Mux(DSPBool(setup.FFT),io.DATA_IN.imag,io.DATA_IN.real)
-  val DINused =  Complex(DINusedreal,DINusedimag)
-  io.DATA_OUT.real := Mux(DSPBool(setup.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).reg()
-  io.DATA_OUT.imag := Mux(DSPBool(setup.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).reg()   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
+  val DINused =  Complex(DINusedreal,DINusedimag).pipe(1+0)
+  io.DATA_OUT.real := Mux(DSPBool(setup.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).pipe(1)
+  io.DATA_OUT.imag := Mux(DSPBool(setup.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).pipe(1)   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
   // START_FIRST_FRAME held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle START_FIRST_FRAME is low
   memBanks.io.Din := Pipe(DINused,ioToCalcClkRatio+toAddrBankDly.sum+toMemAddrDly).asInstanceOf[Complex[T]]
 
@@ -1361,8 +1459,11 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~ctrl.START_FIRST_FRAME.toBool)
 
 
+  val firstDataFlagD7 = Reg(next = firstDataFlagD6 && ~ctrl.START_FIRST_FRAME.toBool)
+  val firstDataFlagD8 = Reg(next = firstDataFlagD7 && ~ctrl.START_FIRST_FRAME.toBool)
+
   // note seqrd dly was already incremented so instead of originally starting at cycle 82 for 12, it starts at cycle 83, add 1 to make consistent w/ io
-  ctrl.FRAME_FIRST_OUT := !ctrl.START_FIRST_FRAME & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.START_FIRST_FRAME,seqRdDly +1)													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
+  ctrl.FRAME_FIRST_OUT := Pipe(!ctrl.START_FIRST_FRAME & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.START_FIRST_FRAME,seqRdDly +1),0)													// Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
 
 
   val currentRadixD3 = Reg(next = currentRadixD2)
