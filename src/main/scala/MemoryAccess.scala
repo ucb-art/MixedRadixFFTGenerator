@@ -4,7 +4,7 @@ object MemoryAccess{
   /** @param radPow powers (exponent) for each used radix
     * @param radOrder order of used radices (base)
     * @param maxStages maximum # of stages for all FFT sizes
-    * @param maxRadIn maximum radix + its index for all FFT sizes
+    * @param maxRadIn maximum radix + its index (in radOrder) for all FFT sizes
     * @return Address constants for going from nx to memory bank addresses
     */
   def apply(radPow:List[List[Int]],radOrder:List[List[Int]],maxStages:Int,maxRadIn:List[(Int,Int)]): List[List[Int]] = {

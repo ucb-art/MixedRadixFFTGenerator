@@ -2,6 +2,8 @@ package FFT
 import scala.math._
 import ChiselDSP.{BaseN, Error}
 
+// TODO: Convert my List of Tuples to Maps
+
 object Factorize {
 
   /** Input: List of supported FFT sizes
@@ -51,13 +53,15 @@ object Factorize {
     val radPow_rad_maxRad = radPowFlat.map( x => {
       var temp = Array.empty[Tuple2[Int,Int]]
       x.zipWithIndex.foreach { case (e, i) => {
-        // If on a per FFT size basis, an exponent is 0, assign radix = 1
+        // If on a per FFT size basis, an exponent is 0, assign radix = 1 (note, assumes no radix shuffling)
         val radTemp = if (e == 0) 1 else rad(i)
+        // Don't include if radix is globally unused
         if (rad(i) != 0) temp = temp :+ (e,radTemp)
       }}
       val radPow_rad = temp.toList
       val rads = radPow_rad.unzip._2
       val maxRad = rads.max
+      // max radix's index in radOrder
       val maxRadIdx = rads.indexOf(maxRad)
       (radPow_rad,(maxRad,maxRadIdx))
     })
@@ -79,10 +83,17 @@ object Factorize {
       var temp = Array.empty[Tuple3[Int,Int,Int]]
       x.zipWithIndex.foreach { case (e, i) => {
         val prime = primes_maxRadix(i)._1
+        // Don't generate tuple for globally unused coprimes
         if (prime != 0) {
-          // Digits required to represent up to (but not including) coprime (i.e. for counter)
-          val numDigits = BaseN.numDigits(e-1,prime)
-          temp = temp :+ (e,prime,numDigits)
+          // If locally, per FFT size, currently checked coprime = 1, associated radix is 1, 0 digits
+          if (e == 1){
+            temp = temp :+ (e,1,0)
+          }
+          else {
+            // Digits required to represent up to (but not including) coprime (i.e. for counter)
+            val numDigits = BaseN.numDigits(e - 1, prime)
+            temp = temp :+(e, prime, numDigits)
+          }
         }
       }}
       temp.toList
