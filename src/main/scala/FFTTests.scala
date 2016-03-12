@@ -7,6 +7,7 @@ import Chisel.{Complex => _, _}
 class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
 
   traceOn = false
+  //runTo(12)
   runAll()
   Status("\nTested FFTs: [" + Tracker.testedFFTs.mkString(", ") + "]")
 
@@ -125,7 +126,28 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   }
 
   /** Placeholder for debugging signals */
-  def calcDebug(): Unit = {}
+  def calcDebug(): Unit = {
+    /*traceOn = true
+    println(t)
+    peek(c.ioIncCounts(2))
+    peek(c.ioIncCounts(1))
+    peek(c.ioIncCounts(0))
+    peek(c.ioIncCounts1(2))
+    peek(c.ioIncCounts1(1))
+    peek(c.ioIncCounts1(0))
+    peek(c.ioIncCounters1(2).ctrl.change.get)
+    peek(c.ioIncCounters(2).ctrl.change.get)
+    peek(c.ioIncCounters1(1).ctrl.change.get)
+    peek(c.ioIncCounters(1).ctrl.change.get)
+    peek(c.ioIncCounters1(0).ctrl.change.get)
+    peek(c.ioIncCounters(0).ctrl.change.get)*/
+    /*peek(c.ioIncCounts(1))
+    peek(c.ioIncCounts(0))
+    peek(c.ioIncCounts1(2))
+    peek(c.ioIncCounts1(1))
+    peek(c.ioIncCounts1(0))*/
+    traceOn = false
+  }
   def setupDebug(): Unit = {}
 
 }
