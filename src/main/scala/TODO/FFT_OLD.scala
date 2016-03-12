@@ -17,8 +17,6 @@ import ChiselDSP.{when => _, BackwardsCompatibility, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
-  println("blahhhh" + Params.getIO.coprimes.map(_.map(_._3)))
-
   CheckDelay.off()
 
 //////////////////////////////////////////////////////////////////
@@ -96,10 +94,12 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // IO Mod N counters (first set does (n+1)%coprime, second set does (r+Q)%coprime, with wrap
   // condition off of the first set; reused for DIT/DIF)
   val (ioIncCounters, ioQCounters) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
-    val c1 = BaseNIncCounter(rad, maxCoprime, nameExt = "ioInc_rad_" + rad.toString)
-    val c2 = BaseNAccWithWrap(rad, maxCoprime, nameExt = "ioQ_rad_" + rad.toString)
-    c1.iCtrl.reset := startFirstFrame
-    c2.iCtrl.reset := startFirstFrame
+    val c1 = BaseNIncCounter(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioInc_rad_" + rad.toString)
+    val c2 = BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioQ_rad_" + rad.toString)
+    c1.ctrl.reset := startFirstFrame
+    c2.ctrl.reset := startFirstFrame
+    c1.ctrl.en.get := slowEn
+    c2.ctrl.en.get := slowEn
     (c1, c2)
   }}.unzip
 
@@ -117,12 +117,55 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     // Each counter operates on a fixed radix, previous = to the right
     val counterRad = e.rad
     val counterRadIdx = DSPUInt(globalRads.indexOf(counterRad))
+    val matchUsedIdx = primeIdx.onlyIndexWhere(_ === counterRadIdx)
+    val rightUsedIdx = primeIdx.zipWithIndex.map{case(e,i) => Mux(DSPUInt(i) > DSPUInt(matchUsedIdx,DSPUInt.toMax(matchUsedIdx.getWidth)), e, DSPUInt(0))}
+    val matchRightCounters = Vec((0 until ioIncCounters.length).map(counterIdx => {
+      val temp = Vec(rightUsedIdx.map(DSPUInt(counterIdx + 1) === _))
+      temp.tail.fold(temp.head)(_ | _)
+    }))
+    val getTransitionsTemp = ioIncCounters.zipWithIndex.map{case (e,i) => {
+      !matchRightCounters(i) | (matchRightCounters(i) & e.ctrl.isMax)
+    }}
+    val getTransitions = getTransitionsTemp.tail.fold(getTransitionsTemp.head)(_|_)
+    e.ctrl.change.get := getTransitions
+
     val matchLoc = Vec(primeIdx.map(_ === counterRadIdx))
+    val primeDigitsInterm = Vec(primeDigits.zip(matchLoc).map{case (digits,matchLoc) => digits ? matchLoc})
+    val currentPrimeDigits = primeDigitsInterm.tail.foldLeft(primeDigitsInterm.head)(_ | _)
+    e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)
+
+    val out = e.io.out.cloneType
+    out := e.io.out
+    debug(out)
+    out
+
+
+
+
+
+
+
+
+
+    //val matchPrevCounter = Vec((0 until ioIncCounters.length).map(x => DSPUInt(x + 1) === prevRadIdx))
+
+
+
+    //val matchLoc = Vec(primeIdx.map(_ === counterRadIdx))
+    //val matchIdxTemp = (0 until primeIdx.length).zip(matchLoc).map{case (idx,matchLoc) => DSPUInt(idx) ? matchLoc}
+    //val matchIdx = matchIdxTemp.tail.foldLeft(matchIdxTemp.head)(_ | _)
+    //val right = primeIdx.zipWithIndex.map{case (e,i) => Mux(DSPUInt(i) > matchIdx, e, UInt(0))}
+
+
+
+/*
+
+
     val matchLocRight = Vec(Seq(DSPBool(false)) ++ matchLoc.init)
     val prevRadIdxInterm = Vec(primeIdx.zip(matchLocRight).map{case (idx,matchLoc) => idx ? matchLoc})
     val prevRadIdx = prevRadIdxInterm.tail.foldLeft(prevRadIdxInterm.head)(_ | _)
     val matchPrevCounter = Vec((0 until ioIncCounters.length).map(x => DSPUInt(x + 1) === prevRadIdx))
-    val ioIncChangeOut = Vec(ioIncCounters.map(_.oCtrl.change))
+    val ioIncChangeOut = Vec(ioIncCounters.map(_.ctrl.nextChange))
     val prevChangeOutInterm = Vec(ioIncChangeOut.zip(matchPrevCounter).map{
       case (changeOut,matchPrev) => changeOut ? matchPrev
     })
@@ -130,15 +173,17 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     val prevChangeOutOthers = temp1 ++ temp2.tail
     val prevChangeOut = prevChangeOutOthers.tail.foldLeft(prevChangeOutOthers.head)(_ | _)
     // TODO: can discount index of current e
-    //e.iCtrl.change := Mux(matchLoc.last,slowEn,prevChangeOut)
+    e.ctrl.change := Mux(matchLoc.last,slowEn,prevChangeOut)
     val primeDigitsInterm = Vec(primeDigits.zip(matchLoc).map{case (digits,matchLoc) => digits ? matchLoc})
     val currentPrimeDigits = primeDigitsInterm.tail.foldLeft(primeDigitsInterm.head)(_ | _)
-    e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)
-    val out = e.io.out.cloneType
-    out := e.io.out
-    out
+
+    */
+    //e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)
+
     // branch
  }})
+
+
 
 
 
@@ -575,10 +620,10 @@ println(Params.getMem.addrC)
 
 
   val (ioIncCounters1, ioModCounters1) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
-    val c1 = BaseNIncCounter(rad, maxCoprime, nameExt = "rad_" + rad.toString)
+    val c1 = BaseNIncCounter(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "rad_" + rad.toString)
     val c2 = {
       if (maxCoprime != Params.getIO.global.last._3)
-        Some(BaseNAccWithWrap(rad, maxCoprime, nameExt = "rad_" + rad.toString))
+        Some(BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "rad_" + rad.toString))
       else
         None
     }
@@ -589,11 +634,18 @@ println(Params.getMem.addrC)
 
   // Right-most counter is "least significant"
   val ioIncCounts1 = Vec(ioIncCounters1.zipWithIndex.map { case (e, i) => {
-    val iChange = if (e != ioIncCounters1.last) ioIncCounters1(i + 1).oCtrl.change else DSPBool(slowEn)
-    e.iCtrl.change := iChange
+    val iChange = {
+      if (e == ioIncCounters1.last) DSPBool(true)
+      else if (i == ioIncCounters1.length-2) ioIncCounters1.last.ctrl.isMax
+      else ioIncCounters1(1).ctrl.isMax & ioIncCounters1(2).ctrl.isMax
+    }
+
+    //val iChange = if (e != ioIncCounters1.last) ioIncCounters1(i + 1).ctrl.isMax else DSPBool(true)//DSPBool(slowEn)
+    e.ctrl.change.get := iChange
+    e.ctrl.en.get := slowEn
 
     // already delay 1
-    e.iCtrl.reset := startFirstFrame //DSPBool(ctrl.START_FIRST_FRAME)
+    e.ctrl.reset := startFirstFrame //DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -604,12 +656,12 @@ println(Params.getMem.addrC)
   // Do zip together
   val ioModCounts1 = Vec(ioModCounters1.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
-    e.iCtrl.change := DSPBool(slowEn)
-    e.iCtrl.reset := startFirstFrame.pipe(0) //DSPBool(ctrl.START_FIRST_FRAME)
+    e.ctrl.en.get := slowEn //DSPBool(slowEn)
+    e.ctrl.reset := startFirstFrame.pipe(0) //DSPBool(ctrl.START_FIRST_FRAME)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFis(i).padTo(e.io.inc.get.length).asOutput // ???
-    e.iCtrl.wrap.get := ioIncCounters1(i).iCtrl.change
+    e.ctrl.wrap.get := ioIncCounters1(i).ctrl.change.get
     val temp = e.io.out.cloneType
     temp := e.io.out
     temp
@@ -826,10 +878,10 @@ println(Params.getMem.addrC)
 
 
   val (oIncCounters, oModCounters) = Params.getIO.global.reverse.map{ case (prime,rad,maxCoprime) => {
-    val c1 = BaseNIncCounter(rad, maxCoprime, nameExt = "rad_" + rad.toString)
+    val c1 = BaseNIncCounter(rad, maxCoprime,Params.getIO.clkRatio, nameExt = "rad_" + rad.toString)
     val c2 = {
       if (maxCoprime != Params.getIO.global.reverse.last._3)
-        Some(BaseNAccWithWrap(rad, maxCoprime, nameExt = "rad_" + rad.toString))
+        Some(BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio,nameExt = "rad_" + rad.toString))
       else
         None
     }
@@ -863,9 +915,16 @@ println(Params.getMem.addrC)
 
   // Right-most counter is "least significant"
   val oIncCounts = Vec(oIncCounters.zipWithIndex.map { case (e, i) => {
-    val iChange = if (e != oIncCounters.last) oIncCounters(i + 1).oCtrl.change else DSPBool(slowEn)
-    e.iCtrl.change := iChange
-    e.iCtrl.reset := startFirstFrame
+    val iChange = {
+      if (e == oIncCounters.last) DSPBool(true)
+      else if (i == oIncCounters.length-2) oIncCounters(2).ctrl.isMax
+      else oIncCounters(1).ctrl.isMax & oIncCounters(2).ctrl.isMax
+    }/*if (e != oIncCounters.last) {
+      (i+1 until oIncCounters.length).fold(oIncCounters(_).ctrl.isMax & oIncCounters(_).ctrl.isMax) //oIncCounters(i + 1).ctrl.isMax
+    } else DSPBool(true)//slowEn)*/
+    e.ctrl.change.get := iChange
+    e.ctrl.reset := startFirstFrame
+    e.ctrl.en.get := slowEn
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -876,12 +935,12 @@ println(Params.getMem.addrC)
   // Do zip together
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
-    e.iCtrl.change := DSPBool(slowEn)
-    e.iCtrl.reset := ctrl.START_FIRST_FRAME.pipe(0)
+    e.ctrl.en.get := slowEn
+    e.ctrl.reset := ctrl.START_FIRST_FRAME.pipe(0)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFos(i).padTo(e.io.inc.get.length).asOutput // ???
-    e.iCtrl.wrap.get := oIncCounters(i).iCtrl.change
+    e.ctrl.wrap.get := oIncCounters(i).ctrl.change.get
     val temp = e.io.out.cloneType
     temp := e.io.out
     temp
@@ -1032,7 +1091,7 @@ println(Params.getMem.addrC)
   // Calculation Addressing
 
   val calcMemChangeCond = Bool(OUTPUT)
-  calcMemChangeCond := ioIncCounters1.head.oCtrl.change
+  calcMemChangeCond := ioIncCounters1.head.ctrl.isMax & slowEn & ioIncCounters1(1).ctrl.isMax & ioIncCounters1(2).ctrl.isMax
   // (iDIFCountWrap(0) && iDIFCounters(0).changeCond)	// IO counters all wrapping
 
   val calcControl = Module(new calc())
