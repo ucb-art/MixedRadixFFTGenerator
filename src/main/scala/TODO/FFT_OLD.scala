@@ -66,7 +66,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val primeIdxLUT = DSPModule(new IntLUT2D(primeIndices), "primeIdx")
   primeIdxLUT.io.addr := fftIndex
   val primeIdx = primeIdxLUT.io.dout.cloneType
-  primeIdx := RegNext(Mux(setupEnDly,primeIdxLUT.io.dout,primeIdx))
+  //primeIdx := RegNext(Mux(setupEnDly,primeIdxLUT.io.dout,primeIdx))
 
   // TODO: Reduce redundant code
   // IO Q DIF + DIT
@@ -115,7 +115,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map { case (e, i) => {
     // Each counter operates on a fixed radix, previous = to the right
-    val counterRad = e.rad
+    /*val counterRad = e.rad
     val counterRadIdx = DSPUInt(globalRads.indexOf(counterRad))
     val matchUsedIdx = primeIdx.onlyIndexWhere(_ === counterRadIdx)
     val rightUsedIdx = primeIdx.zipWithIndex.map{case(e,i) => Mux(DSPUInt(i) > DSPUInt(matchUsedIdx,DSPUInt.toMax(matchUsedIdx.getWidth)), e, DSPUInt(0))}
@@ -132,7 +132,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
     val matchLoc = Vec(primeIdx.map(_ === counterRadIdx))
     val primeDigitsInterm = Vec(primeDigits.zip(matchLoc).map{case (digits,matchLoc) => digits ? matchLoc})
     val currentPrimeDigits = primeDigitsInterm.tail.foldLeft(primeDigitsInterm.head)(_ | _)
-    e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)
+    e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)*/
 
     val out = e.io.out.cloneType
     out := e.io.out
