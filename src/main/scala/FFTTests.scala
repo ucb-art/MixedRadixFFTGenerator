@@ -4,11 +4,15 @@ package FFT
 import ChiselDSP._
 import Chisel.{Complex => _, _}
 
-class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
+class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Option[List[ScalaComplex]] = None)
+                                        extends DSPTester(c) {
 
   traceOn = false
-  //runTo(12)
-  runAll()
+
+  // Default is run all tests
+  if (fftn == None) runAll()
+  else run(fftn.get)
+
   Status("\nTested FFTs: [" + Tracker.testedFFTs.mkString(", ") + "]")
 
   /** Run all tests for all FFTNs */
@@ -33,8 +37,15 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   def stepThrough(n: Int): Unit = {
     val idxN = Params.getFFT.sizes.indexOf(n)
     if (idxN < 0) Error("FFTN is not included in this generated output")
-    val inVec = TestVectors.getIn(idxN)
-    val outVec = TestVectors.getOut(idxN)
+    val inVec = in.getOrElse(TestVectors.getIn(idxN))
+    val outVec = {
+      if (in == None) Some(TestVectors.getOut(idxN))
+      else {
+        if (inVec.length % n != 0) Error("Test vector length must be an integer multiple of the FFT N")
+        if (fftn == None) Error("Custom input vector requires custom FFT size!")
+        None
+      }
+    }
     testFFTNio(idxN,fftTF = true,inVec,outVec)
   }
 
@@ -67,7 +78,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   }
 
   /** Feed in FFT inputs and read FFT outputs */
-  def testFFTNio(fftIndex:Int, fftTF:Boolean, in:List[ScalaComplex], out:List[ScalaComplex]){
+  def testFFTNio(fftIndex:Int, fftTF:Boolean, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
     // Safety initialize control signals to false
     poke(c.ctrl.ENABLE,true)
     poke(c.ctrl.START_FIRST_FRAME,false)
@@ -78,15 +89,17 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
     poke(c.ctrl.START_FIRST_FRAME,true)
     stepTrack(Params.getIO.clkRatio,in,out)
     poke(c.ctrl.START_FIRST_FRAME,false)
+    val n = Params.getFFT.sizes(fftIndex)
+    val frames = in.length/n
     // Output k = 0 starts 2 frames after n = 0
-    for (i <- 0 until Params.getTest.frames + 2; j <- 0 until Params.getFFT.sizes(fftIndex)){
+    for (i <- 0 until frames + 2; j <- 0 until n){
       stepTrack(Params.getIO.clkRatio,in,out)
     }
     if (!Tracker.outValid) Error("Output valid was never detected...")
   }
 
   /** Peek and then step, where num should be = clkRatio */
-  def stepTrack(num:Int, in:List[ScalaComplex], out:List[ScalaComplex]){
+  def stepTrack(num:Int, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
     var firstOutValid = false
     for (i <- 0 until num) {
       calcDebug()
@@ -113,8 +126,13 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
       if (Tracker.outValid){
         val errorString = " FFTN = " + Tracker.FFTN + ", FRAME = " + (Tracker.frameNum-1) +
                           ",  k = " + Tracker.outStep%Tracker.FFTN + "\n "
-        val outExpected = out(Tracker.outStep)
-        expect(c.io.DATA_OUT,outExpected,Tracker.FFTN.toString,errorString)
+        if (out != None) {
+          val outExpected = out.get(Tracker.outStep)
+          expect(c.io.DATA_OUT, outExpected, Tracker.FFTN.toString, errorString)
+        }
+        else if (i == 0) {
+          Tracker.FFTOut = Tracker.FFTOut :+ peek(c.io.DATA_OUT)
+        }
       }
       step(1)
     }
@@ -126,28 +144,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T) extends DSPTester(c) {
   }
 
   /** Placeholder for debugging signals */
-  def calcDebug(): Unit = {
-    /*traceOn = true
-    println(t)
-    peek(c.ioIncCounts(2))
-    peek(c.ioIncCounts(1))
-    peek(c.ioIncCounts(0))
-    peek(c.ioIncCounts1(2))
-    peek(c.ioIncCounts1(1))
-    peek(c.ioIncCounts1(0))
-    peek(c.ioIncCounters1(2).ctrl.change.get)
-    peek(c.ioIncCounters(2).ctrl.change.get)
-    peek(c.ioIncCounters1(1).ctrl.change.get)
-    peek(c.ioIncCounters(1).ctrl.change.get)
-    peek(c.ioIncCounters1(0).ctrl.change.get)
-    peek(c.ioIncCounters(0).ctrl.change.get)*/
-    /*peek(c.ioIncCounts(1))
-    peek(c.ioIncCounts(0))
-    peek(c.ioIncCounts1(2))
-    peek(c.ioIncCounts1(1))
-    peek(c.ioIncCounts1(0))*/
-    traceOn = false
-  }
+  def calcDebug(): Unit = {}
   def setupDebug(): Unit = {}
 
 }
@@ -162,6 +159,9 @@ object Tracker {
   var outStep = 0
   var FFTN = 0
   var testedFFTs = List[Int]()
+
+  // Store output data
+  var FFTOut = List[ScalaComplex]()
 
   // Reset variables on new test
   def reset(n: Int) : Unit = {
@@ -181,6 +181,7 @@ object Tracker {
     inStep = 0
     outStep = 0
     FFTN = n
+    // FFTOut = List[ScalaComplex]()
 
   }
 }
