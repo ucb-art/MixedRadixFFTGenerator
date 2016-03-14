@@ -95,6 +95,10 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     for (i <- 0 until frames + 2; j <- 0 until n){
       stepTrack(Params.getIO.clkRatio,in,out)
     }
+    // Go a little past to account for pipeline delay
+    while (Tracker.outStep < in.length){
+      stepTrack(Params.getIO.clkRatio,in,out)
+    }
     if (!Tracker.outValid) Error("Output valid was never detected...")
   }
 
