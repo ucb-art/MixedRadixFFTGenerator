@@ -2,21 +2,84 @@
 
 package FFT
 import ChiselDSP._
-import Chisel._
+import Chisel.{Complex => _, _}
+import arbor.{Math => _, _}
+import java.io._
 
-object ChiselFFT {
+object MainWithMatlab extends arbor.matlab.MATLABRepl {
+
+  // How to refer to objects in Matlab
+  val imports = Seq(
+    Map(
+      "classname"->"FFT.ChiselFFT",
+      "varname"  -> "FFT"
+    )
+  )
 
   def main(args: Array[String]): Unit = {
 
+    // TODO: Move to Arbor? Pull out helper for write to file
+    // Handles spaces in folder + file names for Macs, create javapaths file for Matlab interface
+    val matlabTemplate = getStartup.replaceAll("%20"," ")
+    val javapaths = new File("src/main/resources/Matlab/javapaths.m")
+    val javapathsBW = new BufferedWriter(new FileWriter(javapaths))
+    javapathsBW.write(matlabTemplate)
+    javapathsBW.close()
+
+    val fft = new ChiselFFT
+
+    fft.run(args)
+    // fft.runMatlabDouble(4,Array(1.0,0.0,0.0,0.0),Array(0.0,0.0,0.0,0.0))
+
+  }
+
+}
+
+class ChiselFFT() extends ArborSpec {
+
+  /** For Matlab Fixed experiments */
+  def runMatlabFixed(fftn:Int,inReal:Array[Double],inImag:Array[Double], intBits: Int, fracBits:Int):
+                    Array[Double] = {
+    runMatlab(fftn,inReal,inImag,true,Some((intBits,fracBits)))
+  }
+  /** For Matlab Double experiments */
+  def runMatlabDouble(fftn:Int,inReal:Array[Double],inImag:Array[Double]): Array[Double] = {
+    runMatlab(fftn,inReal,inImag,false,None)
+  }
+
+  /** Matlab interface */
+  def runMatlab(fftn:Int,inReal:Array[Double],inImag:Array[Double],
+                isFixed:Boolean,fixedParams:Option[(Int,Int)]): Array[Double] = {
+    val inVec = (inReal.toList).zip(inImag.toList).map{case (real,imag) => Complex(real,imag)}
+    // SBT run parameters
+    val args = Array("-params_false_false") ++ testArgs
+    val out = run(args,Some(fftn),Some(inVec),Some(isFixed),fixedParams)
+
+    out.map(x => List(x.real,x.imag)).flatten.toArray
+
+  }
+
+  /** Run Chisel generator compilation, with possible Matlab interface */
+  def run(args: Array[String], fftn: Option[Int] = None,
+          inVec: Option[List[ScalaComplex]] = None,
+          isFixed: Option[Boolean] = None,
+          fixedParams: Option[(Int,Int)] = None
+         ): List[ScalaComplex] = {
+
     // TODO: Pull out as SBT run parameters
-    val useJSON = false
+    val useJSON = {
+      if (fixedParams != None) false
+      else false                        // Up to you
+    }
     val nameExt = ""
+
+    val (intBitsD,fracBitsD) = fixedParams.getOrElse((1,30))
 
     // Local generator params. Can use this instead of JSON values for design sweeps or Scala based parameter generation
     val defaultGenParams = GeneratorParams(
       complex = ComplexParams(
-        intBits       = 1,
-        fracBits      = 30,
+        intBits       = intBitsD,
+        fracBits      = fracBitsD,
         use4Muls      = true,
         mulPipe       = 1,
         addPipe       = 0.0,
@@ -39,7 +102,7 @@ object ChiselFFT {
 
     // Extract Generator parameters (complex, FFT, etc.) from JSON or else from defaults
     // + fixed/double mode setup info
-    val (isFixed,p) = Init({defaultGenParams}, jsonName = if (useJSON) "FFT" else "", args = args)
+    val (isFixedParam,p) = Init({defaultGenParams}, jsonName = if (useJSON) "FFT" else "", args = args)
     // Setup FFT with user-defined parameters
     Params(p)
 
@@ -48,10 +111,21 @@ object ChiselFFT {
 
     // Setup module + tester
     val runArgs = args.slice(1, args.length)
-    if (isFixed)
-      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPFixed()}), nameExt)) { c => new FFTTests(c) }
-    else
-      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPDbl()}), nameExt)) { c => new FFTTests(c) }
+
+    val checkFixed = isFixed.getOrElse(isFixedParam)
+
+    if (checkFixed) {
+      Status("Starting DSPFixed testbench")
+      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPFixed(p.complex.getFixedParams)}), nameExt)) {
+        c => new FFTTests(c,fftn,inVec)
+      }
+    }
+    else {
+      Status("Starting DSPDbl testbench")
+      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPDbl()}), nameExt)) { c => new FFTTests(c,fftn,inVec) }
+    }
+
+    Tracker.FFTOut
 
   }
 

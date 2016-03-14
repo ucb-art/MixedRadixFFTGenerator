@@ -21,9 +21,14 @@ lazy val ChiselDSP = ProjectRef(
   "chisel-dsp"
 )
 
+val arborVersion = "13b02578d48034f35fbd4f555e1316890b518b5d"
+lazy val arbor = ProjectRef(
+  uri("ssh://git@github.com/grebe/arbor.git#%s".format(arborVersion)),
+  "root"
+)
+
 lazy val root = Project(
   id = "fft",
   base = file("."),
   settings = prjSettings
-).dependsOn(ChiselDSP
-)
+).dependsOn(ChiselDSP, arbor)

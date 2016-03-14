@@ -8,3 +8,6 @@ Makefrag
 constraints.xdc
 tb.v
 .idea/
+src/main/resources/Matlab/javapaths.m
+*.cpp
+*.h
