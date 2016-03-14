@@ -125,7 +125,10 @@ class ChiselFFT() extends ArborSpec {
       Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPDbl()}), nameExt)) { c => new FFTTests(c,fftn,inVec) }
     }
 
-    Tracker.FFTOut
+    // Clean up variable
+    val out = Tracker.FFTOut
+    Tracker.FFTOut = List[ScalaComplex]()
+    out
 
   }
 

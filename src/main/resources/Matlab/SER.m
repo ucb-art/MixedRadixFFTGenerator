@@ -1,12 +1,29 @@
-EsN0dBs      = linspace(10, 30, 10);
-EsN0s     = 10.^(EsN0dBs./10);
-N=4; %% FFT frame size
-M=4; %% Modulation Order
+%% setup javapaths from Arbor
+close all
+clear all
+clear java
+clear classes
+clear functions
+pack
+
+%%
+javapaths
+
+% correctness threshold
+threshold = 0.000000001;
+
+% N = FFT frame size, M = Modulation Order
+N=4; 
+M=4; 
+
+% Create input data (from symbols + noise corruption)
+EsN0dBs = linspace(10, 30, 10);
+EsN0s = 10.^(EsN0dBs./10);
 k = 1 / sqrt (2/3.0 * (M - 1));
 Es = 2 / 3 * (M - 1);
 numtrials = N * 100;
 
-raw_symbols = (randi([0 15], 1, numtrials) * 2 - 15) + j*(randi([0 15], 1, numtrials) * 2 -15);
+raw_symbols = (randi([0 M-1], 1, numtrials) * 2 - (M-1)) + j*(randi([0 M-1], 1, numtrials) * 2 -(M-1));
 symbols = reshape(ifft(reshape(raw_symbols, N, numtrials/N)), 1, numtrials);
 
 to_send   = [];
@@ -18,21 +35,32 @@ for EsN0=EsN0s
     to_send = [to_send (k * sqrt(Es) * symbols + sqrt(N0 / 2) * noise)];
 end
 
+% Perform ideal + nonideal FFTs on input data
+matlabfft  = reshape(fft(reshape(to_send, N, length(to_send)/N)), 1, length(to_send))';
 
+% Chisel FFT (double precision) -- why -1?
+chiselfft = FFT.runMatlabDouble(N,real(to_send), imag(to_send));
+chiselfftreal = chiselfft(1:2:end);
+chiselfftimag = chiselfft(2:2:end);
+chiselfft = complex(chiselfftreal,chiselfftimag);
 
-matlabfft  = reshape(fft(reshape(to_send, N, length(to_send)/N)), 1, length(to_send));
+diff = abs(matlabfft-chiselfft);
+isequal = max(diff) < threshold
 
+%% Demod
 
-angiefft = FFT.runMatlabDouble(N,real(to_send), imag(to_send));
+% Ideal demod (no noise)
+res = qamdemod(raw_symbols,M);
+res = repmat(res, 1, length(EsN0s))';
 
-%res = basebandDemod.run(M, real(raw_symbols), imag(raw_symbols));
-%res = repmat(res', 1, length(EsN0s));
-%%
-matlabrecv = basebandDemod.run(M, real(matlabfft), imag(matlabfft))';
+% Output of demod following FFTs
+matlabrecv = qamdemod(matlabfft,M);
+chiselrecv = qamdemod(chiselfft,M);
+
 ideal = 2*(1 - 1/sqrt(M)) * erfc(k .* sqrt(EsN0s)) - ...
     (1 - 2/sqrt(M)+1/M) .* (erfc(k .* sqrt(EsN0s))).^2;
 
-notequal = res ~= recv;
+notequal = res ~= chiselrecv;
 matlabneq = res ~= matlabrecv;
 errors   = sum(reshape(notequal, numtrials, length(EsN0s)), 1);
 matlaberrors = sum(reshape(matlabneq, numtrials, length(EsN0s)), 1);
