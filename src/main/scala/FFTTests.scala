@@ -106,7 +106,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def stepTrack(num:Int, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
     var firstOutValid = false
     for (i <- 0 until num) {
-      calcDebug()
+      calcDebug(i)
       val inVal = in(Tracker.inStep % in.length)
       // Checks when k = 0 is output (Detects transition to first symbol) & dumps input
       if (i == 0) {
@@ -148,7 +148,22 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   }
 
   /** Placeholder for debugging signals */
-  def calcDebug(): Unit = {}
+  var calcDone = false
+  def calcDebug(i:Int): Unit = {
+    /*val calcDoneNew = peek(c.calcDoneFlag)
+    if (!calcDone && calcDoneNew) Status("Calc finished @ t = " + t)
+    if (calcDone && !calcDoneNew) Status("Calc started @ t = " + t)
+    calcDone = calcDoneNew*/
+    val temp = traceOn
+    traceOn = true
+    /*if(i == 0) {
+      peek(c.memBanks.io.ioAddr)
+      peek(c.memBanks.io.ioBank)
+    }*/
+    /*peek(c.memBanks.io.calcAddr)
+    peek(c.memBanks.io.calcBank)*/
+    traceOn = temp
+  }
   def setupDebug(): Unit = {}
 
 }
@@ -174,6 +189,9 @@ object Tracker {
     val dblTol = TestVectors.outAbsMin(idx)
     // Set tolerance for comparing expected values
     // val fixedTol = (DSPFixed.toFixed(dblTol,Complex.getFrac).bitLength-2).max(1)
+
+    // TODO: Don't use Complex.getFrac!
+
     val fixedTol = Complex.getFrac/2
     // val floTol = (0.00000001).max(dblTol/n/100000)
     val floTol = 0.0000000001

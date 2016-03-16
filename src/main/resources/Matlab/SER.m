@@ -16,14 +16,29 @@ threshold = 0.000000001;
 N=4; 
 M=4; 
 
+%% check FFT
+
+inreal = [1 1 1 1];
+inimag = [1 1 1 1];
+
+chiselfft = FFT.runMatlabDouble(N,inreal,inimag);
+chiselfftreal = chiselfft(1:2:end);
+chiselfftimag = chiselfft(2:2:end);
+chiselfft = complex(chiselfftreal,chiselfftimag);
+
+matlabfft = fft(complex(inreal,inimag)).'
+
+%%
+
 % Create input data (from symbols + noise corruption)
 EsN0dBs = linspace(10, 30, 10);
 EsN0s = 10.^(EsN0dBs./10);
 k = 1 / sqrt (2/3.0 * (M - 1));
 Es = 2 / 3 * (M - 1);
+% numTrials = number of symbols (not frames)
 numtrials = N * 100;
-
-raw_symbols = (randi([0 M-1], 1, numtrials) * 2 - (M-1)) + j*(randi([0 M-1], 1, numtrials) * 2 -(M-1));
+maxSymbol = sqrt(M)-1
+raw_symbols = (randi([0 maxSymbol], 1, numtrials) * 2 - maxSymbol) + j*(randi([0 maxSymbol], 1, numtrials) * 2 - maxSymbol);
 symbols = reshape(ifft(reshape(raw_symbols, N, numtrials/N)), 1, numtrials);
 
 to_send   = [];
@@ -36,9 +51,9 @@ for EsN0=EsN0s
 end
 
 % Perform ideal + nonideal FFTs on input data
-matlabfft  = reshape(fft(reshape(to_send, N, length(to_send)/N)), 1, length(to_send))';
+matlabfft  = reshape(fft(reshape(to_send, N, length(to_send)/N)), 1, length(to_send)).';
 
-% Chisel FFT (double precision) -- why -1?
+% Chisel FFT (double precision) 
 chiselfft = FFT.runMatlabDouble(N,real(to_send), imag(to_send));
 chiselfftreal = chiselfft(1:2:end);
 chiselfftimag = chiselfft(2:2:end);
@@ -51,7 +66,7 @@ isequal = max(diff) < threshold
 
 % Ideal demod (no noise)
 res = qamdemod(raw_symbols,M);
-res = repmat(res, 1, length(EsN0s))';
+res = repmat(res, 1, length(EsN0s)).';
 
 % Output of demod following FFTs
 matlabrecv = qamdemod(matlabfft,M);
