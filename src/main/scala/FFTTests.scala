@@ -134,6 +134,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
           val outExpected = out.get(Tracker.outStep)
           expect(c.io.DATA_OUT, outExpected, Tracker.FFTN.toString, errorString)
         }
+        // Doesn't compare, just stores results for post-processing
         else if (i == 0) {
           Tracker.FFTOut = Tracker.FFTOut :+ peek(c.io.DATA_OUT)
         }

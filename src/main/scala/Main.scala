@@ -51,7 +51,7 @@ class ChiselFFT() extends ArborSpec {
   def runMatlab(fftn:Int,inReal:Array[Double],inImag:Array[Double],
                 isFixed:Boolean,fixedParams:Option[(Int,Int)]): Array[Double] = {
     val inVec = (inReal.toList).zip(inImag.toList).map{case (real,imag) => Complex(real,imag)}
-    // SBT run parameters
+    // SBT run parameters (overridden)
     val args = Array("-params_false_false") ++ testArgs
     val out = run(args,Some(fftn),Some(inVec),Some(isFixed),fixedParams)
 
@@ -73,6 +73,7 @@ class ChiselFFT() extends ArborSpec {
     }
     val nameExt = ""
 
+    // Need to set default to run even though double doesn't use these values
     val (intBitsD,fracBitsD) = fixedParams.getOrElse((1,30))
 
     // Local generator params. Can use this instead of JSON values for design sweeps or Scala based parameter generation
