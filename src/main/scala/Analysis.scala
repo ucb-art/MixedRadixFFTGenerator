@@ -18,7 +18,7 @@ object SQNRAnalysis {
     val fft = new ChiselFFT
     val fracBits = bits.map(_ - intBits - 1)
     // Setup input vector generation (support smallest # of bits)
-    val genParams = GeneratorParams(complex=ComplexParams(intBits=intBits,fracBits=fracBits.min))
+    val genParams = GeneratorParams(complex=ComplexParams(intBits=intBits,fracBits=fracBits.min, trimType = Round))
     Init({genParams}, jsonName = "", args = args)
     val (inVecs,outVecs) = TestVectors(fftn,frames)
 
