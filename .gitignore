@@ -4,6 +4,7 @@ console_out
 project/
 target/
 generator_out.json
+sqnr.json
 Makefrag
 constraints.xdc
 tb.v

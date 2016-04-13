@@ -7,6 +7,8 @@
 // TODO: Don't rely on MulFracWidth in complex (gen should maybe carry that around as default...) -- bad for
 // multi project
 
+// TODO: Twiddles need separate gen
+
 package FFT
 // TODO: Rework logic and vectorize from the start
 
@@ -33,6 +35,7 @@ case object Add extends StageType
 
 class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
 
+  // TODO: Don't use Complex.get*Pipe (not good for multiple blocks)
   // TODO: WFTA have more fractional widths than memory?
   // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further, condition (**)
 

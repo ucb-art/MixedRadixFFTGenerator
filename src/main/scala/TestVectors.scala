@@ -44,13 +44,14 @@ object TestVectors{
   val reala = List(0.25,0.15,0.02,0.03)
 
   /** Init test vectors */
-  def apply(sizes: List[Int], frames: Int) : Unit = {
+  def apply(sizes: List[Int], frames: Int) : Tuple2[List[List[ScalaComplex]],List[List[ScalaComplex]]] = {
     val (i,o) = (for (e <- sizes) yield {apply(e,frames)}).unzip
     in = i
     out = o
     outAbsMin = o.map(
       _.map(x => math.abs(x.real).min(math.abs(x.imag))).min
     )
+    (i,o)
   }
 
   /** Create list of inputs */
