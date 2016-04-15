@@ -6,29 +6,18 @@ clear classes
 clear functions
 pack
 
-%%
+cd ..
 javapaths
+cd TODO
 
 % correctness threshold
 threshold = 0.000000001;
 
 % N = FFT frame size, M = Modulation Order
-N=4; 
+N=72; 
 M=4; 
 
-%% check FFT
-
-inreal = [1 1 1 1];
-inimag = [1 1 1 1];
-
-chiselfft = FFT.runMatlabDouble(N,inreal,inimag);
-chiselfftreal = chiselfft(1:2:end);
-chiselfftimag = chiselfft(2:2:end);
-chiselfft = complex(chiselfftreal,chiselfftimag);
-
-matlabfft = fft(complex(inreal,inimag)).'
-
-%%
+%% Paul's SQNR vs. BER code
 
 % Create input data (from symbols + noise corruption)
 EsN0dBs = linspace(10, 30, 10);
@@ -61,6 +50,18 @@ chiselfft = complex(chiselfftreal,chiselfftimag);
 
 diff = abs(matlabfft-chiselfft);
 isequal = max(diff) < threshold
+
+%% check FFT
+
+inreal = [1 1 1 1];
+inimag = [1 1 1 1];
+
+chiselfft = FFT.runMatlabDouble(N,inreal,inimag);
+chiselfftreal = chiselfft(1:2:end);
+chiselfftimag = chiselfft(2:2:end);
+chiselfft = complex(chiselfftreal,chiselfftimag);
+
+matlabfft = fft(complex(inreal,inimag)).'
 
 %% Demod
 
