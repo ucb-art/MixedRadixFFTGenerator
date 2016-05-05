@@ -12,3 +12,4 @@ tb.v
 src/main/resources/Matlab/javapaths.m
 *.cpp
 *.h
+*.csv
