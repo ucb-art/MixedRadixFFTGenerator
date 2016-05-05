@@ -41,6 +41,8 @@ object Params {
     io.coprimes = coprimes
     io.global = global
 
+    ScheduleCalc(calc.radPow,calc.radOrder,calc.maxStages)
+
     val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes,io.global)
     io.qDIF = qDIF
     io.qDIT = qDIT

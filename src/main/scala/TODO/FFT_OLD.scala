@@ -1640,9 +1640,20 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
 
+/*
+
+  val myArray = Vec(UInt(1),UInt(2),UInt(3),UInt(4),UInt(5),UInt(1),UInt(1),UInt(2))
 
 
 
+  val sum = myArray.foldLeft(UInt(0,width=5))((accum, e) => accum + e)
+  
+
+
+
+
+
+  debug(sum)*/
 
 
 
