@@ -74,7 +74,7 @@ class ChiselFFT() extends ArborSpec {
     val nameExt = ""
 
     // Need to set default to run even though double doesn't use these values
-    val (intBitsD,fracBitsD) = fixedParams.getOrElse((1,30))
+    val (intBitsD,fracBitsD) = fixedParams.getOrElse((1,14))
 
     // Local generator params. Can use this instead of JSON values for design sweeps or Scala based parameter generation
     val defaultGenParams = GeneratorParams(
@@ -82,18 +82,18 @@ class ChiselFFT() extends ArborSpec {
         intBits       = intBitsD,
         fracBits      = fracBitsD,
         use4Muls      = true,
-        mulPipe       = 1,
-        addPipe       = 0.0,
+        mulPipe       = 3,
+        addPipe       = 1.0,
         trimType      = Truncate,
         overflowType  = Grow,
-        mulFracGrowth = 4
+        mulFracGrowth = 1
       ),
       clock = ClockParams(
         periodx100ps  = Math.floor(162.76).toInt
       ),
       fft = FFTParams(
         sizes   = List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
-                       60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted ++ List(64,128,256,512,1024,2048,1536)
+                       60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted /*++ List(64,128,256,512,1024,2048,1536)*/
                        //List(64,72,128,2048,25)
                        /*List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
                        60,120,240,480,960,180,360,720,300,600,1200,540,1080,900) ++
