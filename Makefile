@@ -1,7 +1,8 @@
+PRJ=FFT
 # inLineMem = Chisel outputs registers; otherwise SRAM black boxes
 MEM=--inlineMem
 # Run in fixed point mode or Dbl
-FIXED = true
+FIXED = false
 # Output Verilog TB file? (mirror of Chisel TB)
 VERILOGTB = false
 # Output directory for generic 'make vlsi', and more specific (should use) 'make asic', 'make fpga'
@@ -18,14 +19,17 @@ TEST_ROOT = ./build/test
 # Make Verilog for FPGA
 fpga: MEM=--inlineMem
 fpga: clean_fpga setup_fpga vlsi
-	mv $(VLSI_ROOT)/* $(FPGA_ROOT)/.
-	mv $(ANALYSIS_ROOT)/* $(FPGA_ROOT)/.
+	cp $(VLSI_ROOT)/$(PRJ).v $(FPGA_ROOT)/.
+	cp $(ANALYSIS_ROOT)/*.json $(FPGA_ROOT)/.
 
 # Make Verilog for ASIC
 asic: MEM=--noInlineMem
 asic: clean_asic setup_asic vlsi
-	mv $(VLSI_ROOT)/* $(ASIC_ROOT)/.
-	mv $(ANALYSIS_ROOT)/* $(ASIC_ROOT)/.
+	cp $(VLSI_ROOT)/$(PRJ).v $(ASIC_ROOT)/.
+	cp $(ANALYSIS_ROOT)/*.json $(ASIC_ROOT)/.
+	if [ -f $(VLSI_ROOT)/$(PRJ).conf ]; then \
+    	cp $(VLSI_ROOT)/$(PRJ).conf $(ASIC_ROOT)/. ;\
+    fi
 
 # Generic Make VLSI (should not use directly)
 vlsi: clean_vlsi setup_vlsi clean_analysis setup_analysis
@@ -34,22 +38,27 @@ vlsi: clean_vlsi setup_vlsi clean_analysis setup_analysis
 # Debug without VCD dump (no large files)
 debug: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --targetDir $(TEST_ROOT)" | tee $(DEBUG_ROOT)/console_out.txt
-	mv $(ANALYSIS_ROOT)/* $(DEBUG_ROOT)/.
+	cp $(ANALYSIS_ROOT)/*.json $(DEBUG_ROOT)/.
 
 # Debug with VCD dump
 debug_vcd: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --vcd --targetDir $(TEST_ROOT)" | tee $(DEBUG_ROOT)/console_out.txt
-	mv $(ANALYSIS_ROOT)/* $(DEBUG_ROOT)/.
+	cp $(ANALYSIS_ROOT)/*.json $(DEBUG_ROOT)/.
+
+# Debug with Verilog TB generation
+debug_tb: FIXED=true
+debug_tb: VERILOGTB=true
+debug_tb: debug
 
 # Make ASIC Verilog + TB
-asic_tb: FIXED=true VERILOGTB=true
-asic_tb: asic debug
+asic_tb: asic debug_tb
 	mv $(DEBUG_ROOT)/* $(ASIC_ROOT)/.
+	rm -rf $(ASIC_ROOT)/constraints.xdc $(ASIC_ROOT)/console_out.txt
 
 # Make FPGA Verilog + TB
-fpga_tb: FIXED=true VERILOGTB=true
-fpga_tb: fpga debug
+fpga_tb: fpga debug_tb
 	mv $(DEBUG_ROOT)/* $(FPGA_ROOT)/.
+	rm -rf $(FPGA_ROOT)/Makefrag $(FPGA_ROOT)/console_out.txt
 
 setup_%:
 	mkdir -p build/$(patsubst setup_%,%,$@)
@@ -59,6 +68,7 @@ clean_%:
 
 clean: clean_asic clean_fpga clean_test clean_debug clean_analysis clean_vlsi
 	rm -rf target project build .compile_flags
-	rm *.h rm *.cpp
+	rm -rf *.h *.cpp
+	rm -rf MatlabScratch/*
 
 .PHONY: fpga_tb asic_tb fpga asic vlsi debug debug_vcd setup_% clean_%
