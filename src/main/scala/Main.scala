@@ -21,7 +21,7 @@ object MainWithMatlab extends arbor.matlab.MATLABRepl {
     // TODO: Move to Arbor? Pull out helper for write to file
     // Handles spaces in folder + file names for Macs, create javapaths file for Matlab interface
     val matlabTemplate = getStartup.replaceAll("%20"," ")
-    val javapaths = new File("src/main/resources/Matlab/javapaths.m")
+    val javapaths = new File("MatlabScratch/javapaths.m")
     val javapathsBW = new BufferedWriter(new FileWriter(javapaths))
     javapathsBW.write(matlabTemplate)
     javapathsBW.close()
@@ -29,7 +29,6 @@ object MainWithMatlab extends arbor.matlab.MATLABRepl {
     val fft = new ChiselFFT
 
     fft.run(args)
-    // fft.runMatlabDouble(4,Array(1.0,0.0,0.0,0.0),Array(0.0,0.0,0.0,0.0))
 
   }
 
@@ -82,8 +81,8 @@ class ChiselFFT() extends ArborSpec {
         intBits       = intBitsD,
         fracBits      = fracBitsD,
         use4Muls      = true,
-        mulPipe       = 3,
-        addPipe       = 1.0,
+        mulPipe       = 2,
+        addPipe       = 0.35,
         trimType      = Truncate,
         overflowType  = Grow,
         mulFracGrowth = 1

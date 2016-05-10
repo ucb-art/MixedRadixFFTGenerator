@@ -19,7 +19,8 @@ object ScheduleCalc {
 				List(fftn,cycles,rad2cycles)
 			})
 		val cycleCount = clks.map( n => n.mkString(",")).mkString("\n")
-    scala.tools.nsc.io.File("cycleCount.csv").writeAll(cycleCount)
+		// TODO: Generic analysis folder needed
+    scala.tools.nsc.io.File("build/analysis/cycleCount.csv").writeAll(cycleCount)
     println(cycleCount)
 	}
 }

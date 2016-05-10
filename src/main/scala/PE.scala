@@ -77,6 +77,7 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) exte
 
   // Total delay through the whole processing element
   val delay = twiddleDelay + wfta.delay // + (if (pipeDin) 1 else 0)
+  println("PE delay: " + delay)
 
   // TODO: Don't use Complex.get*Pipe (not good for multiple blocks)
 
