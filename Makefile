@@ -1,20 +1,20 @@
-PRJ=FFT
+PRJ ?= FFT
 # inLineMem = Chisel outputs registers; otherwise SRAM black boxes
-MEM=--inlineMem
+MEM ?= --inlineMem
 # Run in fixed point mode or Dbl
-FIXED = false
+FIXED ?= false
 # Output Verilog TB file? (mirror of Chisel TB)
-VERILOGTB = false
+VERILOGTB ?= false
 # Output directory for generic 'make vlsi', and more specific (should use) 'make asic', 'make fpga'
-VLSI_ROOT = ./build/vlsi/generated-src
-ASIC_ROOT = ./build/asic
-FPGA_ROOT = ./build/fpga
+VLSI_ROOT ?= ./build/vlsi/generated-src
+ASIC_ROOT ?= ./build/asic
+FPGA_ROOT ?= ./build/fpga
 # Analysis results should be dumped here (you should specify)
-ANALYSIS_ROOT = ./build/analysis
+ANALYSIS_ROOT ?= ./build/analysis
 # Files you'll look at for debug (Verilog TB, console print out)
-DEBUG_ROOT = ./build/debug
+DEBUG_ROOT ?= ./build/debug
 # Misc. files used with C++ emulator
-TEST_ROOT = ./build/test
+TEST_ROOT ?= ./build/test
 
 # Make Verilog for FPGA
 fpga: MEM=--inlineMem
@@ -38,12 +38,12 @@ vlsi: clean_vlsi setup_vlsi clean_analysis setup_analysis
 # Debug without VCD dump (no large files)
 debug: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --targetDir $(TEST_ROOT)" | tee $(DEBUG_ROOT)/console_out.txt
-	cp $(ANALYSIS_ROOT)/*.json $(DEBUG_ROOT)/.
+	cp $(ANALYSIS_ROOT)/generator_out.json $(DEBUG_ROOT)/.
 
 # Debug with VCD dump
 debug_vcd: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --vcd --targetDir $(TEST_ROOT)" | tee $(DEBUG_ROOT)/console_out.txt
-	cp $(ANALYSIS_ROOT)/*.json $(DEBUG_ROOT)/.
+	cp $(ANALYSIS_ROOT)/generator_out.json $(DEBUG_ROOT)/.
 
 # Debug with Verilog TB generation
 debug_tb: FIXED=true
