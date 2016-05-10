@@ -24,8 +24,8 @@ fpga: clean_fpga setup_fpga vlsi
 # Make Verilog for ASIC
 asic: MEM=--noInlineMem
 asic: clean_asic setup_asic vlsi
-    mv $(VLSI_ROOT)/* $(ASIC_ROOT)/.
-    mv $(ANALYSIS_ROOT)/* $(ASIC_ROOT)/.
+	mv $(VLSI_ROOT)/* $(ASIC_ROOT)/.
+	mv $(ANALYSIS_ROOT)/* $(ASIC_ROOT)/.
 
 # Generic Make VLSI (should not use directly)
 vlsi: clean_vlsi setup_vlsi clean_analysis setup_analysis
@@ -34,22 +34,22 @@ vlsi: clean_vlsi setup_vlsi clean_analysis setup_analysis
 # Debug without VCD dump (no large files)
 debug: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --targetDir $(TEST_ROOT)" | tee $(DEBUG_ROOT)/console_out.txt
-    mv $(ANALYSIS_ROOT)/* $(DEBUG_ROOT)/.
+	mv $(ANALYSIS_ROOT)/* $(DEBUG_ROOT)/.
 
 # Debug with VCD dump
 debug_vcd: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
 	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --vcd --targetDir $(TEST_ROOT)" | tee $(DEBUG_ROOT)/console_out.txt
-    mv $(ANALYSIS_ROOT)/* $(DEBUG_ROOT)/.
+	mv $(ANALYSIS_ROOT)/* $(DEBUG_ROOT)/.
 
 # Make ASIC Verilog + TB
 asic_tb: FIXED=true VERILOGTB=true
 asic_tb: asic debug
-    mv $(DEBUG_ROOT)/* $(ASIC_ROOT)/.
+	mv $(DEBUG_ROOT)/* $(ASIC_ROOT)/.
 
 # Make FPGA Verilog + TB
 fpga_tb: FIXED=true VERILOGTB=true
 fpga_tb: fpga debug
-    mv $(DEBUG_ROOT)/* $(FPGA_ROOT)/.
+	mv $(DEBUG_ROOT)/* $(FPGA_ROOT)/.
 
 setup_%:
 	mkdir -p build/$(patsubst setup_%,%,$@)
