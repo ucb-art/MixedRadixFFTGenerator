@@ -17,7 +17,18 @@ import ChiselDSP.{when => _, BackwardsCompatibility, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
+  val peNum = 0
+  val butterfly = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)
+  // from memBanks
+  pipeBFWriteDly = butterfly.delay
+  val wftaDly = butterfly.wfta.delay
+  val seqRdDly = 2
+
   CheckDelay.off()
+
+
+
+
 
 //////////////////////////////////////////////////////////////////
 
@@ -234,8 +245,7 @@ class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
 
 
-  val wftaDly = 1
-  val seqRdDly = 2
+
 
 
 
@@ -1304,7 +1314,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
 
-  println(twiddleArray(0))
+  //println(twiddleArray(0))
 
   // Twiddles from 1(-1) to radix-1(-1) (indexed starting at 0) for each coprime
   val twiddles = Vec((0 until twiddleArray.length).map(y => {
@@ -1540,8 +1550,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
 
-  val peNum = 0
-  val butterfly = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)
+
 
   CheckDelay.off()
 

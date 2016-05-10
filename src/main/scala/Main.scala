@@ -21,7 +21,7 @@ object MainWithMatlab extends arbor.matlab.MATLABRepl {
     // TODO: Move to Arbor? Pull out helper for write to file
     // Handles spaces in folder + file names for Macs, create javapaths file for Matlab interface
     val matlabTemplate = getStartup.replaceAll("%20"," ")
-    val javapaths = new File("src/main/resources/Matlab/javapaths.m")
+    val javapaths = new File("MatlabScratch/javapaths.m")
     val javapathsBW = new BufferedWriter(new FileWriter(javapaths))
     javapathsBW.write(matlabTemplate)
     javapathsBW.close()
@@ -29,7 +29,6 @@ object MainWithMatlab extends arbor.matlab.MATLABRepl {
     val fft = new ChiselFFT
 
     fft.run(args)
-    // fft.runMatlabDouble(4,Array(1.0,0.0,0.0,0.0),Array(0.0,0.0,0.0,0.0))
 
   }
 
@@ -74,7 +73,7 @@ class ChiselFFT() extends ArborSpec {
     val nameExt = ""
 
     // Need to set default to run even though double doesn't use these values
-    val (intBitsD,fracBitsD) = fixedParams.getOrElse((1,14))
+    val (intBitsD,fracBitsD) = fixedParams.getOrElse((1,22))
 
     // Local generator params. Can use this instead of JSON values for design sweeps or Scala based parameter generation
     val defaultGenParams = GeneratorParams(
@@ -82,8 +81,8 @@ class ChiselFFT() extends ArborSpec {
         intBits       = intBitsD,
         fracBits      = fracBitsD,
         use4Muls      = true,
-        mulPipe       = 3,
-        addPipe       = 1.0,
+        mulPipe       = 2,
+        addPipe       = 0.35,
         trimType      = Truncate,
         overflowType  = Grow,
         mulFracGrowth = 1
@@ -93,7 +92,7 @@ class ChiselFFT() extends ArborSpec {
       ),
       fft = FFTParams(
         sizes   = List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
-                       60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted /*++ List(64,128,256,512,1024,2048,1536)*/
+                       60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted ++ List(64,128,256,512,1024,2048,1536)
                        //List(64,72,128,2048,25)
                        /*List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
                        60,120,240,480,960,180,360,720,300,600,1200,540,1080,900) ++

@@ -19,7 +19,7 @@ object FFTGenerator {
     // This would help save some logic if you don't need all supported butterflies/primes
     var validPrimesOverride: Array[Int] = Array(2,3,5)
 
-    // # of cycles to complete butterfly operation
+    // # of cycles to complete butterfly operation (not used except in schedule code)
     val Bcycles: Int = 3
 
     // True: single port SRAM; false: dual-port SRAM
@@ -41,7 +41,7 @@ object FFTGenerator {
     val numPowerArray = generalConstants.numPowerArray.transpose
     powColCount = numPowerArray.length
     // TODO: change
-    pipeBFWriteDly = 2//wftaDly.sum+butterfly.twDly
+    //pipeBFWriteDly = 3//wftaDly.sum+butterfly.twDly
 
   }
 }
