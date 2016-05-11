@@ -68,7 +68,7 @@ clean_%:
 
 clean: clean_asic clean_fpga clean_test clean_debug clean_analysis clean_vlsi
 	rm -rf target project build .compile_flags
-	rm -rf *.h *.cpp
+	rm -rf *.h *.cpp ; find . -name "*~" -type f -delete
 	rm -rf MatlabScratch/*
 
 .PHONY: fpga_tb asic_tb fpga asic vlsi debug debug_vcd setup_% clean_%
