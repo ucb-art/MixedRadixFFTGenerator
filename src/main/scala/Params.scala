@@ -75,7 +75,11 @@ case class GeneratorParams(
 /** Tuning knobs for the FFT generator */
 case class FFTParams (
   // FFT sizes supported
-  sizes: List[Int] = List(2,3,4,5,7)
+  sizes: List[Int] = List(2,3,4,5,7),
+  // To normalize FFT/IFFT output (/,* by sqrt(n)) for Parseval's
+  normalized: Boolean = false,
+  // Report k as data is streaming out (symbol # in current frame)
+  generateOffset: Boolean = false
 ){
   val nCount = sizes.length
 }

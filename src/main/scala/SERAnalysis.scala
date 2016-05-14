@@ -28,15 +28,16 @@ object SERAnalysis {
           // Clamp within fixed range
           val inReal = ClampRange(inRealTemp.toList,(-1*mqam,mqam)).toArray
           val inImag = ClampRange(inImagTemp.toList,(-1*mqam,mqam)).toArray
-          fft.runMatlabFixed(fftn,inReal,inImag,intBits,fb)
+          fft.runMatlabFixed(fftn,inReal,inImag,intBits,fb,normalized=true)
         }  
-        else fft.runMatlabDouble(fftn,inRealTemp,inImagTemp)
+        else fft.runMatlabDouble(fftn,inRealTemp,inImagTemp,normalized=true)
       }
 
       // Renormalization (!!)
-      val normalizedOut = out.toList.map(_ * (1/math.sqrt(fftn)))
+      //val normalizedOut = out.toList.map(_ * (1/math.sqrt(fftn)))
       val runType = if(!isFixed) "Dbl" else (intBits+fb+1).toString
-      Data1D2File(normalizedOut,"build/analysis/ser_"+runType+".txt")   
+      //Data1D2File(normalizedOut,"build/analysis/ser_"+runType+".txt")
+      Data1D2File(out.toList,"build/analysis/ser_"+runType+".txt")
     }}
 
   }

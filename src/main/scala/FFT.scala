@@ -12,6 +12,7 @@ class SetupIO extends IOBundle {
   // FFT = true -> FFT calculation; FFT = false -> IFFT calculation
   val SETUP_INIT = DSPBool(INPUT)
   val FFT_INDEX = DSPUInt(INPUT,Params.getFFT.nCount - 1)
+  // TODO: Should be optional
   val FFT = DSPBool(INPUT)
 
   // SETUP_DONE = true -> Ready to take FFT data
@@ -27,6 +28,9 @@ class FFTCtrlIO extends IOBundle {
 
   // High when first data of a valid frame is output i.e. k = 0
   val FRAME_FIRST_OUT = DSPBool(OUTPUT)
+
+  // Offset (relative to # of symbols in a frame)
+  val OFFSET = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
 }
 
 // FFT data IO
