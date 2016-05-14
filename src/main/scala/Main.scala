@@ -120,11 +120,6 @@ class ChiselFFT() extends ArborSpec {
     // Extract Generator parameters (complex, FFT, etc.) from JSON or else from defaults
     // + fixed/double mode setup info
     val (isFixedParam,p) = Init({defaultGenParams}, jsonName = if (useJSON) "FFT" else "", args = args)
-    // Setup FFT with user-defined parameters
-    Params(p)
-
-    // TODO: Get rid of placeholder
-    FFTGenerator()
 
     // Setup module + tester
     val runArgs = args.slice(1, args.length)
@@ -133,13 +128,13 @@ class ChiselFFT() extends ArborSpec {
 
     if (checkFixed) {
       Status("Starting DSPFixed testbench")
-      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPFixed(p.complex.getFixedParams)}), nameExt)) {
+      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPFixed(p.complex.getFixedParams)},p), nameExt)) {
         c => new FFTTests(c,fftn,inVec,normalized,generateOffset)
       }
     }
     else {
       Status("Starting DSPDbl testbench")
-      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPDbl()}), nameExt)) {
+      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPDbl()},p), nameExt)) {
         c => new FFTTests(c,fftn,inVec,normalized,generateOffset)
       }
     }
