@@ -15,7 +15,13 @@ import scala.reflect.runtime.universe._
 
 import ChiselDSP.{when => _, BackwardsCompatibility, _}
 
-class FFT[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
+class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (gen) {
+
+  // Setup FFT with user-defined parameters
+  Params(p)
+
+  // TODO: Get rid of placeholder
+  FFTGenerator()
 
   val peNum = 0
   val butterfly = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)
