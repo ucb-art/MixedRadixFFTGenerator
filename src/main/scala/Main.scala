@@ -29,7 +29,7 @@ object MainWithMatlab extends arbor.matlab.MATLABRepl {
     val fft = new ChiselFFT
 
     // fft.run(args)
-    fft.run(args,normal=Some(true))
+    fft.run(args,normal=Some(true),genOffset=Some(true))
 
   }
 

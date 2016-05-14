@@ -28,9 +28,9 @@ object SERAnalysis {
           // Clamp within fixed range
           val inReal = ClampRange(inRealTemp.toList,(-1*mqam,mqam)).toArray
           val inImag = ClampRange(inImagTemp.toList,(-1*mqam,mqam)).toArray
-          fft.runMatlabFixed(fftn,inReal,inImag,intBits,fb,normalized=true)
+          fft.runMatlabFixed(fftn,inReal,inImag,intBits,fb,normalized=true,genOffset=true)
         }  
-        else fft.runMatlabDouble(fftn,inRealTemp,inImagTemp,normalized=true)
+        else fft.runMatlabDouble(fftn,inRealTemp,inImagTemp,normalized=true,genOffset=true)
       }
 
       // Renormalization (!!)

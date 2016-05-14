@@ -1594,14 +1594,16 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
 
+  // don't let frame first out change before setup done?
 
 
 
-
-
+  // TODO: check timing of offsetCountEnable w/ frameFirstOutPreTemp
+  val offsetCountEnable = RegInit(DSPBool(false))
+  offsetCountEnable := Mux(frameFirstOutPreTemp & setup.SETUP_DONE,DSPBool(true),offsetCountEnable)
   val offsetCounter = IncReset(Params.getFFT.sizes.max-1,nameExt="offset")
   offsetCounter.iCtrl.reset := frameFirstOutPreTemp
-  offsetCounter.iCtrl.change.get := slowEn
+  offsetCounter.iCtrl.change.get := slowEn & offsetCountEnable
   ctrl.OFFSET := offsetCounter.io.out
 
 
