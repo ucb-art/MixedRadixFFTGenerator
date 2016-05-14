@@ -13,12 +13,11 @@
     "periodx100ps":39
   },
   "fft":{
-    "sizes":[2,4,3,5,7]
+    "sizes":[2,4,3,5,7],
+    "normalized":false,
+    "generateOffset":false
   },
   "test":{
     "frames":8
   }
 }
-
-
-

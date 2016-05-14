@@ -1,10 +1,11 @@
-// TODO: Support IFFT, check signal limit (in double test), build in CP/GI halt
+// TODO: Support IFFT (normalization too), check signal limit (in double test), build in CP/GI halt
 
 package FFT
 import ChiselDSP._
 import Chisel.{Complex => _, _}
 
-class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Option[List[ScalaComplex]] = None)
+class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Option[List[ScalaComplex]] = None,
+                                         normalized:Boolean, genOffset:Boolean)
                                         extends DSPTester(c) {
 
   traceOn = false
@@ -132,12 +133,18 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
                           ",  k = " + Tracker.outStep%Tracker.FFTN + "\n "
         if (out != None) {
           val outExpected = out.get(Tracker.outStep)
-          expect(c.io.DATA_OUT, outExpected, Tracker.FFTN.toString, errorString)
+          // TODO: Support IFFT(!)
+          val outExpectedNormalized = {
+            if(normalized) outExpected**(1/math.sqrt(Tracker.FFTN),typ = Real)
+            else outExpected
+          }
+          expect(c.io.DATA_OUT, outExpectedNormalized, Tracker.FFTN.toString, errorString)
         }
         // Doesn't compare, just stores results for post-processing
         else if (i == 0) {
           Tracker.FFTOut = Tracker.FFTOut :+ peek(c.io.DATA_OUT)
         }
+        if(genOffset) expect(c.ctrl.OFFSET,Tracker.outStep%Tracker.FFTN, "Offset value unexpected")
       }
       step(1)
     }
@@ -157,6 +164,11 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     calcDone = calcDoneNew*/
     val temp = traceOn
     traceOn = true
+    /*peek(c.ctrl.FRAME_FIRST_OUT)
+    peek(c.ctrl.OFFSET)
+    peek(c.offsetCounter.iCtrl.reset)
+    peek(c.offsetCounter.iCtrl.change.get)
+    peek(c.offsetCounter.nextCount)*/
     /*if(i == 0) {
       peek(c.memBanks.io.ioAddr)
       peek(c.memBanks.io.ioBank)

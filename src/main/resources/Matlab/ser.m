@@ -7,7 +7,7 @@ close all
 clear all
 clc
 
-eqThreshold = 1e-8
+eqThreshold = 5e-6
 
 % M-QAM
 M = 16
@@ -151,6 +151,19 @@ for i=1:1:length(chiseldump)
     chiselfft = fscanf(fopen(fileLoc,'r'),'%f');
     % Group SER checks by SNR used
     chiselfftgroupedbysnr = reshape(chiselfft,length(chiselfft)/length(snr),length(snr));
+    
+    % Check Chisel Dbl result matches Matlab simulation within error threshold
+    if (strcmp(newLabel,'Dbl'))
+        chiselfftreal = chiselfft(1:2:end);
+        chiselfftimag = chiselfft(2:2:end);
+        chiselfftout = complex(chiselfftreal,chiselfftimag);
+        matlabfftout = reshape(rxin,frames*N*length(snr),1);
+        if (sum(abs(chiselfftout - matlabfftout) > eqThreshold) > 0)
+            display('Matlab and Chisel Dbl FFT do not match! :(')
+        else
+            display('Matlab and Chisel Dbl FFT match! :)')
+        end
+    end
     
     for j=1:length(snr)
         chiselfftout = chiselfftgroupedbysnr(:,j);
