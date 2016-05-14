@@ -81,6 +81,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   /** Feed in FFT inputs and read FFT outputs */
   def testFFTNio(fftIndex:Int, fftTF:Boolean, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
     // Safety initialize control signals to false
+    reset(Params.getIO.clkRatio)
     poke(c.ctrl.ENABLE,true)
     poke(c.ctrl.START_FIRST_FRAME,false)
     poke(c.setup.SETUP_INIT,false)
@@ -134,6 +135,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
         if (out != None) {
           val outExpected = out.get(Tracker.outStep)
           // TODO: Support IFFT(!)
+          // Normalize FFT appropriately
           val outExpectedNormalized = {
             if(normalized) outExpected**(1/math.sqrt(Tracker.FFTN),typ = Real)
             else outExpected
@@ -145,6 +147,9 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
           Tracker.FFTOut = Tracker.FFTOut :+ peek(c.io.DATA_OUT)
         }
         if(genOffset) expect(c.ctrl.OFFSET,Tracker.outStep%Tracker.FFTN, "Offset value unexpected")
+      }
+      else{
+        if(genOffset) expect(c.ctrl.OFFSET,0, "Offset value should be 0 if output isn't valid initially")
       }
       step(1)
     }
@@ -164,7 +169,15 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     calcDone = calcDoneNew*/
     val temp = traceOn
     traceOn = true
-    /*peek(c.ctrl.FRAME_FIRST_OUT)
+    /*if (Tracker.FFTN == 12){
+      peek(c.ctrl.FRAME_FIRST_OUT)
+      peek(c.ctrl.OFFSET)
+      peek(c.offsetCounter.iCtrl.change.get)
+      peek(c.offsetCounter.iCtrl.reset)
+      peek(c.offsetCountEnable)
+      peek(c.frameFirstOutPreTemp)
+    }
+    peek(c.ctrl.FRAME_FIRST_OUT)
     peek(c.ctrl.OFFSET)
     peek(c.offsetCounter.iCtrl.reset)
     peek(c.offsetCounter.iCtrl.change.get)
