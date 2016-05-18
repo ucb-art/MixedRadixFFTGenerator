@@ -10,6 +10,8 @@ class NormalizeIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extend
   val normalizedOut = Complex(gen).asOutput
   val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount-1)
   val FFT = DSPBool(INPUT)
+
+  // TODO: fftIdx should  be optional? 
 }
 
 class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
