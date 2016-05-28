@@ -169,6 +169,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     calcDone = calcDoneNew*/
     val temp = traceOn
     traceOn = true
+    //peek(c.io.DATA_OUT.real)
     /*if (Tracker.FFTN == 12){
       peek(c.ctrl.FRAME_FIRST_OUT)
       peek(c.ctrl.OFFSET)
