@@ -47,12 +47,9 @@ for i=1:1:length(iLR)
 end
 
 infull = 0:1:M-1;
-set(gca,'fontsize',18)
 qammod(infull,M,qamMap,'PlotConstellation',true).'
 set(gca,'fontsize',18)
-
-fig=gcf;
-set(findall(fig,'-property','FontSize'),'FontSize',14)
+set(findall(gcf,'-property','FontSize'),'FontSize',14)
 
 % txout = qammod(dinSymbols,M,0,'gray');          % Gray coding, phase offset = 0 QAM mod
 qammodout = qammod(dinSymbols,M,qamMap);
@@ -109,15 +106,6 @@ xlabel('SNR (dB)');
 ylabel('BER');
 
 % SER plot
-%figure; semilogy(snr,real_ser,'*-');
-%hold on; semilogy(snr,ser,'o-');
-%title('Simulated SER Compared with Theoretical SER');
-%legendArraySER = {'Simulated SER','Theoretical SER'};
-%legend(legendArraySER,'Location','SouthWest');
-%xlabel('SNR (dB)');
-%ylabel('SER');
-
-% SER plot
 figure; semilogy(snr,real_ser,'*-','LineWidth',2,'MarkerSize',8);
 hold on; semilogy(snr,ser,'o-','LineWidth',2,'MarkerSize',8);
 title('Simulated SER Compared with Theoretical SER');
@@ -169,8 +157,7 @@ for i=1:1:length(chiseldump)
         legendName = strcat(legendName, ' Bit IO');
     end
     legendArraySER = [legendArraySER, legendName];
-   
-    %legendArraySER = [legendArraySER, newLabel];
+
     fileLoc = ['../../../../build/analysis/' fileName];
     chiselfft = fscanf(fopen(fileLoc,'r'),'%f');
     % Group SER checks by SNR used
