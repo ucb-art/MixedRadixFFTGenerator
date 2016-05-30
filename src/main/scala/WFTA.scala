@@ -24,6 +24,9 @@ object WFTA{
   val validRad = List(List(4,2),List(3),List(5),List(7))
   // WFTA stages
   val stages = List(Add,Add,Add,Mul,Add,Add,Add,Add)
+  // Input pipe amount
+  // TODO: Should this be parameterized?
+  val inPipe = 1
 
   def getValidRad = validRad.flatten
   def vRadIdx(rad: Int) = getValidRad.indexOf(rad)
@@ -72,7 +75,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
     // Supported radix unused
     else if(!isUsed) DSPBool(false)
     // Otherwise matches valid radices to supported radices
-    else (io.currRad.get)(p.rad.indexOf(x))
+    else Pipe(io.currRad.get,WFTA.inPipe)(p.rad.indexOf(x))
   }))
   debug(radIn)
 
@@ -93,7 +96,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   // Assign internal "inputs" to 0 if >= max used radix
   val xp = Vec((0 until WFTA.getValidRad.max).map( i => {
     if (i >= maxRad) zero
-    else io.x(i)
+    else io.x(i).pipe(WFTA.inPipe)
   }))
 
   // Input mux

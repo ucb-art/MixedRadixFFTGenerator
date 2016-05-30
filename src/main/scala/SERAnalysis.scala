@@ -3,7 +3,7 @@ import ChiselDSP._
 
 object SERAnalysis {
 
-  val bits = List(12,16,24,32) // List(12,16,20,24,28,32)
+  val bits = List(12,16,20,24) // List(12,16,20,24,28,32)
 
   def main(args: Array[String]): Unit = {
 
@@ -14,7 +14,7 @@ object SERAnalysis {
     // TODO: Pass params in file, intBits base off of worst-case qam + processing gain renormalization
     val fftn = 128
     val mqam = 16
-    val numFrames = 100
+    val numFrames = 333 //100
     val intBits = BigInt(mqam-1).bitLength + BigInt(math.sqrt(fftn).toInt).bitLength
 
     val fft = new ChiselFFT
