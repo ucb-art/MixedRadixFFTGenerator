@@ -199,6 +199,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     peek(c.IOCtrl.primeDigits)
     peek(c.IOCtrl.counterPrimeDigits)
     peek(c.IOCtrl.usedLoc)
+    peek(c.IOCtrl.ioIncChange)
     //if (peek(c.IOCtrl.primeIdx).toList != peek(c.primeIdx).toList) Error("primidx")
     //if (peek(c.IOCtrl.qDIF).toList != peek(c.qDIFis).toList) Error("qdif")
     //if (peek(c.IOCtrl.qDIT).toList != peek(c.qDIFos).toList) Error ("qdit")

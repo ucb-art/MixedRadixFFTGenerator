@@ -98,25 +98,41 @@ class IOCtrl extends DSPModule {
     // Where counter is used (determines counting order) -- note that default is loc = 0 (but need to check isUsed to
     // see if it's actually used) -- expect extra OR to be optimized out
     // usedLoc dictates where the counter output goes to
-    val usedLoc = primeIdxMatch.zipWithIndex.tail.foldLeft(DSPUInt(0, max = primeIdx.length - 1))(
-      (accum, x) => accum | (DSPUInt(x._2, max = primeIdx.length - 1) ? x._1)
+    val usedLoc = primeIdxMatch.zipWithIndex.tail.foldLeft(DSPUInt(0))(
+      (accum, x) => accum | (DSPUInt(x._2) ? x._1)
     )
     (isUsed,usedLoc)
   }}.unzip
   val isUsed = Vec(isUsedX)
   val usedLoc = Vec(usedLocX)
 
-
-
-
-
-
-
-
   // TODO: Enable DSPUInt to address Vec
-  val counterPrimeDigits = Vec(usedLoc.map{x => {
-    val outMax = primeDigits.map(_.getRange.max).max
-    primeDigits.zipWithIndex.foldLeft(DSPUInt(0,outMax))((accum,e)=> (e._1 ? (x === DSPUInt(e._2)))| accum)
+  val counterPrimeDigits = Vec(usedLoc.map{ x => {
+    primeDigits.zipWithIndex.foldLeft(DSPUInt(0))((accum, e) => (e._1 ? (x === DSPUInt(e._2))) | accum)
+  }})
+
+  // TODO: If order is consistent, get rid of extra logic
+  // Change flag for IO Inc Counters
+  val ioIncChange = Vec(usedLoc.zip(isUsed).zipWithIndex.map{case ((usedLocE,isUsedE),i) => {
+    // Current counter increments when the counter to its right wraps (don't care if counter unused)
+    val rightLoc = usedLocE + DSPUInt(1)
+    // rightLoc used as address to Vec
+    val rightCounterRadIdx = primeIdx.zipWithIndex.foldLeft(DSPUInt(0))((accum, e) =>
+      (e._1 ? (rightLoc === DSPUInt(e._2))) | accum
+    )
+    // Is last used location? (not dependent on anything else)
+    val isLastLoc = (usedLocE === DSPUInt(primeIdx.length-1)) | (rightCounterRadIdx === DSPUInt(0))
+    // Get other counters not including this
+    val otherCounters = ioIncCounters.zipWithIndex.filter(_._2 != i)
+
+    // This counter should update when the counters to its right wrap
+    val changeTemp = otherCounters.foldLeft(DSPBool(false))( (accum,counterIdx) => {
+      val counterLoc = usedLoc(counterIdx._2)
+      val isRight = counterLoc > usedLocE
+      ((counterIdx._1.ctrl.isMax ? isRight) | (!isRight) ) & accum
+    })
+    // Only update counter if actually used; note that if the counter is the right-most counter, it should always change
+    isUsedE & (changeTemp | isLastLoc)
   }})
 
 
@@ -129,28 +145,21 @@ class IOCtrl extends DSPModule {
 
 
 
+  ioIncCounters.zip(ioQCounters).zipWithIndex.map{case ((ioIncCounter,ioQCounter),i) =>{
+    // Assign # of base-r digits for modding each counter
+    ioIncCounter.io.primeDigits := counterPrimeDigits(i).shorten(ioIncCounter.io.primeDigits.getRange.max)
+    ioQCounter.io.primeDigits := counterPrimeDigits(i).shorten(ioQCounter.io.primeDigits.getRange.max)
+    // Assign change condition to each IO counter
+    ioIncCounter.ctrl.change.get := ioIncChange(i)
+
+  }}
 
 
-/*
 
-  // TODO: If order is consistent, get rid of extra logic
-  val ioIncCounts = Vec(
-    // Current counter increments when the counter to its right wraps (don't care if counter unused)
-    val rightLoc = usedLoc + DSPUInt(1)
 
-    val rightCounterRadIdx = primeIdx(rightLoc.toUInt)
-    // Is last used location? (not dependent on anything else)
-    val isLastLoc = (usedLoc === DSPUInt(primeIdx.length-1)) | (rightCounterRadIdx === DSPUInt(0))
-    // Get other counters not including this
-    val otherCounters = ioIncCounters.filter(_ != e)
-    // This counter should update when the counter to the right of it wraps (condition: about to change & is maxed out)
-    val changeTemp = otherCounters.foldLeft(DSPBool(false))( (accum,x) => {
-      val radIdx = DSPUInt(globalRads.indexOf(x.rad))
-      val isRight = (radIdx === rightCounterRadIdx)
-      (x.ctrl.change.get & x.ctrl.isMax & isRight) | accum
-    })
-    // Only update counter if actually used; note that if the counter is the right-most counter, it should always change
-    val change = isUsed & (changeTemp | isLastLoc)
+
+
+  // don't needsecond cond in islastloc?
 
 
 
@@ -160,26 +169,25 @@ class IOCtrl extends DSPModule {
 
 
 
-    //println("sos" + otherCounters.length)
 
-    //e.ctrl.change.get := change
 
-/*
-    e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
-    val temp = e.io.out.cloneType
-    temp := e.io.out
-    temp*/
-    // might need to pull isUsed out
-    // dit?
-    // reg @ count
-    // usedLoc to get primeDigits
+
+
+  /*
+
+      val temp = e.io.out.cloneType
+      temp := e.io.out
+      temp
+      // dit? -- need out
+      // reg @ count
 
 
 
 
 
-    usedLoc
-  }})*/
+
+      usedLoc
+    }})*/
 
 
 
@@ -208,5 +216,6 @@ class IOCtrl extends DSPModule {
   debug(primeDigits)
   debug(counterPrimeDigits)
   debug(usedLoc)
+  debug(ioIncChange)
 
 }
