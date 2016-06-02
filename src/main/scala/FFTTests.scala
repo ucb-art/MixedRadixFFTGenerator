@@ -189,20 +189,51 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     }*/
     /*peek(c.memBanks.io.calcAddr)
     peek(c.memBanks.io.calcBank)*/
+
+    /*if (Tracker.FFTN == 72) {
+    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
+    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
+    (0 until 3).foreach{ x => {
+      if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.ioIncCounts1(x)).toList) & Tracker.inStep != 0) Error("iocount")
+    }}
+    //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
+    }*/
+
+
+
     traceOn = temp
+
+    //if (Tracker.FFTN == 24) {
+      //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
+      //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
+
+    (0 until 3).foreach{ x => {
+        if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.ioIncCounts1(x)).toList) & Tracker.inStep != 0) Error("iocount")
+      }}
+    (0 until 2).foreach{ x => {
+      if (!peek(c.IOCtrl.ioQCounts(x)).toList.sameElements(peek(c.ioModCounts1(x)).toList) & Tracker.inStep != 0) Error("ioq")
+    }}
+
+      //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
+    //}
+
+
   }
   def setupDebug(): Unit = {
     val temp = traceOn
     traceOn = true
-    peek(c.IOCtrl.primeIdx)
+    //peek(c.IOCtrl.primeIdx)
     //peek(c.IOCtrl.ioIncCounts)
-    peek(c.IOCtrl.primeDigits)
-    peek(c.IOCtrl.counterPrimeDigits)
-    peek(c.IOCtrl.usedLoc)
-    peek(c.IOCtrl.ioIncChange)
-    //if (peek(c.IOCtrl.primeIdx).toList != peek(c.primeIdx).toList) Error("primidx")
-    //if (peek(c.IOCtrl.qDIF).toList != peek(c.qDIFis).toList) Error("qdif")
-    //if (peek(c.IOCtrl.qDIT).toList != peek(c.qDIFos).toList) Error ("qdit")
+    //peek(c.ioIncCounts1)
+    //peek(c.IOCtrl.primeDigits)
+    //peek(c.IOCtrl.counterPrimeDigits)
+    //peek(c.IOCtrl.usedLoc)
+    //peek(c.IOCtrl.isUsed)
+    //peek(c.IOCtrl.ioIncChange)
+    //peek(c.IOCtrl.counterQDIFs)
+    //if (!peek(c.IOCtrl.primeIdx).toList.sameElements(peek(c.primeIdx).toList)) Error("primidx")
+    //if (!peek(c.IOCtrl.qDIF).toList.sameElements(peek(c.qDIFis).toList)) Error("qdif")
+    //if (!peek(c.IOCtrl.qDIT).toList.sameElements(peek(c.qDIFos).toList)) Error ("qdit")
     traceOn = temp
   }
 

@@ -68,7 +68,8 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val IOCtrl = DSPModule(new IOCtrl)
   IOCtrl.setup.fftIdx := fftIndex
   IOCtrl.setup.enable := setupEnDly
-
+  IOCtrl.ctrl.ioEnable := slowEn
+  IOCtrl.ctrl.startFrameIn := startFirstFrame
 
 
 

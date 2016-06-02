@@ -52,6 +52,7 @@ class IOCtrl extends DSPModule {
   primeIdx := RegNext(Mux(setup.enable,primeIdxLUT.io.dout,primeIdx))
 
   // Q for input DIF, DIT
+  // Note: qDIF/qDIT nested list arranged as: location, base type, digit
   val qDIFLUT = Params.getIO.qDIF.transpose.zipWithIndex.map{
     case (x,i) => DSPModule(new MixedBaseLUT(x), "qDIF_" + i.toString)
   }
@@ -114,19 +115,14 @@ class IOCtrl extends DSPModule {
   // TODO: If order is consistent, get rid of extra logic
   // Change flag for IO Inc Counters
   val ioIncChange = Vec(usedLoc.zip(isUsed).zipWithIndex.map{case ((usedLocE,isUsedE),i) => {
-    // Current counter increments when the counter to its right wraps (don't care if counter unused)
-    val rightLoc = usedLocE + DSPUInt(1)
-    // rightLoc used as address to Vec
-    val rightCounterRadIdx = primeIdx.zipWithIndex.foldLeft(DSPUInt(0))((accum, e) =>
-      (e._1 ? (rightLoc === DSPUInt(e._2))) | accum
-    )
     // Is last used location? (not dependent on anything else)
-    val isLastLoc = (usedLocE === DSPUInt(primeIdx.length-1)) | (rightCounterRadIdx === DSPUInt(0))
+    val isLastLoc = (usedLocE === DSPUInt(primeIdx.length-1))
     // Get other counters not including this
     val otherCounters = ioIncCounters.zipWithIndex.filter(_._2 != i)
-
     // This counter should update when the counters to its right wrap
-    val changeTemp = otherCounters.foldLeft(DSPBool(false))( (accum,counterIdx) => {
+    val changeTemp = otherCounters.foldLeft(DSPBool(true))( (accum,counterIdx) => {
+      // Note, if a particular counter is unused, corresponding counterLoc will = 0 --> will not affect
+      // "true-ness" of changeTemp
       val counterLoc = usedLoc(counterIdx._2)
       val isRight = counterLoc > usedLocE
       ((counterIdx._1.ctrl.isMax ? isRight) | (!isRight) ) & accum
@@ -135,35 +131,36 @@ class IOCtrl extends DSPModule {
     isUsedE & (changeTemp | isLastLoc)
   }})
 
+  // Get QDIFs associated with counter (note that at the worst case, the # of QDIF columns is 1 less than the # of
+  // counters allocated (i.e. for primes 2,3,5, the counter associated with 5 isn't used)
+  val counterQDIFs = Vec(usedLoc.zip(isUsed).zip(ioQCounters.map(_.rad)).map{ case ((usedLocE,isUsedE),rad) => {
+    //qDIF multi-dimension iterable --> location, base type, digit
+    qDIF.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
+      // Find Q lut output with matching radix, or return 0 if no matching radix is found (remember that
+      // there are more counters than Q's) -- tools should get rid of unused accumulator
+      val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
+      (baseNelem ? ((usedLocE === DSPUInt(e._2)) & isUsedE)) | accum
+    })
+  }})
 
-
-
-
-
-
-
-
-
-
-  ioIncCounters.zip(ioQCounters).zipWithIndex.map{case ((ioIncCounter,ioQCounter),i) =>{
+  // First layer counter outputs (see counters above)
+  val (ioIncCountsX,ioQCountsX) = ioIncCounters.zip(ioQCounters).zipWithIndex.map{case ((ioIncCounter,ioQCounter),i) =>{
     // Assign # of base-r digits for modding each counter
     ioIncCounter.io.primeDigits := counterPrimeDigits(i).shorten(ioIncCounter.io.primeDigits.getRange.max)
     ioQCounter.io.primeDigits := counterPrimeDigits(i).shorten(ioQCounter.io.primeDigits.getRange.max)
     // Assign change condition to each IO counter
     ioIncCounter.ctrl.change.get := ioIncChange(i)
-
-  }}
-
-
-
-
-
-
-  // don't needsecond cond in islastloc?
-
-
-
-
+    // TODO: Cannot mix directions on left hand side of := ??? --> .asOutput
+    ioQCounter.io.inc.get := counterQDIFs(i).padTo(ioQCounter.io.inc.get.length).asOutput
+    ioQCounter.ctrl.wrap.get := ioIncChange(i)
+    val ioIncCount = ioIncCounter.io.out.cloneType
+    ioIncCount := ioIncCounter.io.out
+    val ioQCount = ioQCounter.io.out.cloneType
+    ioQCount := ioQCounter.io.out
+    (ioIncCount,ioQCount)
+  }}.unzip
+  val ioIncCounts = Vec(ioIncCountsX)
+  val ioQCounts = Vec(ioQCountsX)
 
 
 
@@ -172,22 +169,54 @@ class IOCtrl extends DSPModule {
 
 
 
+
+/*
+
+  // Should try to minimize mem output length and pad where there is width mismatch
+  // CAN PIPELINE DELAY ioFinalConuts
+  val ioFinalCounts = Vec(Params.getIO.global.map(_._3).zipWithIndex.map { case (x, i) => {
+    if (x == Params.getIO.global.last._3) ioIncCounts1(i)
+    else (ioIncCounts1(i) + ioModCounts1(i)).maskWithMaxCheck(primeDigits(i))._1
+  }
+  })
+  debug(ioFinalCounts)
+
+
+
+
+
+  val iDIFtemp1 = Vec(ioFinalCounts.zipWithIndex.map { case (x, i) => {
+    if (Params.getBF.rad.contains(2) && Params.getIO.global(i)._1 == 2 && Params.getBF.rad.contains(4)) {
+      // switch to getBF.rad(i) == 2  ????
+      // Convert to Mixed radix [4,...4,2] if current FFT size requires radix 2 stage & operating on 2^n coprime
+      // FOR DIF 2 always follows 4 and it's the only one with list of length 2
+      Mux(DSPBool(numPower(i + 1)(0)), x.toRad42(), x)
+    }
+    else x
+  }
+  })
+  // registered here?
+  // Need to be same length to address properly (really Chisel should error)
+  val colLengths = iDIFtemp1.map(x => x.length).max
+  val iDIFtemp = Vec(iDIFtemp1.map(x => {
+    val set = x.map(y => {
+      // delay 2 (calc clk)
+      y.reg()
+    })
+    BaseN(set, x.rad).padTo(colLengths)
+    //Vec(set) // basen gets misinterpretted?
+  }))
+  iDIFtemp.foreach {
+    debug(_)
+  }
+  // when doing addr, warn when not vec col nto same length
+
+*/
 
   /*
-
-      val temp = e.io.out.cloneType
-      temp := e.io.out
-      temp
       // dit? -- need out
       // reg @ count
-
-
-
-
-
-
-      usedLoc
-    }})*/
+*/
 
 
 
@@ -212,10 +241,14 @@ class IOCtrl extends DSPModule {
   debug(primeIdx)
   debug(qDIF)
   debug(qDIT)
-  //debug(ioIncCounts)
+  debug(ioIncCounts)
   debug(primeDigits)
   debug(counterPrimeDigits)
   debug(usedLoc)
   debug(ioIncChange)
+  debug(ioQCounts)
+  //debug(counterQDIFs)
+
+  // when doing dit, flip whole thing or only active primes?
 
 }
