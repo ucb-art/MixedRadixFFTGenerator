@@ -40,7 +40,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   // Data IO, setup IO, Operating controls
   override val io = new FFTIO(gen)
-  val setup = new SetupIO
+  val setup = new TopSetupIO
   val ctrl = new FFTCtrlIO
 
   // Derive IO clock from main clock
@@ -70,6 +70,10 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   IOCtrl.setup.enable := setupEnDly
   IOCtrl.ctrl.ioEnable := slowEn
   IOCtrl.ctrl.startFrameIn := startFirstFrame
+
+  val GeneralSetup =  DSPModule(new GeneralSetup)
+  GeneralSetup.setup.fftIdx := fftIndex
+  GeneralSetup.setup.enable := setupEnDly
 
 
 

@@ -2,15 +2,6 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
-class IOSetupIO extends IOBundle {
-  // Index of current FFT N
-  val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount - 1)
-  // Enable setup
-  val enable = DSPBool(INPUT)
-  // Done with IO setup
-  val done = DSPBool(OUTPUT)
-}
-
 class IOCtrlIO extends IOBundle {
   // Accepting new input/output data (can pause/resume IO, also hold if IO is slower than calc. clock)
   val ioEnable = DSPBool(INPUT)
@@ -24,7 +15,7 @@ class IOCtrlIO extends IOBundle {
 
 class IOCtrl extends DSPModule {
 
-  val setup = new IOSetupIO
+  val setup = new SetupIO
   val ctrl = new IOCtrlIO
 
   // Used for masking to get coprime mod (when operating in Base N and not binary)
@@ -102,14 +93,15 @@ class IOCtrl extends DSPModule {
     val usedLoc = primeIdxMatch.zipWithIndex.tail.foldLeft(DSPUInt(0))(
       (accum, x) => accum | (DSPUInt(x._2) ? x._1)
     )
-    (isUsed,usedLoc)
+    (isUsed.pipe(1),usedLoc.pipe(1))
   }}.unzip
   val isUsed = Vec(isUsedX)
   val usedLoc = Vec(usedLocX)
 
   // TODO: Enable DSPUInt to address Vec
   val counterPrimeDigits = Vec(usedLoc.map{ x => {
-    primeDigits.zipWithIndex.foldLeft(DSPUInt(0))((accum, e) => (e._1 ? (x === DSPUInt(e._2))) | accum)
+    val temp = primeDigits.zipWithIndex.foldLeft(DSPUInt(0))((accum, e) => (e._1 ? (x === DSPUInt(e._2))) | accum)
+    temp.pipe(1)
   }})
 
   // TODO: If order is consistent, get rid of extra logic
@@ -135,12 +127,13 @@ class IOCtrl extends DSPModule {
   // counters allocated (i.e. for primes 2,3,5, the counter associated with 5 isn't used)
   val counterQDIFs = Vec(usedLoc.zip(isUsed).zip(ioQCounters.map(_.rad)).map{ case ((usedLocE,isUsedE),rad) => {
     //qDIF multi-dimension iterable --> location, base type, digit
-    qDIF.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
+    val temp = qDIF.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
       // Find Q lut output with matching radix, or return 0 if no matching radix is found (remember that
       // there are more counters than Q's) -- tools should get rid of unused accumulator
       val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
       (baseNelem ? ((usedLocE === DSPUInt(e._2)) & isUsedE)) | accum
     })
+    Pipe(temp,1)
   }})
 
   // First layer counter outputs (see counters above)
@@ -168,7 +161,7 @@ class IOCtrl extends DSPModule {
 
 
 
-
+// pipe change
 
 /*
 
@@ -214,7 +207,7 @@ class IOCtrl extends DSPModule {
 */
 
   /*
-      // dit? -- need out
+      // dit? -- need out-- how did i handle unused?
       // reg @ count
 */
 

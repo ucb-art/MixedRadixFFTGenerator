@@ -234,6 +234,9 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //if (!peek(c.IOCtrl.primeIdx).toList.sameElements(peek(c.primeIdx).toList)) Error("primidx")
     //if (!peek(c.IOCtrl.qDIF).toList.sameElements(peek(c.qDIFis).toList)) Error("qdif")
     //if (!peek(c.IOCtrl.qDIT).toList.sameElements(peek(c.qDIFos).toList)) Error ("qdit")
+    peek(c.GeneralSetup.stageRad)
+    peek(c.GeneralSetup.use2)
+    peek(c.GeneralSetup.maxRad)
     traceOn = temp
   }
 
