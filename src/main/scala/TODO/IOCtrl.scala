@@ -17,6 +17,7 @@ class IOCtrl extends DSPModule {
 
   val setup = new SetupIO
   val ctrl = new IOCtrlIO
+  val generalSetupIO = (new GeneralSetupIO).flip
 
   // Used for masking to get coprime mod (when operating in Base N and not binary)
   // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
@@ -212,7 +213,12 @@ class IOCtrl extends DSPModule {
 */
 
 
-
+/*  override val io = new IOBundle {
+    val stageSum = stageSumI.cloneType.asOutput
+    val stageRad = stageRadI.cloneType.asOutput
+    val use2 = use2I.cloneType.asOutput
+    val maxRad = maxRadI.cloneType.asOutput
+  }*/
 
 
 
