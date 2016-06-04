@@ -32,6 +32,7 @@ class IOCtrl extends DSPModule {
   // global -> [prime used, prime base (max radix), max coprime]
   // globalPrimes(0) associated with unused (i.e. *1)
   // globalRads(0) associated with unused
+  // TODO: Add to params
   val globalPrimes = List(1) ++ Params.getIO.global.map(_._1)
   val globalRads = List(0) ++ Params.getIO.global.map(_._2)
   val primeIndices = Params.getIO.coprimes.map(_.map{ x =>
@@ -156,56 +157,94 @@ class IOCtrl extends DSPModule {
   val ioIncCounts = Vec(ioIncCountsX)
   val ioQCounts = Vec(ioQCountsX)
 
+  // IO indexing when broken into coprimes (before decomposition into relevant radices)
+  val coprimeCountsX = ioIncCounts.zipWithIndex.map {case (e,i) => {
+    val modSum = (e + ioQCounts(i)).maskWithMaxCheck(counterPrimeDigits(i))._1
+    // If radix 2 is used in the FFT decomposition, convert Base-4 representation to mixed radix
+    // [4,4,...4,2] representation (Note that doing x.rad still results in 4)
+    // TODO: Generalize?
+    if (modSum.rad == 4 && Params.getBF.rad.contains(2)) Pipe(Mux(generalSetupIO.use2,modSum.toRad42(),modSum),1)
+    else Pipe(modSum,1)
+  }}
+  // Note: need to have same lengths for addressing
+  val matchCoprimeCountLengths = coprimeCountsX.map(_.length).max
+  val coprimeCounts = Vec(coprimeCountsX.map(e => BaseN(e, e.rad).padTo(matchCoprimeCountLengths)))
 
-
-
-
-
-
-// pipe change
-
-/*
-
-  // Should try to minimize mem output length and pad where there is width mismatch
-  // CAN PIPELINE DELAY ioFinalConuts
-  val ioFinalCounts = Vec(Params.getIO.global.map(_._3).zipWithIndex.map { case (x, i) => {
-    if (x == Params.getIO.global.last._3) ioIncCounts1(i)
-    else (ioIncCounts1(i) + ioModCounts1(i)).maskWithMaxCheck(primeDigits(i))._1
-  }
-  })
-  debug(ioFinalCounts)
-
-
-
-
-
-  val iDIFtemp1 = Vec(ioFinalCounts.zipWithIndex.map { case (x, i) => {
-    if (Params.getBF.rad.contains(2) && Params.getIO.global(i)._1 == 2 && Params.getBF.rad.contains(4)) {
-      // switch to getBF.rad(i) == 2  ????
-      // Convert to Mixed radix [4,...4,2] if current FFT size requires radix 2 stage & operating on 2^n coprime
-      // FOR DIF 2 always follows 4 and it's the only one with list of length 2
-      Mux(DSPBool(numPower(i + 1)(0)), x.toRad42(), x)
+  // Index associated with stage prime
+  val stagePrimeIdx = Vec(generalSetupIO.stageRad.map(e => {
+    // TODO: Generalize?
+    val stagePrime = {
+      if (Params.getBF.rad.contains(4)) Mux(e === DSPUInt(4),DSPUInt(2),e)
+      else e
     }
-    else x
-  }
-  })
-  // registered here?
-  // Need to be same length to address properly (really Chisel should error)
-  val colLengths = iDIFtemp1.map(x => x.length).max
-  val iDIFtemp = Vec(iDIFtemp1.map(x => {
-    val set = x.map(y => {
-      // delay 2 (calc clk)
-      y.reg()
-    })
-    BaseN(set, x.rad).padTo(colLengths)
-    //Vec(set) // basen gets misinterpretted?
+    globalPrimes.zipWithIndex.foldLeft(DSPUInt(0))(
+      (accum,x) => accum | (DSPUInt(x._2) ? (DSPUInt(x._1) === stagePrime))
+    ).pipe(1)
   }))
-  iDIFtemp.foreach {
-    debug(_)
-  }
-  // when doing addr, warn when not vec col nto same length
 
-*/
+  // Stage is used for current FFT
+  val stageIsActive = Vec(stagePrimeIdx.map(x => (x =/= DSPUInt(0)).pipe(1)))
+  // DIF digit index associated with stage (note: some digits invalid -- i.e. when stage is inactive)
+  val digitIdxDIF = Vec(generalSetupIO.primeStageSum.zipWithIndex.map{case (e,i) => {(e - DSPUInt(i+1)).pipe(1)}})
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // TODO: Make foldLeft into DSPUInt lookup function, decide on MixedRad vs. Vec?
+  val nIOX = (0 until Params.getCalc.maxStages).map{ i => {
+    // Pick out used coprime @ stage; then pick out used digit of coprime @ stage
+    // Note: coprimeCounts uses global; stagePrimeIdx is _ ++ global i.e. prime = 1 to keep track of unused primes
+    val coprime = coprimeCounts.zipWithIndex.foldLeft(
+      MixedRad(Vec(matchCoprimeCountLengths,DSPUInt(0,Params.getBF.rad.max-1)))
+    )(
+      (accum,e) => accum | (MixedRad(e._1) ? (DSPUInt(e._2+1) === stagePrimeIdx(i)))
+    )
+    val digit = coprime.zipWithIndex.foldLeft(DSPUInt(0,Params.getBF.rad.max-1))(
+      (accum,e) => accum | (e._1 ? (digitIdxDIF(i) === DSPUInt(e._2)))
+    )
+    Mux(stageIsActive(i),digit,DSPUInt(0))
+  }}
+  val nIO = Vec(nIOX)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   /*
       // dit? -- need out-- how did i handle unused?
@@ -213,12 +252,6 @@ class IOCtrl extends DSPModule {
 */
 
 
-/*  override val io = new IOBundle {
-    val stageSum = stageSumI.cloneType.asOutput
-    val stageRad = stageRadI.cloneType.asOutput
-    val use2 = use2I.cloneType.asOutput
-    val maxRad = maxRadI.cloneType.asOutput
-  }*/
 
 
 
@@ -230,13 +263,14 @@ class IOCtrl extends DSPModule {
 
 
 
+// separate out counter stuff from constants
+
+debug(stagePrimeIdx)
 
 
 
 
-
-
-
+  debug(nIO)
   debug(primeIdx)
   debug(qDIF)
   debug(qDIT)
@@ -246,8 +280,10 @@ class IOCtrl extends DSPModule {
   debug(usedLoc)
   debug(ioIncChange)
   debug(ioQCounts)
+  debug(coprimeCounts)
   //debug(counterQDIFs)
 
+  // mark setup delays
   // when doing dit, flip whole thing or only active primes?
 
 }

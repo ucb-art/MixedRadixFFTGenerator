@@ -3,6 +3,9 @@ import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
 // TODO: Add FFT?
+
+// TODO: Get rid of IO that's not used
+
 class SetupIO extends IOBundle {
   // Index of current FFT N
   val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount - 1)
@@ -17,8 +20,11 @@ class GeneralSetupIO extends IOBundle {
   val numRad = Params.getBF.rad.length
   val globalMaxRad = Params.getBF.rad.max
   val maxStages = Params.getCalc.maxStages
+
   // For each unique radix needed, sum of stages needed up to current radix
-  val stageSum = Vec(numRad,DSPUInt(OUTPUT,maxStages))
+  val radStageSum = Vec(numRad,DSPUInt(OUTPUT,maxStages))
+  // For each prime needed, sum of stages needed up to current prime (Note: length is still the same as radStageSum)
+  val primeStageSum = Vec(maxStages,DSPUInt(OUTPUT,maxStages))
   // Radix needed for each stage
   val stageRad = Vec(maxStages,DSPUInt(OUTPUT,globalMaxRad))
   // Is radix 2 used in current FFT?
@@ -59,21 +65,57 @@ class GeneralSetup extends DSPModule {
   // sum(2) = sum(1) + power(2)
   // Keeps track of # of stages required up until current radix
   // Where the last array value represents total # of stages required for FFT calc
-  val stageSumX = radPow.tail.scanLeft(radPow.head)((accum,e) => (accum + e).pipe(1))
-  io.stageSum := Vec(stageSumX)
+  val radStageSumX = Vec(radPow.tail.scanLeft(radPow.head)((accum,e) => (accum + e).pipe(1)))
+  io.radStageSum.zip(radStageSumX).foreach{ case (l,r) => {
+    l := r.shorten(l.getRange)
+  }}
 
   // Radix associated with each stage (0 if unused for given FFT)
   io.stageRad := Vec((0 until Params.getCalc.maxStages).map(i => {
     // TODO: Check what happens with reverse in HDL?
-    io.stageSum.zip(radOrder).foldRight(DSPUInt(0))((e,accum) => Mux(DSPUInt(i) < e._1,e._2,accum)).pipe(1)
+    io.radStageSum.zip(radOrder).foldRight(DSPUInt(0))((e,accum) => Mux(DSPUInt(i) < e._1,e._2,accum)).pipe(1)
   }))
 
   // Is 2 used for this FFT?
   // TODO: Package all these foldleft, scanleft, etc's better
-  io.use2 := radIdxOrder.foldLeft(DSPBool(false))((accum,e) => accum | (e === DSPUInt(possibleRad.indexOf(2)))).pipe(1)
+  val idx2 = possibleRad.indexOf(2)
+  io.use2 := {
+    // If 2 not required by any generated FFT sizes
+    if (idx2 == -1) DSPBool(false)
+    else radIdxOrder.foldLeft(DSPBool(false))((accum,e) => accum | (e === DSPUInt(idx2))).pipe(1)
+  }
 
   // Max radix for given FFT (max of elements)
   io.maxRad := radOrder.tail.foldLeft(radOrder.head)((accum,e) => Mux(e >= accum,e,accum)).pipe(1)
+
+  // Note: this still keeps the same # of outputs as radStageSum, but removes count contribution
+  // of radices associated with prime that are != prime (replaces with sum @ corresponding prime)
+  val primeStageSumShort = {
+    if (possibleRad.contains(2) && possibleRad.contains(4)) {
+      Vec(io.radStageSum.zipWithIndex.map { case (e, i) => {
+        // Note: 2 will always follow 4 if used
+        // TODO: Generalize?
+        if (e == io.radStageSum.last) e
+        else {
+          val is4Loc = radIdxOrder(i) === DSPUInt(possibleRad.indexOf(4))
+          Mux(is4Loc & io.use2, io.radStageSum(i + 1), e).pipe(1)
+        }
+      }})
+    }
+    else io.radStageSum
+  }
+
+  // Map prime stage sum to stages for coprime to its sub-radix decomposition
+  val primeStageSumX = (0 until Params.getCalc.maxStages).map(i => {
+    // Last stage will always have max stage sum (also default when stage not used)
+    if (i == Params.getCalc.maxStages-1) primeStageSumShort.last
+    else {
+      io.radStageSum.zip(primeStageSumShort).init.foldRight(primeStageSumShort.last)(
+        (e, accum) => Mux(DSPUInt(i) < e._1, e._2, accum)
+      ).pipe(1)
+    }
+  })
+  io.primeStageSum := Vec(primeStageSumX)
 
   // Keep track of how long setup should take (+1 for RegNext on LUT out -- should be consistent throughout)
   val setupDelay = io.getMaxOutDelay() + 1

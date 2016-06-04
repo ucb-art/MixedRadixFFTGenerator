@@ -190,6 +190,10 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     /*peek(c.memBanks.io.calcAddr)
     peek(c.memBanks.io.calcBank)*/
 
+    /*if (Tracker.FFTN == 24) {
+      c.iDIFtemp.foreach{x => peek(x)}
+      c.IOCtrl.coprimeCounts.foreach{x => peek(x)}
+    }*/
     /*if (Tracker.FFTN == 72) {
     //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
     //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
@@ -199,6 +203,10 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
     }*/
 
+    if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+
+
+
 
 
     traceOn = temp
@@ -206,13 +214,26 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //if (Tracker.FFTN == 24) {
       //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
       //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
-
+/*
     (0 until 3).foreach{ x => {
         if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.ioIncCounts1(x)).toList) & Tracker.inStep != 0) Error("iocount")
       }}
     (0 until 2).foreach{ x => {
       if (!peek(c.IOCtrl.ioQCounts(x)).toList.sameElements(peek(c.ioModCounts1(x)).toList) & Tracker.inStep != 0) Error("ioq")
     }}
+
+
+    c.iDIFtemp.zip(c.IOCtrl.coprimeCounts).foreach{case (x,y) => {
+      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
+    }}*/
+
+    /*c.ions.zip(c.IOCtrl.nIOX).foreach{case (x,y) => {
+      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
+    }}*/
+
+//    if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+
+
 
       //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
     //}
@@ -237,6 +258,13 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //peek(c.GeneralSetup.stageRad)
     //peek(c.GeneralSetup.use2)
     //peek(c.GeneralSetup.maxRad)
+    //peek(c.GeneralSetup.io.stageRadIdx)
+    //peek(c.GeneralSetup.io.primeStageSum)
+    //peek(c.IOCtrl.stagePrimeIdx)
+    //peek(c.IOCtrl.nIO)
+    //peek(c.GeneralSetup.io.stageRad)
+    //peek(c.GeneralSetup.io.use2)
+    //peek(c.GeneralSetup.io.maxRad)
     traceOn = temp
   }
 
