@@ -19,6 +19,9 @@ class IOCtrl extends DSPModule {
   val ctrl = new IOCtrlIO
   val generalSetupIO = (new GeneralSetupIO).flip
 
+  // Is IO in DIF mode?
+  val ioDIF = RegInit(DSPBool(true))
+
   // Used for masking to get coprime mod (when operating in Base N and not binary)
   // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
   // coprimes -> [coprime, corresponding prime, digit mask]
@@ -106,11 +109,16 @@ class IOCtrl extends DSPModule {
     temp.pipe(1)
   }})
 
+  val isLastLoc = Vec(usedLoc.map(e => {
+    // Is last used location? (not dependent on anything else)
+    // Note: Misnomer: DIF = last; DIT = first (b/c counters should be flipped)
+    val lastLoc = Mux(ioDIF,DSPUInt(primeIdx.length-1),DSPUInt(0))
+    (e === lastLoc)
+  }))
+
   // TODO: If order is consistent, get rid of extra logic
   // Change flag for IO Inc Counters
-  val ioIncChange = Vec(usedLoc.zip(isUsed).zipWithIndex.map{case ((usedLocE,isUsedE),i) => {
-    // Is last used location? (not dependent on anything else)
-    val isLastLoc = (usedLocE === DSPUInt(primeIdx.length-1))
+  val ioIncChange = Vec(usedLoc.zipWithIndex.map{case (usedLocE,i) => {
     // Get other counters not including this
     val otherCounters = ioIncCounters.zipWithIndex.filter(_._2 != i)
     // This counter should update when the counters to its right wrap
@@ -118,11 +126,15 @@ class IOCtrl extends DSPModule {
       // Note, if a particular counter is unused, corresponding counterLoc will = 0 --> will not affect
       // "true-ness" of changeTemp
       val counterLoc = usedLoc(counterIdx._2)
-      val isRight = counterLoc > usedLocE
-      ((counterIdx._1.ctrl.isMax ? isRight) | (!isRight) ) & accum
+      // Note: Misnomer: DIF = right; DIT = left (b/c counters should be flipped)
+      // Also, when a counter is unused, the location defaults to 0. For DIF, this is ok, because
+      // 0 is never to the right of anything; for DIT, the location condition by itself is insufficient
+      val isRight = Mux(ioDIF,counterLoc > usedLocE, counterLoc < usedLocE)
+      val isRightUsed = isRight & isUsed(counterIdx._2)
+      ((counterIdx._1.ctrl.isMax ? isRightUsed) | (!isRightUsed) ) & accum
     })
     // Only update counter if actually used; note that if the counter is the right-most counter, it should always change
-    isUsedE & (changeTemp | isLastLoc)
+    isUsed(i) & (changeTemp | isLastLoc(i))
   }})
 
   // Get QDIFs associated with counter (note that at the worst case, the # of QDIF columns is 1 less than the # of
@@ -135,8 +147,18 @@ class IOCtrl extends DSPModule {
       val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
       (baseNelem ? ((usedLocE === DSPUInt(e._2)) & isUsedE)) | accum
     })
-    Pipe(temp,1)
+    temp
   }})
+  // Same for DIT
+  val counterQDITs = Vec(usedLoc.zip(isUsed).zip(ioQCounters.map(_.rad)).map{ case ((usedLocE,isUsedE),rad) => {
+    val temp = qDIT.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
+      // Note that qDIT is derived from coprimes.reverse, therefore indexing is flipped
+      val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
+      (baseNelem ? ((usedLocE === DSPUInt(usedLoc.length-1-e._2)) & isUsedE)) | accum
+    })
+    temp
+  }})
+  val counterQs = Pipe(Mux(ioDIF,counterQDIFs,counterQDITs),1)
 
   // First layer counter outputs (see counters above)
   val (ioIncCountsX,ioQCountsX) = ioIncCounters.zip(ioQCounters).zipWithIndex.map{case ((ioIncCounter,ioQCounter),i) =>{
@@ -146,7 +168,7 @@ class IOCtrl extends DSPModule {
     // Assign change condition to each IO counter
     ioIncCounter.ctrl.change.get := ioIncChange(i)
     // TODO: Cannot mix directions on left hand side of := ??? --> .asOutput
-    ioQCounter.io.inc.get := counterQDIFs(i).padTo(ioQCounter.io.inc.get.length).asOutput
+    ioQCounter.io.inc.get := counterQs(i).padTo(ioQCounter.io.inc.get.length).asOutput
     ioQCounter.ctrl.wrap.get := ioIncChange(i)
     val ioIncCount = ioIncCounter.io.out.cloneType
     ioIncCount := ioIncCounter.io.out
@@ -163,7 +185,10 @@ class IOCtrl extends DSPModule {
     // If radix 2 is used in the FFT decomposition, convert Base-4 representation to mixed radix
     // [4,4,...4,2] representation (Note that doing x.rad still results in 4)
     // TODO: Generalize?
-    if (modSum.rad == 4 && Params.getBF.rad.contains(2)) Pipe(Mux(generalSetupIO.use2,modSum.toRad42(),modSum),1)
+    if (modSum.rad == 4 && Params.getBF.rad.contains(2)) {
+      val temp = Mux(generalSetupIO.use2 & ioDIF,modSum.toRad42(),modSum)
+      Pipe(temp,1)
+    }
     else Pipe(modSum,1)
   }}
   // Note: need to have same lengths for addressing
@@ -185,19 +210,10 @@ class IOCtrl extends DSPModule {
   // Stage is used for current FFT
   val stageIsActive = Vec(stagePrimeIdx.map(x => (x =/= DSPUInt(0)).pipe(1)))
   // DIF digit index associated with stage (note: some digits invalid -- i.e. when stage is inactive)
-  val digitIdxDIF = Vec(generalSetupIO.primeStageSum.zipWithIndex.map{case (e,i) => {(e - DSPUInt(i+1)).pipe(1)}})
-
-
-
-
-
-
-
-
-
-
-
-
+  val digitIdxDIF = Vec(generalSetupIO.primeStageSum.zipWithIndex.map{case (e,i) => {e - DSPUInt(i+1)}})
+  // DIT digit index associated with stage ("digit reverse")
+  val digitIdxDIT = Vec(generalSetupIO.prevPrimeStageSum.zipWithIndex.map{case (e,i) => {DSPUInt(i)-e}})
+  val digitIdx = Mux(ioDIF,digitIdxDIF,digitIdxDIT)
 
   // TODO: Make foldLeft into DSPUInt lookup function, decide on MixedRad vs. Vec?
   val nIOX = (0 until Params.getCalc.maxStages).map{ i => {
@@ -209,7 +225,7 @@ class IOCtrl extends DSPModule {
       (accum,e) => accum | (MixedRad(e._1) ? (DSPUInt(e._2+1) === stagePrimeIdx(i)))
     )
     val digit = coprime.zipWithIndex.foldLeft(DSPUInt(0,Params.getBF.rad.max-1))(
-      (accum,e) => accum | (e._1 ? (digitIdxDIF(i) === DSPUInt(e._2)))
+      (accum,e) => accum | (e._1 ? (digitIdx(i) === DSPUInt(e._2)))
     )
     Mux(stageIsActive(i),digit,DSPUInt(0))
   }}
@@ -222,68 +238,19 @@ class IOCtrl extends DSPModule {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  /*
-      // dit? -- need out-- how did i handle unused?
-      // reg @ count
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-// separate out counter stuff from constants
-
-debug(stagePrimeIdx)
-
-
-
+  // scanin
+  // en
+  // scan on separate vdd: inmemaddress (up to max fftsize), 32 bit val -- enable: enable mem write
+  // scan: fftsize, etc.
+  // go: run twice
+  // scan send address: en; output clk, start, data
 
   debug(nIO)
-  debug(primeIdx)
-  debug(qDIF)
-  debug(qDIT)
-  debug(ioIncCounts)
-  debug(primeDigits)
-  debug(counterPrimeDigits)
-  debug(usedLoc)
-  debug(ioIncChange)
-  debug(ioQCounts)
-  debug(coprimeCounts)
-  //debug(counterQDIFs)
-
-  // mark setup delays
-  // when doing dit, flip whole thing or only active primes?
+  // mem readen
+  // 3 multiplies, 2x rad2
+  // n to bank addr
+  // separate out counter stuff from constants
+  // worst case delay = this + setup delay
+  // restart dif/dit mode, also reg?
 
 }

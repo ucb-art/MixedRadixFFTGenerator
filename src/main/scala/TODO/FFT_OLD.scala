@@ -488,7 +488,7 @@ println(Params.getMem.addrC)
   }
 
   // Counter reset whenever new FFTN desired, stays constant after setup is done SHOULD OPTIMIZE
-  val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3
+  val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3 + 10
   val setupCounter = Module(new accumulator(Helper.bitWidth(setupDoneCount)))
   val setupDoneTemp = (UInt(setupDoneCount) === setupCounter.io.out)
   setupCounter.io.inc := UInt(1, width = 1)
@@ -833,6 +833,9 @@ println(Params.getMem.addrC)
     temp
   }
   })
+
+
+
   // Do zip together
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
@@ -847,11 +850,6 @@ println(Params.getMem.addrC)
     temp
   }
   })
-
-
-
-
-
 
 
   val oFinalCounts = Vec(Params.getIO.global.reverse.map(_._3).zipWithIndex.map { case (x, i) => {
@@ -880,9 +878,6 @@ println(Params.getMem.addrC)
 
   */
 
-
-
-
   val oDIFtemp1 = Vec(oFinalCounts.zipWithIndex.map { case (x, i) => {
     if (Params.getBF.rad.contains(2) && Params.getIO.global.map(_._1).reverse(i) == 2 && Params.getBF.rad.contains(4)) {
       // switch to getBF.rad(i) == 2  ????
@@ -897,6 +892,10 @@ println(Params.getMem.addrC)
     else x
   }
   })
+
+
+
+
 
   ///// UP to here is right
 
@@ -920,6 +919,18 @@ println(Params.getMem.addrC)
   // StageRadix === should be just series of Bools
   // table use2 YN? but otherwise lump stage cnt into 4 -- stage sum should not separate 4,2 (should be by coprime)
   // bad assumption here (i.e. 4 must be first)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
