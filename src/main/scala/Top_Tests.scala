@@ -169,6 +169,14 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     calcDone = calcDoneNew*/
     val temp = traceOn
     traceOn = true
+
+
+    //if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep > 3) Error("nio")
+
+
+
+
+
     //peek(c.io.DATA_OUT.real)
     /*if (Tracker.FFTN == 12){
       peek(c.ctrl.FRAME_FIRST_OUT)
@@ -189,9 +197,137 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     }*/
     /*peek(c.memBanks.io.calcAddr)
     peek(c.memBanks.io.calcBank)*/
+
+    if (Tracker.FFTN == 24) {
+      //c.iDIFtemp.foreach{x => peek(x)}
+      //c.IOCtrl.coprimeCounts.foreach{x => peek(x)}
+      //peek(c.IOCtrl.digitIdxDIF)
+      //peek(c.IOCtrl.digitIdxDIT)
+    }
+    /*if (Tracker.FFTN == 72) {
+    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
+    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
+    (0 until 3).foreach{ x => {
+      if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.ioIncCounts1(x)).toList) & Tracker.inStep != 0) Error("iocount")
+    }}
+    //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
+    }*/
+
+    //if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+
+
+  if (Tracker.FFTN == 12) {
+    //peek(c.IOCtrl.isUsed)
+    //peek(c.IOCtrl.ioIncChange)
+    //peek(c.IOCtrl.test)
+    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.isMax)}
+
+
+    /*if (!peek(c.IOCtrl.ioIncCounts(0)).toList.sameElements(peek(c.oIncCounts(2)).toList)) Error("ocount0")
+    if (!peek(c.IOCtrl.ioIncCounts(1)).toList.sameElements(peek(c.oIncCounts(1)).toList)) Error("ocount1")
+    if (!peek(c.IOCtrl.ioIncCounts(2)).toList.sameElements(peek(c.oIncCounts(0)).toList)) Error("ocount2")*/
+    //peek(c.IOCtrl.ioIncCounts(1))
+    //peek(c.IOCtrl.ioIncCounts(2))
+
+    //peek(c.oIncCounts(1))
+    //peek(c.oIncCounts(0))
+  }
+
+
+    traceOn = temp
+
+
+
+
+
+  /*(0 until 3).foreach { x => {
+    if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.oIncCounts(2-x)).toList) & Tracker.inStep != 0) Error("iocount")
+  }}
+
+    (0 until 2).foreach{ x => {
+      if (!peek(c.IOCtrl.ioQCounts(2-x)).toList.sameElements(peek(c.oModCounts(x)).toList) & Tracker.inStep != 0) Error("ioq")
+    }}*/
+
+    /*c.oDIFtemp.zip(c.IOCtrl.coprimeCounts).foreach{case (x,y) => {
+      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
+    }}*/
+
+
+
+    //if (Tracker.FFTN == 24) {
+      //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
+      //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
+/*
+    (0 until 3).foreach{ x => {
+        if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.ioIncCounts1(x)).toList) & Tracker.inStep != 0) Error("iocount")
+      }}
+    (0 until 2).foreach{ x => {
+      if (!peek(c.IOCtrl.ioQCounts(x)).toList.sameElements(peek(c.ioModCounts1(x)).toList) & Tracker.inStep != 0) Error("ioq")
+    }}
+
+
+    c.iDIFtemp.zip(c.IOCtrl.coprimeCounts).foreach{case (x,y) => {
+      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
+    }}*/
+
+   /* c.ions.zip(c.IOCtrl.nIOX).foreach{case (x,y) => {
+      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
+    }}*/
+
+   if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+
+
+
+      //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
+    //}
+
+
+  }
+  def setupDebug(): Unit = {
+    val temp = traceOn
+    traceOn = true
+    //peek(c.IOCtrl.primeIdx)
+    //peek(c.IOCtrl.ioIncCounts)
+    //peek(c.ioIncCounts1)
+    //peek(c.IOCtrl.primeDigits)
+    //peek(c.IOCtrl.counterPrimeDigits)
+    //peek(c.IOCtrl.usedLoc)
+    //peek(c.IOCtrl.isUsed)
+    //peek(c.IOCtrl.ioIncChange)
+    //peek(c.IOCtrl.counterQDIFs)
+    //if (!peek(c.IOCtrl.primeIdx).toList.sameElements(peek(c.primeIdx).toList)) Error("primidx")
+    //if (!peek(c.IOCtrl.qDIF).toList.sameElements(peek(c.qDIFis).toList)) Error("qdif")
+    //if (!peek(c.IOCtrl.qDIT).toList.sameElements(peek(c.qDIFos).toList)) Error ("qdit")
+    //peek(c.GeneralSetup.stageRad)
+    //peek(c.GeneralSetup.use2)
+    //peek(c.GeneralSetup.maxRad)
+    //peek(c.GeneralSetup.io.stageRadIdx)
+    //peek(c.GeneralSetup.io.primeStageSum)
+    //peek(c.IOCtrl.stagePrimeIdx)
+    //peek(c.IOCtrl.nIO)
+    //peek(c.GeneralSetup.io.stageRad)
+    //peek(c.GeneralSetup.io.use2)
+    //peek(c.GeneralSetup.io.maxRad)
+    //peek(c.IOCtrl.test)
+    //c.IOCtrl.counterQDITs.foreach{x => peek(x)}
+    //c.qDIFos.foreach{x => peek(x)}
+    //peek(c.GeneralSetup.prevPrimeStageSumShort)
+    //peek(c.IOCtrl.generalSetupIO.prevPrimeStageSum)
+
+    /*peek(c.IOCtrl2.usedLoc)
+    peek(c.IOCtrl.usedLoc)
+    peek(c.IOCtrl2.isUsed)
+    peek(c.IOCtrl.isUsed)
+
+    peek(c.IOCtrl2.counterPrimeDigits)
+    peek(c.IOCtrl.counterPrimeDigits)*/
+    /*peek(c.IOCtrl2.stageIsActive)
+    peek(c.IOSetup.o.stageIsActive)*/
+
+
+
     traceOn = temp
   }
-  def setupDebug(): Unit = {}
 
 }
 

@@ -6,8 +6,9 @@ import Chisel.{Complex => _, Mux => _, Reg => _, RegNext => _, RegInit => _, Pip
 import ChiselDSP._
 // ------- Imports END -- OK TO MODIFY BELOW
 
+// TODO: Refactor
 // IO used for setup
-class SetupIO extends IOBundle {
+class TopSetupIO extends IOBundle {
   // SETUP_INIT should be true when new FFT_INDEX, FFT is presented.
   // FFT = true -> FFT calculation; FFT = false -> IFFT calculation
   val SETUP_INIT = DSPBool(INPUT)

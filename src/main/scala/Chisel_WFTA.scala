@@ -90,7 +90,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val r3r4i = r3i|r4i
 
   // ** Added support for 2x radix 2 butterfly
-  val r2r7i = r2i|r7i
+  val r2r5i = r2i|r5i
 
   val zero = Complex(double2T(0),double2T(0))
   // Assign internal "inputs" to 0 if >= max used radix
@@ -103,10 +103,10 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val x = Vec (
     xp(0) ? (!r2r4i),
     Mux(r2r4i,xp(0),xp(1)),
-    xp(2) ? r2r7i,                                                            // ** Added support for 2x radix 2
-    (xp(3) ? r5i) | (xp(3) ? r4r7i),
-    (xp(1) ? r4i) | (xp(2) ? r5i) | (xp(4) ? r7i),
-    (xp(5) ? r7i) | (xp(3) ? r2i) ,                                           // **
+    xp(2) ? r7i,
+    (xp(3) ? r2r5i) | (xp(3) ? r4r7i),                                      // **
+    (xp(1) ? r4i) | (xp(2) ? r2r5i) | (xp(4) ? r7i),                        // ** Added support for 2x radix 2
+    (xp(5) ? r7i),
     ((xp(1) ? r2i) | (xp(4) ? r5i)) | ((xp(6) ? r7i) | (xp(2) ? r3r4i))
   )
   debug(x)
@@ -198,15 +198,13 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   // Butterfly diagram (unified WFTA) stage 0 - 7
   val n0a = x(1) + (x(6),dly(0))
   val n0b = x(1) - (x(6),dly(0))
-  val n0c = x(4) + (x(3),dly(0))
-  val n0d = x(4) - (x(3),dly(0))
+  val n0cTemp = x(4) + (x(3),dly(0))                  // **
+  val n0dTemp = x(4) - (x(3),dly(0))
+  val n0e = x(2) + (x(5),dly(0))
 
-  // TODO: Maybe 3,4 would've been better than 2,5?
-
-  val n0eTemp = x(2) + (x(5),dly(0))                // ** 2x radix 2
-  val X0b = n0eTemp.pipe(dly.tail.sum)              // First output of second radix 2 butterfly
-  val r2_1 = rad(0)(WFTA.vRadIdx(2))                // Don't propagate result (so it won't mess up other results)
-  val n0e = n0eTemp ? (!r2_1)
+  val nr2_1 = !rad(0)(WFTA.vRadIdx(2))                // Don't propagate result (so it won't mess up other results)
+  val n0c = n0cTemp ? (nr2_1)                         // **
+  val n0d = n0dTemp ? (nr2_1)
 
   val n0f = x(2) - (x(5),dly(0))
   val n0g = x(0).pipe(dly(0))
@@ -216,8 +214,8 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val n1a = n0a + (n0c,dly(1))
   val n1b = n0a - (n0c,dly(1))
   val n1c = n0e - (n0a,dly(1))
-  val n1d = n0c - (n0e,dly(1))
-  val n1e = n0d + ((n0b ? s1_1),dly(1))
+  val n1d = n0cTemp - (n0e,dly(1))                                                // ** Can pass through
+  val n1e = n0dTemp + ((n0b ? s1_1),dly(1))                                       // **
   val n1f = n0b - ((n0d ? s0_1),dly(1))
   val n1g = n0f - (n0b,dly(1))
   val n1h = n0d - (n0f,dly(1))
@@ -229,9 +227,6 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
 
   val n2a = n1a + (n1i,dly(2))
   val n2b = n1e + (n1j,dly(2))
-
-  val X1b = n2b.pipe(dly.drop(3).sum)                 // ** X1 output of the second butterfly
-
   val n2c = Mux(s1_2,n1h,n1b).pipe(dly(2))
   val n2d = n1b.pipe(dly(2))
   val n2e = n1c.pipe(dly(2))
@@ -241,6 +236,10 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   val n2i = n1k.pipe(dly(2))
   val n2 = Vec(n2a,n2b,n2c,n2d,n2e,n2f,n2g,n2h,n2i)
   debug(n2)
+
+  // TODO: Check drop is right; can minimize registers some more
+  val X0b = n1d.pipe(dly.drop(2).sum)                 // ** First output of second radix 2 butterfly
+  val X1b = n2b.pipe(dly.drop(3).sum)                 // ** Second output of second radix 2 butterfly
 
   // Default mul delay used
   // Multiplier logic optimized
@@ -312,11 +311,13 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
 
   // Assign outputs when used
 
+  // TODO: Parameterize if you want 2x rad 2?
+
   io.y(0) := y(0).trim(gen.getFracWidth)
   io.y(1) := Mux(r2o,y(5),y(1)).trim(gen.getFracWidth)
   if (maxRad > 2)                                                                                                   // **
     io.y(2) := (((y(6) ? r3o) | (y(3) ? r4o)) | ((y(5) ? r5o) | (y(2) ? r7o)) | (X0b ? r2o) ).trim(gen.getFracWidth)
-  if (maxRad > 3)                                                                                                   // **
+  if (maxRad > 3 || p.rad.contains(2))                                                                                                   // **
     io.y(3) := (((y(2) ? r5o) | (y(3) ? r7o)) | ((y(5) ? r4o) | (X1b ? r2o))).trim(gen.getFracWidth)
   if (maxRad > 4)
     io.y(4) := ((y(6) ? r5o) | (y(4) ? r7o)).trim(gen.getFracWidth)

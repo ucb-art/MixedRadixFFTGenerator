@@ -40,7 +40,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   // Data IO, setup IO, Operating controls
   override val io = new FFTIO(gen)
-  val setup = new SetupIO
+  val setup = new TopSetupIO
   val ctrl = new FFTCtrlIO
 
   // Derive IO clock from main clock
@@ -59,6 +59,25 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   // Make sure that IO reset on the right fast clock cycle
   val startFirstFrame = slowEn & ctrl.START_FIRST_FRAME
+
+
+
+  val GeneralSetup =  DSPModule(new GeneralSetup)
+  GeneralSetup.setupTop.fftIdx := fftIndex
+  GeneralSetup.setupTop.enable := setupEnDly
+
+  val IOSetup = DSPModule (new IOSetup(GeneralSetup.setupDelay))
+  IOSetup.setupTop.fftIdx := fftIndex
+  IOSetup.setupTop.enable := setupEnDly
+  IOSetup.generalSetup <> GeneralSetup.o
+
+  val IOCtrl = DSPModule(new IOCtrl)
+  IOCtrl.ctrl.ioEnable := slowEn
+  IOCtrl.ctrl.startFrameIn := startFirstFrame
+  IOCtrl.generalSetup <> GeneralSetup.o
+  IOCtrl.ioSetup <> IOSetup.o
+
+
 
   // IO constants
 
@@ -93,32 +112,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val qDITLUT = Params.getIO.qDIT.transpose.zipWithIndex.map{
     case (x,i) => DSPModule(new MixedBaseLUT(x), "qDIT_" + i.toString)
   }
-  val qDIF = Vec(qDIFLUT.map{ x => {
-    x.io.addr := fftIndex
-    // out is a Vec series of BaseN's
-    val out = x.io.dout.cloneType
-    out := RegNext(Mux(setupEnDly,x.io.dout,out))
-    out
-  }})
-  val qDIT = Vec(qDITLUT.map{ x => {
-    x.io.addr := fftIndex
-    // out is a Vec series of BaseN's
-    val out = x.io.dout.cloneType
-    out := RegNext(Mux(setupEnDly,x.io.dout,out))
-    out
-  }})
-
-  // IO Mod N counters (first set does (n+1)%coprime, second set does (r+Q)%coprime, with wrap
-  // condition off of the first set; reused for DIT/DIF)
-  val (ioIncCounters, ioQCounters) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
-    val c1 = BaseNIncCounter(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioInc_rad_" + rad.toString)
-    val c2 = BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioQ_rad_" + rad.toString)
-    c1.ctrl.reset := startFirstFrame
-    c2.ctrl.reset := startFirstFrame
-    c1.ctrl.en.get := slowEn
-    c2.ctrl.en.get := slowEn
-    (c1, c2)
-  }}.unzip
 
 
 
@@ -130,75 +123,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 
 
-  val ioIncCounts = Vec(ioIncCounters.zipWithIndex.map { case (e, i) => {
-    // Each counter operates on a fixed radix, previous = to the right
-    /*val counterRad = e.rad
-    val counterRadIdx = DSPUInt(globalRads.indexOf(counterRad))
-    val matchUsedIdx = primeIdx.onlyIndexWhere(_ === counterRadIdx)
-    val rightUsedIdx = primeIdx.zipWithIndex.map{case(e,i) => Mux(DSPUInt(i) > DSPUInt(matchUsedIdx,DSPUInt.toMax(matchUsedIdx.getWidth)), e, DSPUInt(0))}
-    val matchRightCounters = Vec((0 until ioIncCounters.length).map(counterIdx => {
-      val temp = Vec(rightUsedIdx.map(DSPUInt(counterIdx + 1) === _))
-      temp.tail.fold(temp.head)(_ | _)
-    }))
-    val getTransitionsTemp = ioIncCounters.zipWithIndex.map{case (e,i) => {
-      !matchRightCounters(i) | (matchRightCounters(i) & e.ctrl.isMax)
-    }}
-    val getTransitions = getTransitionsTemp.tail.fold(getTransitionsTemp.head)(_|_)
-    e.ctrl.change.get := getTransitions
-
-    val matchLoc = Vec(primeIdx.map(_ === counterRadIdx))
-    val primeDigitsInterm = Vec(primeDigits.zip(matchLoc).map{case (digits,matchLoc) => digits ? matchLoc})
-    val currentPrimeDigits = primeDigitsInterm.tail.foldLeft(primeDigitsInterm.head)(_ | _)
-    e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)*/
-
-    val out = e.io.out.cloneType
-    out := e.io.out
-    debug(out)
-    out
 
 
 
-
-
-
-
-
-
-    //val matchPrevCounter = Vec((0 until ioIncCounters.length).map(x => DSPUInt(x + 1) === prevRadIdx))
-
-
-
-    //val matchLoc = Vec(primeIdx.map(_ === counterRadIdx))
-    //val matchIdxTemp = (0 until primeIdx.length).zip(matchLoc).map{case (idx,matchLoc) => DSPUInt(idx) ? matchLoc}
-    //val matchIdx = matchIdxTemp.tail.foldLeft(matchIdxTemp.head)(_ | _)
-    //val right = primeIdx.zipWithIndex.map{case (e,i) => Mux(DSPUInt(i) > matchIdx, e, UInt(0))}
-
-
-
-/*
-
-
-    val matchLocRight = Vec(Seq(DSPBool(false)) ++ matchLoc.init)
-    val prevRadIdxInterm = Vec(primeIdx.zip(matchLocRight).map{case (idx,matchLoc) => idx ? matchLoc})
-    val prevRadIdx = prevRadIdxInterm.tail.foldLeft(prevRadIdxInterm.head)(_ | _)
-    val matchPrevCounter = Vec((0 until ioIncCounters.length).map(x => DSPUInt(x + 1) === prevRadIdx))
-    val ioIncChangeOut = Vec(ioIncCounters.map(_.ctrl.nextChange))
-    val prevChangeOutInterm = Vec(ioIncChangeOut.zip(matchPrevCounter).map{
-      case (changeOut,matchPrev) => changeOut ? matchPrev
-    })
-    val (temp1,temp2) = prevChangeOutInterm.splitAt(i)
-    val prevChangeOutOthers = temp1 ++ temp2.tail
-    val prevChangeOut = prevChangeOutOthers.tail.foldLeft(prevChangeOutOthers.head)(_ | _)
-    // TODO: can discount index of current e
-    e.ctrl.change := Mux(matchLoc.last,slowEn,prevChangeOut)
-    val primeDigitsInterm = Vec(primeDigits.zip(matchLoc).map{case (digits,matchLoc) => digits ? matchLoc})
-    val currentPrimeDigits = primeDigitsInterm.tail.foldLeft(primeDigitsInterm.head)(_ | _)
-
-    */
-    //e.io.primeDigits := currentPrimeDigits.shorten(e.io.primeDigits.getRange)
-
-    // branch
- }})
 
 
 
@@ -563,7 +490,7 @@ println(Params.getMem.addrC)
   }
 
   // Counter reset whenever new FFTN desired, stays constant after setup is done SHOULD OPTIMIZE
-  val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3
+  val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3 + 20
   val setupCounter = Module(new accumulator(Helper.bitWidth(setupDoneCount)))
   val setupDoneTemp = (UInt(setupDoneCount) === setupCounter.io.out)
   setupCounter.io.inc := UInt(1, width = 1)
@@ -871,28 +798,6 @@ println(Params.getMem.addrC)
   }
   })
 
-
- /* val qDIFoTbl = Params.getIO.qDIT.transpose.map(x => x.toList)
-  // Columns
-  val qDIFoLUTs = qDIFoTbl.zipWithIndex.map { case (x, i) => {
-    val temp = Params.getIO.primes.reverse(i)
-    val rad = if (temp == 2) 4 else temp
-    DSPModule(new BaseNLUT(x, rad = rad))
-  }
-  }
-
-
-  val qDIFos = Vec(qDIFoLUTs.zipWithIndex.map { case (x, i) => {
-    x.io.addr := DSPUInt(fftIndex, Params.getFFT.sizes.length - 1)
-    val tempOut = x.io.dout.cloneType
-    tempOut := x.io.dout
-    //Reg(tempOut) weirdest reg problem ever/!??!
-    BaseN(tempOut.map(x => x.reg()), tempOut.rad)
-  }
-  })*/
-
-
-
   val (oIncCounters, oModCounters) = Params.getIO.global.reverse.map{ case (prime,rad,maxCoprime) => {
     val c1 = BaseNIncCounter(rad, maxCoprime,Params.getIO.clkRatio, nameExt = "rad_" + rad.toString)
     val c2 = {
@@ -909,24 +814,6 @@ println(Params.getMem.addrC)
 
   // debug list of stuff
   // CHANGE ALL REG TO PIPE -- should there be an enclosing vec? for all iterables
-
-/*  val (oIncCounters, oModCounters) = Params.getIO.maxCoprimes.reverse.zipWithIndex.map { case (x, i) => {
-    val temp = Params.getIO.primes.reverse(i)
-    // TODO: Generalize rad also reused? temp rad
-    val rad = if (temp == 2) 4 else temp
-    val c1 = BaseNIncCounter(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString)
-    val c2 = {
-      if (x != Params.getIO.maxCoprimes.reverse.last)
-        Some(BaseNAccWithWrap(rad = rad, maxCoprime = x, nameExt = "rad_" + rad.toString))
-      else
-        None
-    }
-    (c1, c2)
-  }
-  }.unzip
-*/
-
-
 
 
   // Right-most counter is "least significant"
@@ -948,6 +835,9 @@ println(Params.getMem.addrC)
     temp
   }
   })
+
+
+
   // Do zip together
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
@@ -962,11 +852,6 @@ println(Params.getMem.addrC)
     temp
   }
   })
-
-
-
-
-
 
 
   val oFinalCounts = Vec(Params.getIO.global.reverse.map(_._3).zipWithIndex.map { case (x, i) => {
@@ -995,9 +880,6 @@ println(Params.getMem.addrC)
 
   */
 
-
-
-
   val oDIFtemp1 = Vec(oFinalCounts.zipWithIndex.map { case (x, i) => {
     if (Params.getBF.rad.contains(2) && Params.getIO.global.map(_._1).reverse(i) == 2 && Params.getBF.rad.contains(4)) {
       // switch to getBF.rad(i) == 2  ????
@@ -1012,6 +894,10 @@ println(Params.getMem.addrC)
     else x
   }
   })
+
+
+
+
 
   ///// UP to here is right
 
@@ -1035,6 +921,18 @@ println(Params.getMem.addrC)
   // StageRadix === should be just series of Bools
   // table use2 YN? but otherwise lump stage cnt into 4 -- stage sum should not separate 4,2 (should be by coprime)
   // bad assumption here (i.e. 4 must be first)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
