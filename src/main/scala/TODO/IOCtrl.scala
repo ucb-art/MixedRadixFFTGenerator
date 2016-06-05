@@ -17,10 +17,9 @@ class IOCtrl extends DSPModule {
 
   val setup = new SetupIO
   val ctrl = new IOCtrlIO
-  val generalSetupIO = (new GeneralSetupIO).flip
+  val generalSetup = (new GeneralSetupO).flip
 
-  // Is IO in DIF mode?
-  val ioDIF = RegInit(DSPBool(true))
+// SETUP /////////////////////////////////////
 
   // Used for masking to get coprime mod (when operating in Base N and not binary)
   // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
@@ -68,26 +67,13 @@ class IOCtrl extends DSPModule {
     out
   }})
 
-  // IO Mod N counters (first set does (n+1)%coprime, second set does (r+Q)%coprime, with wrap
-  // condition off of the first set; reused for DIT/DIF)
-  val (ioIncCounters, ioQCounters) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
-    val c1 = BaseNIncCounter(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioInc_rad_" + rad.toString)
-    val c2 = BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioQ_rad_" + rad.toString)
-    // TODO: Double check timing is ok
-    c1.ctrl.reset := ctrl.startFrameIn
-    c2.ctrl.reset := ctrl.startFrameIn
-    c1.ctrl.en.get := ctrl.ioEnable
-    c2.ctrl.en.get := ctrl.ioEnable
-    (c1, c2)
-  }}.unzip
-
   // IO Counter locations (counter radices are specified in a globally defined order;
   // counter ordering is potentially shuffled to match coprime decomposition ordering used in
   // actual FFT), when used
-  val (isUsedX,usedLocX) = ioIncCounters.map { case e => {
+  val (isUsedX,usedLocX) = globalRads.tail.map{ case (rad) => {
     // Each counter operates on a fixed radix, previous = to the right (should increment first)
     // Note that counterRadIdx should never = 0
-    val counterRadIdx = DSPUInt(globalRads.indexOf(e.rad))
+    val counterRadIdx = DSPUInt(globalRads.indexOf(rad))
     // Get location in primeIdx Vec where counterRadIdx matches (or location doesn't exist = counter unused)
     val primeIdxMatch = Vec(primeIdx.map(_ === counterRadIdx))
     // Is radix + associated counters used?
@@ -108,6 +94,73 @@ class IOCtrl extends DSPModule {
     val temp = primeDigits.zipWithIndex.foldLeft(DSPUInt(0))((accum, e) => (e._1 ? (x === DSPUInt(e._2))) | accum)
     temp.pipe(1)
   }})
+
+  // Get QDIFs associated with counter (note that at the worst case, the # of QDIF columns is 1 less than the # of
+  // counters allocated (i.e. for primes 2,3,5, the counter associated with 5 isn't used)
+  // Same for DIT
+  val (counterQDIFsX,counterQDITsX) = usedLoc.zip(isUsed).zip(globalRads.tail).map{ case ((usedLocE,isUsedE),rad) => {
+    //qDIF multi-dimension iterable --> location, base type, digit
+    val tempDIF = qDIF.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
+      // Find Q lut output with matching radix, or return 0 if no matching radix is found (remember that
+      // there are more counters than Q's) -- tools should get rid of unused accumulator
+      val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
+      (baseNelem ? ((usedLocE === DSPUInt(e._2)) & isUsedE)) | accum
+    })
+    val tempDIT = qDIT.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
+      // Note that qDIT is derived from coprimes.reverse, therefore indexing is flipped
+      val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
+      (baseNelem ? ((usedLocE === DSPUInt(usedLoc.length-1-e._2)) & isUsedE)) | accum
+    })
+    (tempDIF,tempDIT)
+  }}.unzip
+  val counterQDIFs = Vec(counterQDIFsX)
+  val counterQDITs = Vec(counterQDITsX)
+
+  // Index associated with stage prime
+  val stagePrimeIdx = Vec(generalSetup.stageRad.map(e => {
+    // TODO: Generalize?
+    val stagePrime = {
+      if (Params.getBF.rad.contains(4)) Mux(e === DSPUInt(4),DSPUInt(2),e)
+      else e
+    }
+    globalPrimes.zipWithIndex.foldLeft(DSPUInt(0))(
+      (accum,x) => accum | (DSPUInt(x._2) ? (DSPUInt(x._1) === stagePrime))
+    ).pipe(1)
+  }))
+
+  // Stage is used for current FFT
+  val stageIsActive = Vec(stagePrimeIdx.map(x => (x =/= DSPUInt(0)).pipe(1)))
+  // DIF digit index associated with stage (note: some digits invalid -- i.e. when stage is inactive)
+  val digitIdxDIF = Vec(generalSetup.primeStageSum.zipWithIndex.map{case (e,i) => {e - DSPUInt(i+1)}})
+  // DIT digit index associated with stage ("digit reverse")
+  val digitIdxDIT = Vec(generalSetup.prevPrimeStageSum.zipWithIndex.map{case (e,i) => {DSPUInt(i)-e}})
+
+// IO CTRL /////////////////////////////////////
+
+
+
+
+
+
+
+
+
+  // IO Mod N counters (first set does (n+1)%coprime, second set does (r+Q)%coprime, with wrap
+  // condition off of the first set; reused for DIT/DIF)
+  val (ioIncCounters, ioQCounters) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
+    val c1 = BaseNIncCounter(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioInc_rad_" + rad.toString)
+    val c2 = BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioQ_rad_" + rad.toString)
+    // TODO: Double check timing is ok
+    c1.ctrl.reset := ctrl.startFrameIn
+    c2.ctrl.reset := ctrl.startFrameIn
+    c1.ctrl.en.get := ctrl.ioEnable
+    c2.ctrl.en.get := ctrl.ioEnable
+    (c1, c2)
+  }}.unzip
+
+  // Is IO in DIF mode?
+  val ioDIF = RegInit(DSPBool(true))
+
 
   val isLastLoc = Vec(usedLoc.map(e => {
     // Is last used location? (not dependent on anything else)
@@ -137,27 +190,6 @@ class IOCtrl extends DSPModule {
     isUsed(i) & (changeTemp | isLastLoc(i))
   }})
 
-  // Get QDIFs associated with counter (note that at the worst case, the # of QDIF columns is 1 less than the # of
-  // counters allocated (i.e. for primes 2,3,5, the counter associated with 5 isn't used)
-  val counterQDIFs = Vec(usedLoc.zip(isUsed).zip(ioQCounters.map(_.rad)).map{ case ((usedLocE,isUsedE),rad) => {
-    //qDIF multi-dimension iterable --> location, base type, digit
-    val temp = qDIF.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
-      // Find Q lut output with matching radix, or return 0 if no matching radix is found (remember that
-      // there are more counters than Q's) -- tools should get rid of unused accumulator
-      val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
-      (baseNelem ? ((usedLocE === DSPUInt(e._2)) & isUsedE)) | accum
-    })
-    temp
-  }})
-  // Same for DIT
-  val counterQDITs = Vec(usedLoc.zip(isUsed).zip(ioQCounters.map(_.rad)).map{ case ((usedLocE,isUsedE),rad) => {
-    val temp = qDIT.zipWithIndex.foldLeft(BaseN(0,rad))((accum, e) => {
-      // Note that qDIT is derived from coprimes.reverse, therefore indexing is flipped
-      val baseNelem = e._1.find(_.rad == rad).getOrElse(BaseN(0,rad))
-      (baseNelem ? ((usedLocE === DSPUInt(usedLoc.length-1-e._2)) & isUsedE)) | accum
-    })
-    temp
-  }})
   val counterQs = Pipe(Mux(ioDIF,counterQDIFs,counterQDITs),1)
 
   // First layer counter outputs (see counters above)
@@ -186,7 +218,7 @@ class IOCtrl extends DSPModule {
     // [4,4,...4,2] representation (Note that doing x.rad still results in 4)
     // TODO: Generalize?
     if (modSum.rad == 4 && Params.getBF.rad.contains(2)) {
-      val temp = Mux(generalSetupIO.use2 & ioDIF,modSum.toRad42(),modSum)
+      val temp = Mux(generalSetup.use2 & ioDIF,modSum.toRad42(),modSum)
       Pipe(temp,1)
     }
     else Pipe(modSum,1)
@@ -195,24 +227,6 @@ class IOCtrl extends DSPModule {
   val matchCoprimeCountLengths = coprimeCountsX.map(_.length).max
   val coprimeCounts = Vec(coprimeCountsX.map(e => BaseN(e, e.rad).padTo(matchCoprimeCountLengths)))
 
-  // Index associated with stage prime
-  val stagePrimeIdx = Vec(generalSetupIO.stageRad.map(e => {
-    // TODO: Generalize?
-    val stagePrime = {
-      if (Params.getBF.rad.contains(4)) Mux(e === DSPUInt(4),DSPUInt(2),e)
-      else e
-    }
-    globalPrimes.zipWithIndex.foldLeft(DSPUInt(0))(
-      (accum,x) => accum | (DSPUInt(x._2) ? (DSPUInt(x._1) === stagePrime))
-    ).pipe(1)
-  }))
-
-  // Stage is used for current FFT
-  val stageIsActive = Vec(stagePrimeIdx.map(x => (x =/= DSPUInt(0)).pipe(1)))
-  // DIF digit index associated with stage (note: some digits invalid -- i.e. when stage is inactive)
-  val digitIdxDIF = Vec(generalSetupIO.primeStageSum.zipWithIndex.map{case (e,i) => {e - DSPUInt(i+1)}})
-  // DIT digit index associated with stage ("digit reverse")
-  val digitIdxDIT = Vec(generalSetupIO.prevPrimeStageSum.zipWithIndex.map{case (e,i) => {DSPUInt(i)-e}})
   val digitIdx = Mux(ioDIF,digitIdxDIF,digitIdxDIT)
 
   // TODO: Make foldLeft into DSPUInt lookup function, decide on MixedRad vs. Vec?
@@ -244,7 +258,7 @@ class IOCtrl extends DSPModule {
   // scan: fftsize, etc.
   // go: run twice
   // scan send address: en; output clk, start, data
-
+  // fix frameout
   debug(nIO)
   // mem readen
   // 3 multiplies, 2x rad2
@@ -252,5 +266,7 @@ class IOCtrl extends DSPModule {
   // separate out counter stuff from constants
   // worst case delay = this + setup delay
   // restart dif/dit mode, also reg?
+  // clk going through
+  // read out scanned data (mem @ addr o)
 
 }

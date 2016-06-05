@@ -72,7 +72,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   IOCtrl.setup.enable := setupEnDly
   IOCtrl.ctrl.ioEnable := slowEn
   IOCtrl.ctrl.startFrameIn := startFirstFrame
-  IOCtrl.generalSetupIO <> GeneralSetup.io
+  IOCtrl.generalSetup <> GeneralSetup.o
 
 
 

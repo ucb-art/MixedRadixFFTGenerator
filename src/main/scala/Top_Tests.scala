@@ -311,8 +311,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //peek(c.IOCtrl.test)
     //c.IOCtrl.counterQDITs.foreach{x => peek(x)}
     //c.qDIFos.foreach{x => peek(x)}
-    peek(c.GeneralSetup.prevPrimeStageSumShort)
-    peek(c.IOCtrl.generalSetupIO.prevPrimeStageSum)
+    //peek(c.GeneralSetup.prevPrimeStageSumShort)
+    //peek(c.IOCtrl.generalSetupIO.prevPrimeStageSum)
     traceOn = temp
   }
 
