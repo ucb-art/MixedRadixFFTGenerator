@@ -6,7 +6,7 @@ import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
 // TODO: Get rid of IO that's not used
 
-class SetupIO extends IOBundle {
+class SetupTopIO extends IOBundle {
   // Index of current FFT N
   val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount - 1)
   // Enable setup
@@ -37,25 +37,24 @@ class GeneralSetupO extends IOBundle {
 
 class GeneralSetup extends DSPModule {
 
-  val setup = new SetupIO
+  val setupTop = new SetupTopIO
   // Per-FFT constants output
   val o = new GeneralSetupO
 
   // i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [a1,a2,b,c]
   val radPowLUT = DSPModule(new IntLUT2D(Params.getCalc.radPow), "radPow")
-  radPowLUT.io.addr := setup.fftIdx
+  radPowLUT.io.addr := setupTop.fftIdx
   val radPow = radPowLUT.io.dout.cloneType
-  radPow := RegNext(Mux(setup.enable,radPowLUT.io.dout,radPow))
+  radPow := RegNext(Mux(setupTop.enable,radPowLUT.io.dout,radPow))
 
-  // TODO: Make global List(1)
   // Order of the calculation radix stages (given by index in {List(1) ++ ButterflyParams.rad} -- idx = 0 if some
   // overall radix is unused for particular FFT)
-  val possibleRad = List(1) ++ Params.getBF.rad
+  val possibleRad = Params.getBF.possibleRad
   val radIdxOrderS = Params.getCalc.radOrder.map(x => x.map(y => possibleRad.indexOf(y) ))
   val radIdxOrderLUT = DSPModule(new IntLUT2D(radIdxOrderS), "radIdxOrder")
-  radIdxOrderLUT.io.addr := setup.fftIdx
+  radIdxOrderLUT.io.addr := setupTop.fftIdx
   val radIdxOrder = radIdxOrderLUT.io.dout.cloneType
-  radIdxOrder := RegNext(Mux(setup.enable,radIdxOrderLUT.io.dout,radIdxOrder))
+  radIdxOrder := RegNext(Mux(setupTop.enable,radIdxOrderLUT.io.dout,radIdxOrder))
   // Now using actual radices
   val radOrder = Vec(radIdxOrder.map( x => {
     possibleRad.zipWithIndex.foldLeft(DSPUInt(0))((accum,e) => accum | (DSPUInt(e._1) ? (x === DSPUInt(e._2))))
@@ -158,7 +157,7 @@ class GeneralSetup extends DSPModule {
 
   // Keep track of how long setup should take (+1 for RegNext on LUT out -- should be consistent throughout)
   val setupDelay = o.getMaxOutDelay() + 1
-  setup.done := setup.enable.pipe(setupDelay)
+  setupTop.done := setupTop.enable.pipe(setupDelay)
 
   Status("General setup takes " + setupDelay + " clocks.")
 

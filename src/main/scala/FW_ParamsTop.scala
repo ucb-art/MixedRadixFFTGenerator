@@ -116,7 +116,13 @@ case class IOParams (
   var qDIF: List[List[Tuple2[Int,Int]]] = List(List((1,1))),
   // DIT Q with corresponding base
   var qDIT: List[List[Tuple2[Int,Int]]] = List(List((1,1)))
-)
+){
+  def numDigits = coprimes.map(_.map(_._3))
+  def globalPrimes = List(1) ++ global.map(_._1)
+  def globalRads = List(0) ++ global.map(_._2)
+  def globalMaxCoprimes = global.map(_._3)
+  def primes = coprimes.map(_.map(_._2))
+}
 
 case class CalcParams (
   // Order of the calculation radix stages
@@ -147,6 +153,8 @@ case class ButterflyParams (
   var rad: List[Int] = List(2,3,4,5,7),
   // Number of butterflies needed
   var num: Int = 1
-)
+){
+  def possibleRad = List(1) ++ rad
+}
 
 // TODO: # butterflies, clk ratio, banks, length

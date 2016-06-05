@@ -2,7 +2,7 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
-class IOCtrlIO extends IOBundle {
+class IOCtrlIOs extends IOBundle {
   // Accepting new input/output data (can pause/resume IO, also hold if IO is slower than calc. clock)
   val ioEnable = DSPBool(INPUT)
   // Reset IO counters & start inputting from n = 0 of frame
@@ -13,21 +13,21 @@ class IOCtrlIO extends IOBundle {
   val k = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
 }
 
-class IOCtrl extends DSPModule {
+class IOCtrlX extends DSPModule {
 
-  val setup = new SetupIO
-  val ctrl = new IOCtrlIO
+  val setupTop = new SetupTopIO
+  val ctrl = new IOCtrlIOs
   val generalSetup = (new GeneralSetupO).flip
 
-// SETUP /////////////////////////////////////
+// setupTop /////////////////////////////////////
 
   // Used for masking to get coprime mod (when operating in Base N and not binary)
   // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
   // coprimes -> [coprime, corresponding prime, digit mask]
   val primeDigitsLUT = DSPModule(new IntLUT2D(Params.getIO.coprimes.map(_.map(_._3))), "primeDigits")
-  primeDigitsLUT.io.addr := setup.fftIdx
+  primeDigitsLUT.io.addr := setupTop.fftIdx
   val primeDigits = primeDigitsLUT.io.dout.cloneType
-  primeDigits := RegNext(Mux(setup.enable,primeDigitsLUT.io.dout,primeDigits))
+  primeDigits := RegNext(Mux(setupTop.enable,primeDigitsLUT.io.dout,primeDigits))
 
   // Indices indicating order of prime decomposition i.e. (3,2,5) might have indices (2,1,3) if
   // Params.getIO.global has primes stored as (2,3,5)
@@ -42,9 +42,9 @@ class IOCtrl extends DSPModule {
     globalPrimes.indexOf(prime)
   })
   val primeIdxLUT = DSPModule(new IntLUT2D(primeIndices), "primeIdx")
-  primeIdxLUT.io.addr := setup.fftIdx
+  primeIdxLUT.io.addr := setupTop.fftIdx
   val primeIdx = primeIdxLUT.io.dout.cloneType
-  primeIdx := RegNext(Mux(setup.enable,primeIdxLUT.io.dout,primeIdx))
+  primeIdx := RegNext(Mux(setupTop.enable,primeIdxLUT.io.dout,primeIdx))
 
   // Q for input DIF, DIT
   // Note: qDIF/qDIT nested list arranged as: location, base type, digit
@@ -55,15 +55,15 @@ class IOCtrl extends DSPModule {
     case (x,i) => DSPModule(new MixedBaseLUT(x), "qDIT_" + i.toString)
   }
   val qDIF = Vec(qDIFLUT.map{ x => {
-    x.io.addr := setup.fftIdx
+    x.io.addr := setupTop.fftIdx
     val out = x.io.dout.cloneType
-    out := RegNext(Mux(setup.enable,x.io.dout,out))
+    out := RegNext(Mux(setupTop.enable,x.io.dout,out))
     out
   }})
   val qDIT = Vec(qDITLUT.map{ x => {
-    x.io.addr := setup.fftIdx
+    x.io.addr := setupTop.fftIdx
     val out = x.io.dout.cloneType
-    out := RegNext(Mux(setup.enable,x.io.dout,out))
+    out := RegNext(Mux(setupTop.enable,x.io.dout,out))
     out
   }})
 
@@ -261,10 +261,8 @@ class IOCtrl extends DSPModule {
   // fix frameout
   debug(nIO)
   // mem readen
-  // 3 multiplies, 2x rad2
+  // 3 multiplies
   // n to bank addr
-  // separate out counter stuff from constants
-  // worst case delay = this + setup delay
   // restart dif/dit mode, also reg?
   // clk going through
   // read out scanned data (mem @ addr o)
