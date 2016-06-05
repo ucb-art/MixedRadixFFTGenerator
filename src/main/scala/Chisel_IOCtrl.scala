@@ -1,4 +1,4 @@
-/*package FFT
+package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
@@ -11,11 +11,26 @@ class IOCtrlIO extends IOBundle {
   val validOut = DSPBool(OUTPUT)
   // Output k value
   val k = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
+  // IO in DIF mode?
+  val ioDIF = DSPBool(OUTPUT)
+
+  // **** TODO: Separate bundle!
+
+  // Memory address
+  val ioAddr = DSPUInt(OUTPUT,Params.getMem.lengths.max-1)
+  // Memory bank
+  val ioBank = DSPUInt(OUTPUT,Params.getMem.banks-1)
 }
 
 class IOCtrl extends DSPModule {
 
   val ctrl = new IOCtrlIO
+  val ioSetup = (new IOSetupO).flip
+  val generalSetup = (new GeneralSetupO).flip
+
+  val usedLoc = ioSetup.usedLoc
+  val isUsed = ioSetup.isUsed
+  val counterPrimeDigits = ioSetup.counterPrimeDigits
 
   // IO Mod N counters (first set does (n+1)%coprime, second set does (r+Q)%coprime, with wrap
   // condition off of the first set; reused for DIT/DIF)
@@ -31,13 +46,12 @@ class IOCtrl extends DSPModule {
   }}.unzip
 
   // Is IO in DIF mode?
-  val ioDIF = RegInit(DSPBool(true))
-
+  val ioDIF = RegInit(DSPBool(false))
 
   val isLastLoc = Vec(usedLoc.map(e => {
     // Is last used location? (not dependent on anything else)
     // Note: Misnomer: DIF = last; DIT = first (b/c counters should be flipped)
-    val lastLoc = Mux(ioDIF,DSPUInt(primeIdx.length-1),DSPUInt(0))
+    val lastLoc = Mux(ioDIF,DSPUInt(usedLoc.length-1),DSPUInt(0))
     (e === lastLoc)
   }))
 
@@ -62,7 +76,7 @@ class IOCtrl extends DSPModule {
     isUsed(i) & (changeTemp | isLastLoc(i))
   }})
 
-  val counterQs = Pipe(Mux(ioDIF,counterQDIFs,counterQDITs),1)
+  val counterQs = Mux(ioDIF,ioSetup.counterQDIFs,ioSetup.counterQDITs)
 
   // First layer counter outputs (see counters above)
   val (ioIncCountsX,ioQCountsX) = ioIncCounters.zip(ioQCounters).zipWithIndex.map{case ((ioIncCounter,ioQCounter),i) =>{
@@ -99,7 +113,7 @@ class IOCtrl extends DSPModule {
   val matchCoprimeCountLengths = coprimeCountsX.map(_.length).max
   val coprimeCounts = Vec(coprimeCountsX.map(e => BaseN(e, e.rad).padTo(matchCoprimeCountLengths)))
 
-  val digitIdx = Mux(ioDIF,digitIdxDIF,digitIdxDIT)
+  val digitIdx = Mux(ioDIF,ioSetup.digitIdxDIF,ioSetup.digitIdxDIT)
 
   // TODO: Make foldLeft into DSPUInt lookup function, decide on MixedRad vs. Vec?
   val nIOX = (0 until Params.getCalc.maxStages).map{ i => {
@@ -108,12 +122,34 @@ class IOCtrl extends DSPModule {
     val coprime = coprimeCounts.zipWithIndex.foldLeft(
       MixedRad(Vec(matchCoprimeCountLengths,DSPUInt(0,Params.getBF.rad.max-1)))
     )(
-      (accum,e) => accum | (MixedRad(e._1) ? (DSPUInt(e._2+1) === stagePrimeIdx(i)))
+      (accum,e) => accum | (MixedRad(e._1) ? (DSPUInt(e._2+1) === ioSetup.stagePrimeIdx(i)))
     )
     val digit = coprime.zipWithIndex.foldLeft(DSPUInt(0,Params.getBF.rad.max-1))(
       (accum,e) => accum | (e._1 ? (digitIdx(i) === DSPUInt(e._2)))
     )
-    Mux(stageIsActive(i),digit,DSPUInt(0))
+    Mux(ioSetup.stageIsActive(i),digit,DSPUInt(0))
   }}
   val nIO = Vec(nIOX)
-}*/
+
+  debug(nIO)
+}
+
+
+
+/*  // scanin
+  // en
+  // scan on separate vdd: inmemaddress (up to max fftsize), 32 bit val -- enable: enable mem write
+  // scan: fftsize, etc.
+  // go: run twice
+  // scan send address: en; output clk, start, data
+  // clk going through
+  // read out scanned data (mem @ addr o)
+
+
+  // mem readen
+  // 3 multiplies
+  // n to bank addr
+  // restart dif/dit mode
+  // test 100
+  // fix frameout timing
+  */// twiddle ctrl

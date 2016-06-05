@@ -1,3 +1,5 @@
+// TODO: Swap foldLeft with reduceLeft (initial val automatic)
+
 package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
@@ -7,8 +9,12 @@ class IOSetupO extends IOBundle {
   val numCoprimeCounters = Params.getIO.global.length
   val counterRads = Params.getIO.globalRads.tail
   val maxPrimeDigits = Params.getIO.globalMaxCoprimes.zip(counterRads).map {
-    case (coprime,rad) => BaseN.numDigits(coprime,rad)
-  }
+    // Digits represented in base prime (not rad)
+    case (coprime,rad) => {
+      // global -> [prime,maxRadix,maxCoprime]
+      val prime = Params.getIO.global.find(_._2 == rad).get._1
+      BaseN.numDigits(coprime,prime)
+  }}
   val maxStages = Params.getCalc.maxStages
 
   // Counter associated with particular coprime location (in potentially unique
@@ -16,10 +22,8 @@ class IOSetupO extends IOBundle {
   val usedLoc = Vec(numCoprimeCounters,DSPUInt(OUTPUT,numCoprimeCounters-1))
   // Is counter used?
   val isUsed = Vec(numCoprimeCounters,DSPBool(OUTPUT))
-  // Index of used prime (accounts for unused prime i.e. 1 --> idx = 0)
-  val primeIdx = Vec(numCoprimeCounters,DSPUInt(OUTPUT,numCoprimeCounters))
   // Base-N # of digits (for counter modulus)
-  val counterPrimeDigits = Vec(maxPrimeDigits.map(DSPUInt(OUTPUT,_)))
+  val counterPrimeDigits = Vec(maxPrimeDigits.map(x => DSPUInt(OUTPUT,x)))
   // QDIFs associated with counters
   val counterQDIFs = Vec(Params.getIO.globalMaxCoprimes.zip(counterRads).map{
     case (coprime,rad) => BaseN(OUTPUT,rad,coprime-1)
@@ -62,7 +66,8 @@ class IOSetup(prevSetupDelay: Int) extends DSPModule{
   val primeIndices = Params.getIO.primes.map(_.map( x=> globalPrimes.indexOf(x)))
   val primeIdxLUT = DSPModule(new IntLUT2D(primeIndices), "primeIdx")
   primeIdxLUT.io.addr := setupTop.fftIdx
-  o.primeIdx := RegNext(Mux(setupTop.enable,primeIdxLUT.io.dout,o.primeIdx))
+  val primeIdx = primeIdxLUT.io.dout.cloneType
+  primeIdx := RegNext(Mux(setupTop.enable,primeIdxLUT.io.dout,primeIdx))
 
   // Q for input DIF, DIT
   // Note: qDIF/qDIT nested list arranged as: location, base type, digit
@@ -93,7 +98,7 @@ class IOSetup(prevSetupDelay: Int) extends DSPModule{
     // Note that counterRadIdx should never = 0
     val counterRadIdx = DSPUInt(globalRads.indexOf(rad))
     // Get location in primeIdx Vec where counterRadIdx matches (or location doesn't exist = counter unused)
-    val primeIdxMatch = Vec(o.primeIdx.map(_ === counterRadIdx))
+    val primeIdxMatch = Vec(primeIdx.map(_ === counterRadIdx))
     // Is radix + associated counters used?
     val isUsed = primeIdxMatch.tail.foldLeft(primeIdxMatch.head)(_ | _)
     // Where counter is used (determines counting order) -- note that default is loc = 0 (but need to check isUsed to
@@ -108,9 +113,9 @@ class IOSetup(prevSetupDelay: Int) extends DSPModule{
   o.usedLoc := Vec(usedLocX)
 
   // TODO: Enable DSPUInt to address Vec
-  o.counterPrimeDigits := Vec(o.usedLoc.map{ x => {
+  o.counterPrimeDigits := Vec(o.usedLoc.zipWithIndex.map{ case(x,i) => {
     val temp = primeDigits.zipWithIndex.foldLeft(DSPUInt(0))((accum, e) => (e._1 ? (x === DSPUInt(e._2))) | accum)
-    temp.pipe(1)
+    temp.shorten(o.counterPrimeDigits(i).getRange).pipe(1)
   }})
 
   // Get QDIFs associated with counter (note that at the worst case, the # of QDIF columns is 1 less than the # of
@@ -151,9 +156,13 @@ class IOSetup(prevSetupDelay: Int) extends DSPModule{
   o.stageIsActive := Vec(o.stagePrimeIdx.map(x => (x =/= DSPUInt(0)).pipe(1)))
 
   // DIF digit index associated with stage (note: some digits invalid -- i.e. when stage is inactive)
-  o.digitIdxDIF := Vec(generalSetup.primeStageSum.zipWithIndex.map{case (e,i) => {(e - DSPUInt(i+1)).pipe(1)}})
+  o.digitIdxDIF := Vec(generalSetup.primeStageSum.zipWithIndex.map{case (e,i) => {
+    (e - DSPUInt(i+1)).shorten(o.digitIdxDIF(i).getRange).pipe(1)
+  }})
   // DIT digit index associated with stage ("digit reverse")
-  o.digitIdxDIT := Vec(generalSetup.prevPrimeStageSum.zipWithIndex.map{case (e,i) => {(DSPUInt(i)-e).pipe(1)}})
+  o.digitIdxDIT := Vec(generalSetup.prevPrimeStageSum.zipWithIndex.map{case (e,i) => {
+    (DSPUInt(i)-e).shorten(o.digitIdxDIT(i).getRange).pipe(1)
+  }})
 
   // Keep track of how long setup should take (this delay is added on top of general setup delay)
   val setupDelay = o.getMaxOutDelay()

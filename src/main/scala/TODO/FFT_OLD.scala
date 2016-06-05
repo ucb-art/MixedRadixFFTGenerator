@@ -69,16 +69,13 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val IOSetup = DSPModule (new IOSetup(GeneralSetup.setupDelay))
   IOSetup.setupTop.fftIdx := fftIndex
   IOSetup.setupTop.enable := setupEnDly
-  Status("ffff" + IOSetup.o.isUsed(0).getDelay)
+  IOSetup.generalSetup <> GeneralSetup.o
 
-
-  val IOCtrl = DSPModule(new IOCtrlX)
-  IOCtrl.setupTop.fftIdx := fftIndex
-  IOCtrl.setupTop.enable := setupEnDly
+  val IOCtrl = DSPModule(new IOCtrl)
   IOCtrl.ctrl.ioEnable := slowEn
   IOCtrl.ctrl.startFrameIn := startFirstFrame
   IOCtrl.generalSetup <> GeneralSetup.o
-
+  IOCtrl.ioSetup <> IOSetup.o
 
 
 
@@ -493,7 +490,7 @@ println(Params.getMem.addrC)
   }
 
   // Counter reset whenever new FFTN desired, stays constant after setup is done SHOULD OPTIMIZE
-  val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3 + 10
+  val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3 + 20
   val setupCounter = Module(new accumulator(Helper.bitWidth(setupDoneCount)))
   val setupDoneTemp = (UInt(setupDoneCount) === setupCounter.io.out)
   setupCounter.io.inc := UInt(1, width = 1)

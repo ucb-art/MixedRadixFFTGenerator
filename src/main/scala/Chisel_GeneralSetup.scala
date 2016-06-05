@@ -33,6 +33,12 @@ class GeneralSetupO extends IOBundle {
   val use2 = DSPBool(OUTPUT)
   // Max radix needed in current FFT
   val maxRad = DSPUInt(OUTPUT,globalMaxRad)
+  // Address constants for n -> address
+  // TODO: Write function
+  val addrConstants = Vec(Params.getMem.addrC.transpose.map(x => {
+    val stageACMax = x.max
+    DSPUInt(OUTPUT,stageACMax)
+  }))
 }
 
 class GeneralSetup extends DSPModule {
@@ -154,6 +160,11 @@ class GeneralSetup extends DSPModule {
   }).unzip
   o.primeStageSum := Vec(primeStageSumX)
   o.prevPrimeStageSum := Vec(prevPrimeStageSumX)
+
+  // Memory n to address constants
+  val addrConstantLUT = DSPModule(new IntLUT2D(Params.getMem.addrC))
+  addrConstantLUT.io.addr := setupTop.fftIdx
+  o.addrConstants := RegNext(Mux(setupTop.enable,addrConstantLUT.io.dout,o.addrConstants))
 
   // Keep track of how long setup should take (+1 for RegNext on LUT out -- should be consistent throughout)
   val setupDelay = o.getMaxOutDelay() + 1

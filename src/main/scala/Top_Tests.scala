@@ -274,7 +274,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
     }}*/
 
-   if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+   if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
 
 
 
@@ -313,6 +313,19 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //c.qDIFos.foreach{x => peek(x)}
     //peek(c.GeneralSetup.prevPrimeStageSumShort)
     //peek(c.IOCtrl.generalSetupIO.prevPrimeStageSum)
+
+    /*peek(c.IOCtrl2.usedLoc)
+    peek(c.IOCtrl.usedLoc)
+    peek(c.IOCtrl2.isUsed)
+    peek(c.IOCtrl.isUsed)
+
+    peek(c.IOCtrl2.counterPrimeDigits)
+    peek(c.IOCtrl.counterPrimeDigits)*/
+    /*peek(c.IOCtrl2.stageIsActive)
+    peek(c.IOSetup.o.stageIsActive)*/
+
+
+
     traceOn = temp
   }
 
