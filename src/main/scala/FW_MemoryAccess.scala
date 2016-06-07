@@ -5,15 +5,19 @@ object MemoryAccess{
     * @param radOrder order of used radices (base)
     * @param maxStages maximum # of stages for all FFT sizes
     * @param maxRadIn maximum radix + its index (in radOrder) for all FFT sizes
-    * @return Address constants for going from nx to memory bank addresses
+    * @param fftSizes list of used FFT Ns
+    * @return Address constants for going from nx to memory bank addresses,
+    *         Max # of memory banks,
+    *         Max length of each bank needed
     */
-  def apply(radPow:List[List[Int]],radOrder:List[List[Int]],maxStages:Int,maxRadIn:List[(Int,Int)]): List[List[Int]] = {
+  def apply(radPow:List[List[Int]],radOrder:List[List[Int]],maxStages:Int,maxRadIn:List[(Int,Int)],fftSizes:List[Int]):
+      Tuple3[List[List[Int]],Int,List[Int]] = {
     val maxRad = maxRadIn.unzip._1
     val stages = Stages_PrevStages(radPow,radOrder,maxStages).map(_.unzip._1)
     // Calculates address constants (after evenly dividing out # of banks, the
     // length of each bank is smaller i.e. N/#banks)
     // TODO: Bank != max radix
-    stages.zip(maxRad).map{case (stages,maxRad) => {
+    val ac = stages.zip(maxRad).map{case (stages,maxRad) => {
       // Set the first occurrence of an FFT's max radix in the list of stage radices to 1
       // (essentially tell it to skip over the max radix stage)
       // Ax = A(x+1) * r(x+1)
@@ -29,6 +33,14 @@ object MemoryAccess{
       // Pad back to max # of stages
       addressConstantShort ++ List.fill(maxStages-addressConstantShort.length)(0)
     }}
+    // TODO: Correct numBanks for multi BFs
+    val numBanks = maxRad.max
+    val memLengths = fftSizes.zip(maxRad).map{case (n,r) => {
+      val pad = numBanks-r
+      List.fill(r)(n/r) ++ List.fill(pad)(0)
+    }}.transpose.map(_.max)
+    (ac,numBanks,memLengths)
+
   }
 
   /** @param radPow powers (exponent) for each used radix

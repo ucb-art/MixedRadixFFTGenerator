@@ -46,7 +46,7 @@ class IOCtrl extends DSPModule {
   }}.unzip
 
   // Is IO in DIF mode?
-  val ioDIF = RegInit(DSPBool(false))
+  val ioDIF = RegInit(DSPBool(true))
 
   val isLastLoc = Vec(usedLoc.map(e => {
     // Is last used location? (not dependent on anything else)
@@ -131,7 +131,25 @@ class IOCtrl extends DSPModule {
   }}
   val nIO = Vec(nIOX)
 
+
+
+
+
+
+  val nToAddrBank = DSPModule(new nToAddrBank)
+  nToAddrBank.io.n := nIO
+  nToAddrBank.generalSetup := generalSetup
+  ctrl.ioAddr := nToAddrBank.io.addr // separate?
+  ctrl.ioBank := nToAddrBank.io.bank
+
+
+
+
+
   debug(nIO)
+  debug(ctrl.ioAddr)
+  debug(ctrl.ioBank)
+
 }
 
 
@@ -145,10 +163,9 @@ class IOCtrl extends DSPModule {
   // clk going through
   // read out scanned data (mem @ addr o)
 
-
+  // w0z
   // mem readen
   // 3 multiplies
-  // n to bank addr
   // restart dif/dit mode
   // test 100
   // fix frameout timing

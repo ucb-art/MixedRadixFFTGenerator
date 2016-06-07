@@ -47,8 +47,10 @@ object Params {
     io.qDIF = qDIF
     io.qDIT = qDIT
 
-    val addrC = MemoryAccess(calc.radPow,calc.radOrder,calc.maxStages,calc.maxRad)
+    val (addrC,numBanks,memLengths) = MemoryAccess(calc.radPow,calc.radOrder,calc.maxStages,calc.maxRad,getFFT.sizes)
     mem.addrC = addrC
+    mem.banks = numBanks
+    mem.lengths = memLengths
 
     val (twiddleCountMax,twiddleLUTScale,twiddles,twiddleSubcountMax) = Twiddles(io.coprimes,
                                                                                  io.global,
@@ -110,7 +112,7 @@ case class IOParams (
   // digits needed to represent a range of #'s up to the coprime value
   // [coprime,prime,numDigits]
   var coprimes:List[List[Tuple3[Int,Int,Int]]] = List.fill(10)(List((1,1,1))),
-  // Ratio of fast clock (Calculation) to slow clock (IO) frequencies
+  // ? Ratio of fast clock (Calculation) to slow clock (IO) frequencies
   var clkRatio: Int = 2,
   // DIF Q with corresponding base
   var qDIF: List[List[Tuple2[Int,Int]]] = List(List((1,1))),
@@ -151,7 +153,7 @@ case class TwiddleParams (
 case class ButterflyParams (
   // Radices actually needed
   var rad: List[Int] = List(2,3,4,5,7),
-  // Number of butterflies needed
+  // ? Number of butterflies needed
   var num: Int = 1
 ){
   def possibleRad = List(1) ++ rad

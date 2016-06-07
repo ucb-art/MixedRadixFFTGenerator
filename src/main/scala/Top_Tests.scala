@@ -217,6 +217,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
 
   if (Tracker.FFTN == 12) {
+
+    //if (peek(c.oDIFAddr) != peek(c.IOCtrl.ctrl.ioAddr)) Status("wrong")
     //peek(c.IOCtrl.isUsed)
     //peek(c.IOCtrl.ioIncChange)
     //peek(c.IOCtrl.test)
@@ -232,13 +234,17 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //peek(c.oIncCounts(1))
     //peek(c.oIncCounts(0))
   }
-
+   /* if (Tracker.FFTN == 144) {
+      if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+      if (peek(c.oDIFAddr) != peek(c.IOCtrl.ctrl.ioAddr) && Tracker.inStep >= 2) Error("addr")
+    }*/
 
     traceOn = temp
 
+    if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+    if (peek(c.iDIFAddr) != peek(c.IOCtrl.ctrl.ioAddr) && Tracker.inStep >= 2) Error("addr")
 
-
-
+    if (peek(c.iDIFBank) != peek(c.IOCtrl.ctrl.ioBank) && Tracker.inStep >= 2) Error("bank")
 
   /*(0 until 3).foreach { x => {
     if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.oIncCounts(2-x)).toList) & Tracker.inStep != 0) Error("iocount")
@@ -274,8 +280,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
     }}*/
 
-   if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
-
+  //
 
 
       //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")

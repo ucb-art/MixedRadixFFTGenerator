@@ -79,6 +79,8 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 
 
+
+
   // IO constants
 
   // Used for masking to get coprime mod (when operating in Base N and not binary)
