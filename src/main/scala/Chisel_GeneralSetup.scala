@@ -2,8 +2,6 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
-// TODO: Add FFT?
-
 // TODO: Get rid of IO that's not used
 
 class SetupTopIO extends IOBundle {
@@ -11,7 +9,9 @@ class SetupTopIO extends IOBundle {
   val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount - 1)
   // Enable setup
   val enable = DSPBool(INPUT)
-  // Done with IO setup
+  // Is FFT? (otherwise IFFT)
+  val isFFT = DSPBool(INPUT)
+  // Done with setup
   val done = DSPBool(OUTPUT)
 }
 

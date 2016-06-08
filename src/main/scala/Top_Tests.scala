@@ -1,4 +1,5 @@
 // TODO: Support IFFT (normalization too), check signal limit (in double test), build in CP/GI halt
+// TODO: Update meaning of control signals
 
 package FFT
 import ChiselDSP._
@@ -54,27 +55,27 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def newSetup(fftIndex:Int, fftTF:Boolean){
     Status("///////////////////////////////////////// NEW SETUP")
     val initT = t
-    poke(c.setup.SETUP_INIT,true)
-    poke(c.setup.FFT_INDEX,fftIndex)
-    poke(c.setup.FFT,fftTF)
+    poke(c.setup.enable,true)
+    poke(c.setup.fftIdx,fftIndex)
+    poke(c.setup.isFFT,fftTF)
     step(Params.getIO.clkRatio)
-    poke(c.setup.SETUP_INIT,false)
-    poke(c.setup.FFT_INDEX,0)
+    poke(c.setup.enable,false)
+    poke(c.setup.fftIdx,0)
     // Wait until done setting up before checking setup constants (note that step size is not always 1 -- depends on
     // user parameters)
-    var setupDone = peek(c.setup.SETUP_DONE)
+    var setupDone = peek(c.setup.done)
     var whileCnt = 0
     while (!setupDone){
       whileCnt = whileCnt + 1
       if (whileCnt > 100) Error("Setup is not completing...")
       step(1)
-      setupDone = peek(c.setup.SETUP_DONE)
+      setupDone = peek(c.setup.done)
     }
     setupDebug()
     val modT = (t-initT)%Params.getIO.clkRatio
     if (modT != 0) Error("Setup done and other control signals should occur as expected from IO clock rate")
     // SETUP_DONE should be held for clkRatio calc clk cycles
-    for (i <- 0 until Params.getIO.clkRatio-1) {step(1);expect(c.setup.SETUP_DONE,true)}
+    for (i <- 0 until Params.getIO.clkRatio-1) {step(1);expect(c.setup.done,true)}
     Status("///////////////////////////////////////// SETUP DONE")
   }
 
@@ -82,15 +83,15 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def testFFTNio(fftIndex:Int, fftTF:Boolean, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
     // Safety initialize control signals to false
     reset(Params.getIO.clkRatio)
-    poke(c.ctrl.ENABLE,true)
-    poke(c.ctrl.START_FIRST_FRAME,false)
-    poke(c.setup.SETUP_INIT,false)
+    poke(c.ctrl.ioEnable,true)
+    poke(c.ctrl.startFrameIn,false)
+    poke(c.setup.enable,false)
     newSetup(fftIndex,fftTF)
     step(Params.getIO.clkRatio + 1)
     // After setup, start sending data to process (start on the second IO clock period after SETUP_DONE)
-    poke(c.ctrl.START_FIRST_FRAME,true)
+    poke(c.ctrl.startFrameIn,true)
     stepTrack(Params.getIO.clkRatio,in,out)
-    poke(c.ctrl.START_FIRST_FRAME,false)
+    poke(c.ctrl.startFrameIn,false)
     val n = Params.getFFT.sizes(fftIndex)
     val frames = in.length/n
     // Output k = 0 starts 2 frames after n = 0
@@ -112,8 +113,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       val inVal = in(Tracker.inStep % in.length)
       // Checks when k = 0 is output (Detects transition to first symbol) & dumps input
       if (i == 0) {
-        poke(c.io.DATA_IN, inVal)
-        val firstOut = peek(c.ctrl.FRAME_FIRST_OUT)
+        poke(c.io.din, inVal)
+        val firstOut = peek(c.ctrl.validOut)
         if (firstOut && !Tracker.firstSymbol) {
           Status("///////////////////////////////////////// FRAME = %d, K = 0".format(Tracker.frameNum))
           // Streaming output valid after start of first output symbol detected
@@ -125,8 +126,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       }
       else{
         // FRAME_FIRST_OUT should be held for clkRatio calc clk cycles if true
-        if (firstOutValid) expect(c.ctrl.FRAME_FIRST_OUT,true)
-        else expect(c.ctrl.FRAME_FIRST_OUT,false)
+        if (firstOutValid) expect(c.ctrl.validOut,true)
+        else expect(c.ctrl.validOut,false)
       }
       // Read output if valid & check for error
       if (Tracker.outValid){
@@ -140,16 +141,16 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
             if(normalized) outExpected**(1/math.sqrt(Tracker.FFTN),typ = Real)
             else outExpected
           }
-          expect(c.io.DATA_OUT, outExpectedNormalized, Tracker.FFTN.toString, errorString)
+          expect(c.io.dout, outExpectedNormalized, Tracker.FFTN.toString, errorString)
         }
         // Doesn't compare, just stores results for post-processing
         else if (i == 0) {
-          Tracker.FFTOut = Tracker.FFTOut :+ peek(c.io.DATA_OUT)
+          Tracker.FFTOut = Tracker.FFTOut :+ peek(c.io.dout)
         }
-        if(genOffset) expect(c.ctrl.OFFSET,Tracker.outStep%Tracker.FFTN, "Offset value unexpected")
+        if(genOffset) expect(c.ctrl.k,Tracker.outStep%Tracker.FFTN, "Offset value unexpected")
       }
       else{
-        if(genOffset) expect(c.ctrl.OFFSET,0, "Offset value should be 0 if output isn't valid initially")
+        if(genOffset) expect(c.ctrl.k,0, "Offset value should be 0 if output isn't valid initially")
       }
       step(1)
     }
@@ -163,174 +164,20 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   /** Placeholder for debugging signals */
   var calcDone = false
   def calcDebug(i:Int): Unit = {
-    /*val calcDoneNew = peek(c.calcDoneFlag)
-    if (!calcDone && calcDoneNew) Status("Calc finished @ t = " + t)
-    if (calcDone && !calcDoneNew) Status("Calc started @ t = " + t)
-    calcDone = calcDoneNew*/
     val temp = traceOn
     traceOn = true
 
-
-    //if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep > 3) Error("nio")
-
-
-
-
-
-    //peek(c.io.DATA_OUT.real)
-    /*if (Tracker.FFTN == 12){
-      peek(c.ctrl.FRAME_FIRST_OUT)
-      peek(c.ctrl.OFFSET)
-      peek(c.offsetCounter.iCtrl.change.get)
-      peek(c.offsetCounter.iCtrl.reset)
-      peek(c.offsetCountEnable)
-      peek(c.frameFirstOutPreTemp)
-    }
-    peek(c.ctrl.FRAME_FIRST_OUT)
-    peek(c.ctrl.OFFSET)
-    peek(c.offsetCounter.iCtrl.reset)
-    peek(c.offsetCounter.iCtrl.change.get)
-    peek(c.offsetCounter.nextCount)*/
-    /*if(i == 0) {
-      peek(c.memBanks.io.ioAddr)
-      peek(c.memBanks.io.ioBank)
-    }*/
-    /*peek(c.memBanks.io.calcAddr)
-    peek(c.memBanks.io.calcBank)*/
-
-    if (Tracker.FFTN == 24) {
-      //c.iDIFtemp.foreach{x => peek(x)}
-      //c.IOCtrl.coprimeCounts.foreach{x => peek(x)}
-      //peek(c.IOCtrl.digitIdxDIF)
-      //peek(c.IOCtrl.digitIdxDIT)
-    }
-    /*if (Tracker.FFTN == 72) {
-    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
-    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
-    (0 until 3).foreach{ x => {
-      if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.ioIncCounts1(x)).toList) & Tracker.inStep != 0) Error("iocount")
-    }}
-    //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
-    }*/
-
-    //if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
-
-
-  if (Tracker.FFTN == 12) {
-
-    //if (peek(c.oDIFAddr) != peek(c.IOCtrl.ctrl.ioAddr)) Status("wrong")
-    //peek(c.IOCtrl.isUsed)
-    //peek(c.IOCtrl.ioIncChange)
-    //peek(c.IOCtrl.test)
-    //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.isMax)}
-
-
-    /*if (!peek(c.IOCtrl.ioIncCounts(0)).toList.sameElements(peek(c.oIncCounts(2)).toList)) Error("ocount0")
-    if (!peek(c.IOCtrl.ioIncCounts(1)).toList.sameElements(peek(c.oIncCounts(1)).toList)) Error("ocount1")
-    if (!peek(c.IOCtrl.ioIncCounts(2)).toList.sameElements(peek(c.oIncCounts(0)).toList)) Error("ocount2")*/
-    //peek(c.IOCtrl.ioIncCounts(1))
-    //peek(c.IOCtrl.ioIncCounts(2))
-
-    //peek(c.oIncCounts(1))
-    //peek(c.oIncCounts(0))
-  }
-   /* if (Tracker.FFTN == 144) {
-      if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
-      if (peek(c.oDIFAddr) != peek(c.IOCtrl.ctrl.ioAddr) && Tracker.inStep >= 2) Error("addr")
-    }*/
-
+    if (Tracker.FFTN == 12) peek(c.ioDIT)
     traceOn = temp
 
-    if (!peek(c.ions).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
-    if (peek(c.iDIFAddr) != peek(c.IOCtrl.ctrl.ioAddr) && Tracker.inStep >= 2) Error("addr")
-
-    if (peek(c.iDIFBank) != peek(c.IOCtrl.ctrl.ioBank) && Tracker.inStep >= 2) Error("bank")
-
-  /*(0 until 3).foreach { x => {
-    if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.oIncCounts(2-x)).toList) & Tracker.inStep != 0) Error("iocount")
-  }}
-
-    (0 until 2).foreach{ x => {
-      if (!peek(c.IOCtrl.ioQCounts(2-x)).toList.sameElements(peek(c.oModCounts(x)).toList) & Tracker.inStep != 0) Error("ioq")
-    }}*/
-
-    /*c.oDIFtemp.zip(c.IOCtrl.coprimeCounts).foreach{case (x,y) => {
-      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
-    }}*/
-
-
-
-    //if (Tracker.FFTN == 24) {
-      //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.reset)}
-      //c.IOCtrl.ioIncCounters.foreach{x => peek(x.ctrl.en.get)}
-/*
-    (0 until 3).foreach{ x => {
-        if (!peek(c.IOCtrl.ioIncCounts(x)).toList.sameElements(peek(c.ioIncCounts1(x)).toList) & Tracker.inStep != 0) Error("iocount")
-      }}
-    (0 until 2).foreach{ x => {
-      if (!peek(c.IOCtrl.ioQCounts(x)).toList.sameElements(peek(c.ioModCounts1(x)).toList) & Tracker.inStep != 0) Error("ioq")
-    }}
-
-
-    c.iDIFtemp.zip(c.IOCtrl.coprimeCounts).foreach{case (x,y) => {
-      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
-    }}*/
-
-   /* c.ions.zip(c.IOCtrl.nIOX).foreach{case (x,y) => {
-      if (!peek(x).toList.sameElements(peek(y).toList) & Tracker.inStep >= 2) Error("coprimecounts")
-    }}*/
-
-  //
-
-
-      //if (peek(c.IOCtrl.ioIncCounts).toList.flatten != peek(c.ioIncCounts1).toList.flatten) Error("iocount")
-    //}
-
+    if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+    if (peek(c.oDIFAddr) != peek(c.IOCtrl.o.addr) && Tracker.inStep >= 2) Error("addr")
+    if (peek(c.oDIFBank) != peek(c.IOCtrl.o.bank) && Tracker.inStep >= 2) Error("bank")
 
   }
   def setupDebug(): Unit = {
     val temp = traceOn
     traceOn = true
-    //peek(c.IOCtrl.primeIdx)
-    //peek(c.IOCtrl.ioIncCounts)
-    //peek(c.ioIncCounts1)
-    //peek(c.IOCtrl.primeDigits)
-    //peek(c.IOCtrl.counterPrimeDigits)
-    //peek(c.IOCtrl.usedLoc)
-    //peek(c.IOCtrl.isUsed)
-    //peek(c.IOCtrl.ioIncChange)
-    //peek(c.IOCtrl.counterQDIFs)
-    //if (!peek(c.IOCtrl.primeIdx).toList.sameElements(peek(c.primeIdx).toList)) Error("primidx")
-    //if (!peek(c.IOCtrl.qDIF).toList.sameElements(peek(c.qDIFis).toList)) Error("qdif")
-    //if (!peek(c.IOCtrl.qDIT).toList.sameElements(peek(c.qDIFos).toList)) Error ("qdit")
-    //peek(c.GeneralSetup.stageRad)
-    //peek(c.GeneralSetup.use2)
-    //peek(c.GeneralSetup.maxRad)
-    //peek(c.GeneralSetup.io.stageRadIdx)
-    //peek(c.GeneralSetup.io.primeStageSum)
-    //peek(c.IOCtrl.stagePrimeIdx)
-    //peek(c.IOCtrl.nIO)
-    //peek(c.GeneralSetup.io.stageRad)
-    //peek(c.GeneralSetup.io.use2)
-    //peek(c.GeneralSetup.io.maxRad)
-    //peek(c.IOCtrl.test)
-    //c.IOCtrl.counterQDITs.foreach{x => peek(x)}
-    //c.qDIFos.foreach{x => peek(x)}
-    //peek(c.GeneralSetup.prevPrimeStageSumShort)
-    //peek(c.IOCtrl.generalSetupIO.prevPrimeStageSum)
-
-    /*peek(c.IOCtrl2.usedLoc)
-    peek(c.IOCtrl.usedLoc)
-    peek(c.IOCtrl2.isUsed)
-    peek(c.IOCtrl.isUsed)
-
-    peek(c.IOCtrl2.counterPrimeDigits)
-    peek(c.IOCtrl.counterPrimeDigits)*/
-    /*peek(c.IOCtrl2.stageIsActive)
-    peek(c.IOSetup.o.stageIsActive)*/
-
-
-
     traceOn = temp
   }
 

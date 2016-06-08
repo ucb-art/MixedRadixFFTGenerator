@@ -40,25 +40,25 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   // Data IO, setup IO, Operating controls
   override val io = new FFTIO(gen)
-  val setup = new TopSetupIO
-  val ctrl = new FFTCtrlIO
+  val setup = new SetupTopIO
+  val ctrl = new IOCtrlIO
 
   // Derive IO clock from main clock
   val clkDiv = DSPModule(new ClkDiv(Params.getIO.clkRatio))
   val slowEn = clkDiv.io.slowEn
 
   // Length + FFT/IFFT setup
-  val setupEn = slowEn & setup.SETUP_INIT
+  val setupEn = slowEn & setup.enable
   val fftIndex = RegInit(DSPUInt(0,Params.getFFT.nCount - 1))
   val fftTF = RegInit(DSPBool(false))
-  fftIndex := Mux(setupEn,setup.FFT_INDEX,fftIndex)
-  fftTF := Mux(setupEn,setup.FFT,fftTF)
+  fftIndex := Mux(setupEn,setup.fftIdx,fftIndex)
+  fftTF := Mux(setupEn,setup.isFFT,fftTF)
 
   // Setup location valid an IO clock cycle after (used to derive the remaining setup constants)
   val setupEnDly = setupEn.pipe(Params.getIO.clkRatio)
 
   // Make sure that IO reset on the right fast clock cycle
-  val startFirstFrame = slowEn & ctrl.START_FIRST_FRAME
+  val startFirstFrame = slowEn & ctrl.startFrameIn
 
 
 
@@ -497,11 +497,11 @@ println(Params.getMem.addrC)
   val setupDoneTemp = (UInt(setupDoneCount) === setupCounter.io.out)
   setupCounter.io.inc := UInt(1, width = 1)
   setupCounter.io.changeCond := ~setupDoneTemp
-  setupCounter.io.globalReset := setup.SETUP_INIT
+  setupCounter.io.globalReset := setup.enable
   setupCounter.io.wrapCond := Bool(false)
 
   val setupDoneTempD1 = Reg(next = setupDoneTemp)
-  setup.SETUP_DONE := DSPBool(setupDoneTemp || setupDoneTempD1)
+  setup.done := DSPBool(setupDoneTemp || setupDoneTempD1)
   // Hold for 2 cycles
 
 
@@ -590,7 +590,7 @@ println(Params.getMem.addrC)
     e.ctrl.en.get := slowEn
 
     // already delay 1
-    e.ctrl.reset := startFirstFrame //DSPBool(ctrl.START_FIRST_FRAME)
+    e.ctrl.reset := startFirstFrame //DSPBool(ctrl.startFrameIn)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     val temp = e.io.out.cloneType
@@ -602,7 +602,7 @@ println(Params.getMem.addrC)
   val ioModCounts1 = Vec(ioModCounters1.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
     e.ctrl.en.get := slowEn //DSPBool(slowEn)
-    e.ctrl.reset := startFirstFrame.pipe(0) //DSPBool(ctrl.START_FIRST_FRAME)
+    e.ctrl.reset := startFirstFrame.pipe(0) //DSPBool(ctrl.startFrameIn)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := primeDigits(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFis(i).padTo(e.io.inc.get.length).asOutput // ???
@@ -844,7 +844,7 @@ println(Params.getMem.addrC)
   val oModCounts = Vec(oModCounters.init.zipWithIndex.map { case (etemp, i) => {
     val e = etemp.get
     e.ctrl.en.get := slowEn
-    e.ctrl.reset := ctrl.START_FIRST_FRAME.pipe(0)
+    e.ctrl.reset := ctrl.startFrameIn.pipe(0)
     // Should not need? can also trim to io.primDigits length
     e.io.primeDigits := Vec(primeDigits.reverse)(i).shorten(e.io.primeDigits.getRange.max)
     e.io.inc.get := qDIFos(i).padTo(e.io.inc.get.length).asOutput // ???
@@ -1031,11 +1031,11 @@ println(Params.getMem.addrC)
   /*
   val calcMemBTemp = DSPBool(OUTPUT)
   val calcMemBTemp1 =  Mux(DSPBool(calcMemChangeCond),!calcMemBTemp,calcMemBTemp)
-  calcMemBTemp := ChiselDSP.Reg(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),calcMemBTemp1))
+  calcMemBTemp := ChiselDSP.Reg(Mux(DSPBool(io.startFrameIn),DSPBool(false),calcMemBTemp1))
   val ioDITTemp = DSPBool(OUTPUT)
   val ioDITTemp1 =  Mux(DSPBool(calcMemChangeCond) & !calcMemBTemp,!ioDITTemp,ioDITTemp)
   CheckDelay.off()
-ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2)
+ioDITTemp := Pipe(Mux(DSPBool(io.startFrameIn),DSPBool(false),ioDITTemp1),2)
 
 
   val io_ns = Vec(ions.zip(oDIFn).map{case (in,on) => Mux(ioDITTemp, DSPUInt(on,DSPUInt.toMax(on.getWidth)), DSPUInt(in,DSPUInt.toMax(in.getWidth)))})
@@ -1096,7 +1096,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
   calcControl.io.calcMemChangeCond := calcMemChangeCond
-  calcControl.io.startFirstFrame := ctrl.START_FIRST_FRAME
+  calcControl.io.startFirstFrame := ctrl.startFrameIn
 
 
 
@@ -1380,12 +1380,12 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
   memBanks.io.discardCalcWrite := Pipe(discardCalcWrite,toAddrBankDly.sum).asInstanceOf[Bool]
 
-  // If first value comes in when START_FIRST_FRAME is asserted high,
+  // If first value comes in when startFrameIn is asserted high,
   // there is a delay until address to the memory is valid
   // IFFT --> real+imaginary inputs/outputs swapped
 
-  val DINusedreal = Mux(DSPBool(setup.FFT), io.DATA_IN.real, io.DATA_IN.imag)
-  val DINusedimag = Mux(DSPBool(setup.FFT),io.DATA_IN.imag,io.DATA_IN.real)
+  val DINusedreal = Mux(DSPBool(setup.isFFT), io.din.real, io.din.imag)
+  val DINusedimag = Mux(DSPBool(setup.isFFT),io.din.imag,io.din.real)
   val DINused =  Complex(DINusedreal,DINusedimag).pipe(1+0)
 
 
@@ -1399,19 +1399,19 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
   val normalizedDelay = if (Params.getFFT.normalized) {
     val Normalize = DSPModule(new Normalize(gen), "normalize")
-    Normalize.io.in := memBanks.io.Dout
-    Normalize.io.fftIdx := fftIndex
-    Normalize.io.FFT := fftTF
-    val normalizedOut = Normalize.io.normalizedOut.cloneType()
-    normalizedOut := Normalize.io.normalizedOut
+    Normalize.io.din := memBanks.io.Dout
+    Normalize.setupTop.fftIdx := fftIndex
+    Normalize.setupTop.isFFT := fftTF
+    val normalizedOut = Normalize.io.dout.cloneType()
+    normalizedOut := Normalize.io.dout
 
-    io.DATA_OUT.real := Mux(DSPBool(setup.FFT), normalizedOut.real, normalizedOut.imag).pipe(1)
-    io.DATA_OUT.imag := Mux(DSPBool(setup.FFT), normalizedOut.imag, normalizedOut.real).pipe(1) // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
+    io.dout.real := Mux(DSPBool(setup.isFFT), normalizedOut.real, normalizedOut.imag).pipe(1)
+    io.dout.imag := Mux(DSPBool(setup.isFFT), normalizedOut.imag, normalizedOut.real).pipe(1) // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
     Normalize.delay
   }
   else {
-    io.DATA_OUT.real := Mux(DSPBool(setup.FFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).pipe(1)
-    io.DATA_OUT.imag := Mux(DSPBool(setup.FFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).pipe(1)   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
+    io.dout.real := Mux(DSPBool(setup.isFFT),memBanks.io.Dout.real,memBanks.io.Dout.imag).pipe(1)
+    io.dout.imag := Mux(DSPBool(setup.isFFT), memBanks.io.Dout.imag, memBanks.io.Dout.real).pipe(1)   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
     0
   }
 
@@ -1426,7 +1426,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
 
 
-  // START_FIRST_FRAME held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle START_FIRST_FRAME is low
+  // startFrameIn held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle startFrameIn is low
   memBanks.io.Din := Pipe(DINused,ioToCalcClkRatio+toAddrBankDly.sum+toMemAddrDly).asInstanceOf[Complex[T]]
 
 
@@ -1454,25 +1454,25 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
   memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).toBool
 
-  val firstDataFlag = Reg(next = calcMemChangeCond && ~ctrl.START_FIRST_FRAME.toBool)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
+  val firstDataFlag = Reg(next = calcMemChangeCond && ~ctrl.startFrameIn.toBool)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
 
   val secondInPassedFlag = Reg(init = Bool(false))
-  when (ctrl.START_FIRST_FRAME.toBool){
+  when (ctrl.startFrameIn.toBool){
     secondInPassedFlag := Bool(false)										// Reset
   }.elsewhen(firstDataFlag){													// Will go high at the beginning of each new input symbol starting with the 2nd input symbol
     secondInPassedFlag := Bool(true)										// True indicates second input symbol has already been processed
   }
 
-  val firstDataFlagD1 = Reg(next = firstDataFlag && secondInPassedFlag && ~ctrl.START_FIRST_FRAME.toBool)		// Output data only valid at the start of 3rd input symbol (when secondInPassedFlag is high)
-  val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~ctrl.START_FIRST_FRAME.toBool)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
-  val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~ctrl.START_FIRST_FRAME.toBool)
-  val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~ctrl.START_FIRST_FRAME.toBool)							// Flag needs to be 2 fast clock cycles long
-  val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~ctrl.START_FIRST_FRAME.toBool)
-  val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~ctrl.START_FIRST_FRAME.toBool)
+  val firstDataFlagD1 = Reg(next = firstDataFlag && secondInPassedFlag && ~ctrl.startFrameIn.toBool)		// Output data only valid at the start of 3rd input symbol (when secondInPassedFlag is high)
+  val firstDataFlagD2 = Reg(next = firstDataFlagD1 && ~ctrl.startFrameIn.toBool)							// Reset all registers at start of first symbol to make sure unknown states aren't propagated
+  val firstDataFlagD3 = Reg(next = firstDataFlagD2 && ~ctrl.startFrameIn.toBool)
+  val firstDataFlagD4 = Reg(next = firstDataFlagD3 && ~ctrl.startFrameIn.toBool)							// Flag needs to be 2 fast clock cycles long
+  val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~ctrl.startFrameIn.toBool)
+  val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~ctrl.startFrameIn.toBool)
 
 
-  val firstDataFlagD7 = Reg(next = firstDataFlagD6 && ~ctrl.START_FIRST_FRAME.toBool)
-  val firstDataFlagD8 = Reg(next = firstDataFlagD7 && ~ctrl.START_FIRST_FRAME.toBool)
+  val firstDataFlagD7 = Reg(next = firstDataFlagD6 && ~ctrl.startFrameIn.toBool)
+  val firstDataFlagD8 = Reg(next = firstDataFlagD7 && ~ctrl.startFrameIn.toBool)
 
 
 
@@ -1488,9 +1488,9 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
   // note seqrd dly was already incremented so instead of originally starting at cycle 82 for 12, it starts at cycle 83, add 1 to make consistent w/ io
 
   // + 1 used to be inside  2nd pipe (i.e. seqrddly + 1)
-  val frameFirstOutPre =  Pipe(!ctrl.START_FIRST_FRAME & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.START_FIRST_FRAME,seqRdDly),normalizedDelay)
-  val frameFirstOutPreTemp = !ctrl.START_FIRST_FRAME & frameFirstOutPre
-  ctrl.FRAME_FIRST_OUT := Pipe(frameFirstOutPreTemp,1)
+  val frameFirstOutPre =  Pipe(!ctrl.startFrameIn & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.startFrameIn,seqRdDly),normalizedDelay)
+  val frameFirstOutPreTemp = !ctrl.startFrameIn & frameFirstOutPre
+  ctrl.validOut := Pipe(frameFirstOutPreTemp,1)
 
 
 
@@ -1500,11 +1500,11 @@ ioDITTemp := Pipe(Mux(DSPBool(io.START_FIRST_FRAME),DSPBool(false),ioDITTemp1),2
 
   // TODO: check timing of offsetCountEnable w/ frameFirstOutPreTemp
   val offsetCountEnable = RegInit(DSPBool(false))
-  offsetCountEnable := Mux(frameFirstOutPreTemp & setup.SETUP_DONE,DSPBool(true),offsetCountEnable)
+  offsetCountEnable := Mux(frameFirstOutPreTemp & setup.done,DSPBool(true),offsetCountEnable)
   val offsetCounter = IncReset(Params.getFFT.sizes.max-1,nameExt="offset")
   offsetCounter.iCtrl.reset := frameFirstOutPreTemp
   offsetCounter.iCtrl.change.get := slowEn & offsetCountEnable
-  ctrl.OFFSET := offsetCounter.io.out
+  ctrl.k := offsetCounter.io.out
 
 
 

@@ -13,20 +13,17 @@ class IOCtrlIO extends IOBundle {
   val k = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
   // IO in DIF mode?
   val ioDIF = DSPBool(OUTPUT)
-
-  // **** TODO: Separate bundle!
-
-  // Memory address
-  val ioAddr = DSPUInt(OUTPUT,Params.getMem.lengths.max-1)
-  // Memory bank
-  val ioBank = DSPUInt(OUTPUT,Params.getMem.banks-1)
 }
+
+// ioDIF = internal sig?
+
 
 class IOCtrl extends DSPModule {
 
   val ctrl = new IOCtrlIO
   val ioSetup = (new IOSetupO).flip
   val generalSetup = (new GeneralSetupO).flip
+  val o = new nToAddrBankIO
 
   val usedLoc = ioSetup.usedLoc
   val isUsed = ioSetup.isUsed
@@ -45,8 +42,31 @@ class IOCtrl extends DSPModule {
     (c1, c2)
   }}.unzip
 
+
+
+
+  // general setup --> reset, enable = off
+  // start frame in --> enable = on (and w/ ioEnable)
+
+
   // Is IO in DIF mode?
-  val ioDIF = RegInit(DSPBool(true))
+  // Note: switches every other frame. After startFrameIn, true for 1 frame,
+  // then false for 2 frames, then true for 2 frames.
+  // True to false transition when true & used ioIncCounters wrap
+  // need enable?
+  val ioDIF = RegInit(DSPBool(false))
+
+
+
+/*
+  when(startFirstFrame){
+    ioDIT := Bool(false)
+  }.otherwise{
+    when (calcMemChangeCond & ~calcMemB){
+      ioDIT := ~ioDIT
+    }
+  }*/
+
 
   val isLastLoc = Vec(usedLoc.map(e => {
     // Is last used location? (not dependent on anything else)
@@ -56,6 +76,7 @@ class IOCtrl extends DSPModule {
   }))
 
   // TODO: If order is consistent, get rid of extra logic
+  // TODO: Can you leverage previous counter's wrap conditions?
   // Change flag for IO Inc Counters
   val ioIncChange = Vec(usedLoc.zipWithIndex.map{case (usedLocE,i) => {
     // Get other counters not including this
@@ -139,16 +160,16 @@ class IOCtrl extends DSPModule {
   val nToAddrBank = DSPModule(new nToAddrBank)
   nToAddrBank.io.n := nIO
   nToAddrBank.generalSetup := generalSetup
-  ctrl.ioAddr := nToAddrBank.io.addr // separate?
-  ctrl.ioBank := nToAddrBank.io.bank
+  o <> nToAddrBank.io
+
 
 
 
 
 
   debug(nIO)
-  debug(ctrl.ioAddr)
-  debug(ctrl.ioBank)
+  debug(o.addr)
+  debug(o.bank)
 
 }
 
@@ -163,6 +184,7 @@ class IOCtrl extends DSPModule {
   // clk going through
   // read out scanned data (mem @ addr o)
 
+  // count also needs startFrameIn
   // w0z
   // mem readen
   // 3 multiplies
