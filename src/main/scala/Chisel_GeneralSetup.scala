@@ -168,7 +168,7 @@ class GeneralSetup extends DSPModule {
 
   // Keep track of how long setup should take (+1 for RegNext on LUT out -- should be consistent throughout)
   val setupDelay = o.getMaxOutDelay() + 1
-  setupTop.done := setupTop.enable.pipe(setupDelay)
+  //setupTop.done := setupTop.enable.pipe(setupDelay)
 
   Status("General setup takes " + setupDelay + " clocks.")
 

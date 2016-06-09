@@ -167,7 +167,7 @@ class IOSetup(prevSetupDelay: Int) extends DSPModule{
   // Keep track of how long setup should take (this delay is added on top of general setup delay)
   val setupDelay = o.getMaxOutDelay()
   val totalSetupDelay = setupDelay + prevSetupDelay
-  setupTop.done := setupTop.enable.pipe(totalSetupDelay)
+  // setupTop.done := setupTop.enable.pipe(totalSetupDelay)
 
   Status("General setup + IOSetup take " + totalSetupDelay + " clocks.")
 

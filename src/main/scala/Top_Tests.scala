@@ -68,6 +68,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     while (!setupDone){
       whileCnt = whileCnt + 1
       if (whileCnt > 100) Error("Setup is not completing...")
+      inSetupDebug()
       step(1)
       setupDone = peek(c.setup.done)
     }
@@ -83,15 +84,15 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def testFFTNio(fftIndex:Int, fftTF:Boolean, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
     // Safety initialize control signals to false
     reset(Params.getIO.clkRatio)
-    poke(c.ctrl.ioEnable,true)
-    poke(c.ctrl.startFrameIn,false)
+    poke(c.ctrl.enable,true)
+    poke(c.ctrl.reset,false)
     poke(c.setup.enable,false)
     newSetup(fftIndex,fftTF)
     step(Params.getIO.clkRatio + 1)
     // After setup, start sending data to process (start on the second IO clock period after SETUP_DONE)
-    poke(c.ctrl.startFrameIn,true)
+    poke(c.ctrl.reset,true)
     stepTrack(Params.getIO.clkRatio,in,out)
-    poke(c.ctrl.startFrameIn,false)
+    poke(c.ctrl.reset,false)
     val n = Params.getFFT.sizes(fftIndex)
     val frames = in.length/n
     // Output k = 0 starts 2 frames after n = 0
@@ -167,15 +168,26 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     val temp = traceOn
     traceOn = true
 
-    if (Tracker.FFTN == 12) peek(c.ioDIT)
+    if (Tracker.FFTN == 12) {
+      //peek(c.ioDIT)
+      //peek(c.calcMemB)
+      //peek(c.IOCtrl.ioIncCounters(0).ctrl.isMax)
+
+    }
     traceOn = temp
 
-    if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
-    if (peek(c.oDIFAddr) != peek(c.IOCtrl.o.addr) && Tracker.inStep >= 2) Error("addr")
-    if (peek(c.oDIFBank) != peek(c.IOCtrl.o.bank) && Tracker.inStep >= 2) Error("bank")
+    //if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
+    if (peek(c.ioAddr) != peek(c.IOCtrl.o.addr) && Tracker.inStep >= 2) Error("addr")
+    if (peek(c.ioBank) != peek(c.IOCtrl.o.bank) && Tracker.inStep >= 2) Error("bank")
 
   }
   def setupDebug(): Unit = {
+    val temp = traceOn
+    traceOn = true
+    if (Tracker.FFTN == 12){peek(c.IOCtrl.counterPrimeDigits)}
+    traceOn = temp
+  }
+  def inSetupDebug(): Unit = {
     val temp = traceOn
     traceOn = true
     traceOn = temp

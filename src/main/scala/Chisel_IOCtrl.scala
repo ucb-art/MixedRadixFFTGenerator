@@ -4,19 +4,14 @@ import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
 class IOCtrlIO extends IOBundle {
   // Accepting new input/output data (can pause/resume IO, also hold if IO is slower than calc. clock)
-  val ioEnable = DSPBool(INPUT)
+  val enable = DSPBool(INPUT)
   // Reset IO counters & start inputting from n = 0 of frame
-  val startFrameIn = DSPBool(INPUT)
+  val reset = DSPBool(INPUT)
   // Output valid (will go high sometime after startFrameIn, starting when corresponding k = 0 is valid)
   val validOut = DSPBool(OUTPUT)
   // Output k value
   val k = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
-  // IO in DIF mode?
-  val ioDIF = DSPBool(OUTPUT)
 }
-
-// ioDIF = internal sig?
-
 
 class IOCtrl extends DSPModule {
 
@@ -35,38 +30,43 @@ class IOCtrl extends DSPModule {
     val c1 = BaseNIncCounter(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioInc_rad_" + rad.toString)
     val c2 = BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioQ_rad_" + rad.toString)
     // TODO: Double check timing is ok
-    c1.ctrl.reset := ctrl.startFrameIn
-    c2.ctrl.reset := ctrl.startFrameIn
-    c1.ctrl.en.get := ctrl.ioEnable
-    c2.ctrl.en.get := ctrl.ioEnable
+    c1.ctrl.reset := ctrl.reset
+    c2.ctrl.reset := ctrl.reset
+    c1.ctrl.en.get := ctrl.enable
+    c2.ctrl.en.get := ctrl.enable
     (c1, c2)
   }}.unzip
 
+  val ioIncCounterUsed = ioIncCounters.zip(isUsed)
+  // TODO: Custom function, is this redundant logic somewhere? -- don't need to check used, just check max?
+  // Wrap when used counters are maxed (held for IO clock)
+  val frameWrapCond = ioIncCounterUsed.tail.foldLeft({
+    val (counter, used) = ioIncCounterUsed.head
+    val max = counter.ctrl.isMax
+    (used & max) | (!used)
+  })( (accum,e) => {
+    val (counter,used) = e
+    val max = counter.ctrl.isMax
+    ((used & max) | (!used)) & accum
+  }) & ctrl.enable
 
-
-
-  // general setup --> reset, enable = off
-  // start frame in --> enable = on (and w/ ioEnable)
-
+  // Is MemB the current memory used for IO?
+  // Alternates every frame (starts true after reset)
+  val ioMemB = RegInit(DSPBool(false))
+  val ioMemBTemp = Mux(frameWrapCond,!ioMemB,ioMemB)
+  ioMemB := ctrl.reset | (!ctrl.reset & ioMemBTemp)
 
   // Is IO in DIF mode?
   // Note: switches every other frame. After startFrameIn, true for 1 frame,
   // then false for 2 frames, then true for 2 frames.
-  // True to false transition when true & used ioIncCounters wrap
-  // need enable?
   val ioDIF = RegInit(DSPBool(false))
 
+  // DIF DIT DIT DIF DIF
+  // B   A   B   A   B
+  // ioDIF transitions ever B -> A
 
-
-/*
-  when(startFirstFrame){
-    ioDIT := Bool(false)
-  }.otherwise{
-    when (calcMemChangeCond & ~calcMemB){
-      ioDIT := ~ioDIT
-    }
-  }*/
-
+  val ioDIFTemp = Mux(frameWrapCond & ioMemB,!ioDIF,ioDIF)
+  ioDIF := ctrl.reset | (!ctrl.reset & ioDIFTemp)
 
   val isLastLoc = Vec(usedLoc.map(e => {
     // Is last used location? (not dependent on anything else)
@@ -134,7 +134,7 @@ class IOCtrl extends DSPModule {
   val matchCoprimeCountLengths = coprimeCountsX.map(_.length).max
   val coprimeCounts = Vec(coprimeCountsX.map(e => BaseN(e, e.rad).padTo(matchCoprimeCountLengths)))
 
-  val digitIdx = Mux(ioDIF,ioSetup.digitIdxDIF,ioSetup.digitIdxDIT)
+  val digitIdx = Mux(ioDIF.pipe(1),ioSetup.digitIdxDIF,ioSetup.digitIdxDIT)
 
   // TODO: Make foldLeft into DSPUInt lookup function, decide on MixedRad vs. Vec?
   val nIOX = (0 until Params.getCalc.maxStages).map{ i => {
@@ -152,15 +152,13 @@ class IOCtrl extends DSPModule {
   }}
   val nIO = Vec(nIOX)
 
-
-
-
-
-
   val nToAddrBank = DSPModule(new nToAddrBank)
   nToAddrBank.io.n := nIO
-  nToAddrBank.generalSetup := generalSetup
+  nToAddrBank.generalSetup <> generalSetup
   o <> nToAddrBank.io
+
+
+
 
 
 
@@ -173,22 +171,37 @@ class IOCtrl extends DSPModule {
 
 }
 
-
-
-/*  // scanin
-  // en
-  // scan on separate vdd: inmemaddress (up to max fftsize), 32 bit val -- enable: enable mem write
-  // scan: fftsize, etc.
-  // go: run twice
-  // scan send address: en; output clk, start, data
-  // clk going through
-  // read out scanned data (mem @ addr o)
+/*
 
   // count also needs startFrameIn
   // w0z
   // mem readen
   // 3 multiplies
-  // restart dif/dit mode
   // test 100
   // fix frameout timing
+
+    // IO in DIF mode?
+  val ioDIF = DSPBool(OUTPUT)
+
+
   */// twiddle ctrl
+
+/*
+
+k -- reset cond same as counters; don't enable until valid goes high
+
+
+check how valid works -- need reset @ start of frame; setupen; set @ k = max
+
+ // overall setup done needs to happen on right clock cycle w/ counter
+
+
+
+
+ ioMemA
+
+ // worst case delay???
+
+ output wrap
+
+ */
