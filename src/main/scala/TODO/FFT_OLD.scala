@@ -1495,7 +1495,7 @@ ioDITTemp := Pipe(Mux(DSPBool(io.reset),DSPBool(false),ioDITTemp1),2)
   // + 1 used to be inside  2nd pipe (i.e. seqrddly + 1)
   val frameFirstOutPre =  Pipe(!ctrl.reset & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.reset,seqRdDly),normalizedDelay)
   val frameFirstOutPreTemp = !ctrl.reset & frameFirstOutPre
-  ctrl.validOut := Pipe(frameFirstOutPreTemp,1)
+  ctrl.outValid := Pipe(frameFirstOutPreTemp,1)
 
 
 
