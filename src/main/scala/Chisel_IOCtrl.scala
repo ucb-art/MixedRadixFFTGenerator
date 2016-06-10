@@ -24,6 +24,9 @@ class IOFlags extends IOBundle{
 
 class IOCtrl extends DSPModule {
 
+  // TODO: Get rid of debug
+  val ioFlagsNoDelay = new IOFlags
+
   // TODO: Should pipe 1x or clkRatio?
   // Internal delay from expected with reset, enable to output ioAddr, ioBank
   val intDelay = 1
@@ -65,6 +68,7 @@ class IOCtrl extends DSPModule {
   }) & ctrl.enable
   // Match ioAddr/ioBank delay
   ioFlags.wrapCond := frameWrapCond.pipe(intDelay)
+  ioFlagsNoDelay.wrapCond := frameWrapCond
 
   // Is MemB the current memory used for IO?
   // Alternates every frame (starts true after reset)
@@ -73,6 +77,7 @@ class IOCtrl extends DSPModule {
   ioMemB := ctrl.reset | (!ctrl.reset & ioMemBTemp)
   // Match ioAddr/ioBank delay
   ioFlags.isMemB := ioMemB.pipe(intDelay)
+  ioFlagsNoDelay.isMemB := ioMemB
 
   // Is IO in DIF mode?
   // Note: switches every other frame. After startFrameIn, true for 1 frame,
@@ -87,6 +92,7 @@ class IOCtrl extends DSPModule {
   ioDIF := ctrl.reset | (!ctrl.reset & ioDIFTemp)
   // Match ioAddr/ioBank delay
   ioFlags.isDIF := ioDIF.pipe(intDelay)
+  ioFlagsNoDelay.isDIF := ioDIF
 
   // Out valid should go high at the start of the 3rd frame (takes 2 frames to input + calculate)
   // This is on first IO A-> B transition with DIT
