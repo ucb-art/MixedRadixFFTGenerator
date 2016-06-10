@@ -3,7 +3,7 @@
 // TODO: NOTE CURRENT IMPLEMENTATION REQUIRES 4^n
 
 package FFT
-import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
+import Chisel.{Pipe => _, Complex => _, Mux => _, RegInit => _, RegNext => _, _}
 import DSP._
 import scala.math._
 import memBanks._
@@ -13,7 +13,7 @@ import generator._
 
 import scala.reflect.runtime.universe._
 
-import ChiselDSP.{when => _, BackwardsCompatibility, _}
+import ChiselDSP.{when => _, _}
 
 class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (gen) {
 
@@ -81,9 +81,17 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   IOCtrl.ctrl.reset := globalInit.ioCtrlO.reset
   IOCtrl.generalSetup <> GeneralSetup.o
 
-  IOSetup.o <> IOCtrl.ioSetup
+  //IOSetup.o <> IOCtrl.ioSetup
 
-
+  IOCtrl.ioSetup.usedLoc := IOSetup.o.usedLoc
+  IOCtrl.ioSetup.isUsed := IOSetup.o.isUsed
+  IOCtrl.ioSetup.counterPrimeDigits := IOSetup.o.counterPrimeDigits
+  IOCtrl.ioSetup.counterQDIFs := IOSetup.o.counterQDIFs
+  IOCtrl.ioSetup.counterQDITs := IOSetup.o.counterQDITs
+  IOCtrl.ioSetup.stagePrimeIdx := IOSetup.o.stagePrimeIdx
+  IOCtrl.ioSetup.stageIsActive := IOSetup.o.stageIsActive
+  IOCtrl.ioSetup.digitIdxDIF := IOSetup.o.digitIdxDIF
+  IOCtrl.ioSetup.digitIdxDIT := IOSetup.o.digitIdxDIT
 
 
 

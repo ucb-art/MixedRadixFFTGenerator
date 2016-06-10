@@ -147,8 +147,11 @@ class IOCtrl extends DSPModule {
   // First layer counter outputs (see counters above)
   val (ioIncCountsX,ioQCountsX) = ioIncCounters.zip(ioQCounters).zipWithIndex.map{case ((ioIncCounter,ioQCounter),i) =>{
     // Assign # of base-r digits for modding each counter
-    ioIncCounter.io.primeDigits := counterPrimeDigits(i).shorten(ioIncCounter.io.primeDigits.getRange.max)
-    ioQCounter.io.primeDigits := counterPrimeDigits(i).shorten(ioQCounter.io.primeDigits.getRange.max)
+    // TODO: Debug? There's a cross-module error for counterPrimeDigits if I directly use shorten. To get around that,
+    // I did redundant << then >> operations that should be optimized out in hardware...
+    val counterPrimeDigitShort = ((counterPrimeDigits(i) << 1) >> 1).shorten(ioIncCounter.io.primeDigits.getRange.max)
+    ioIncCounter.io.primeDigits := counterPrimeDigitShort
+    ioQCounter.io.primeDigits := counterPrimeDigitShort
     // Assign change condition to each IO counter
     ioIncCounter.ctrl.change.get := ioIncChange(i)
     // TODO: Cannot mix directions on left hand side of := ??? --> .asOutput
