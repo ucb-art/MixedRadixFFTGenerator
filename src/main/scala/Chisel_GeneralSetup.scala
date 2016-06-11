@@ -34,11 +34,7 @@ class GeneralSetupO extends IOBundle {
   // Max radix needed in current FFT
   val maxRad = DSPUInt(OUTPUT,globalMaxRad)
   // Address constants for n -> address
-  // TODO: Write function
-  val addrConstants = Vec(Params.getMem.addrC.transpose.map(x => {
-    val stageACMax = x.max
-    DSPUInt(OUTPUT,stageACMax)
-  }))
+  val addrConstants = IntLUT2DHelper.getOutputType(Params.getMem.addrC)
 }
 
 class GeneralSetup extends DSPModule {

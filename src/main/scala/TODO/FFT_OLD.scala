@@ -81,46 +81,16 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   IOCtrl.ctrl.reset := globalInit.ioCtrlO.reset
   IOCtrl.generalSetup <> GeneralSetup.o
 
-  //IOSetup.o <> IOCtrl.ioSetup
+  IOSetup.o <> IOCtrl.ioSetup
 
-  IOCtrl.ioSetup.usedLoc := IOSetup.o.usedLoc
-  IOCtrl.ioSetup.isUsed := IOSetup.o.isUsed
-  IOCtrl.ioSetup.counterPrimeDigits := IOSetup.o.counterPrimeDigits
-  IOCtrl.ioSetup.counterQDIFs := IOSetup.o.counterQDIFs
-  IOCtrl.ioSetup.counterQDITs := IOSetup.o.counterQDITs
-  IOCtrl.ioSetup.stagePrimeIdx := IOSetup.o.stagePrimeIdx
-  IOCtrl.ioSetup.stageIsActive := IOSetup.o.stageIsActive
-  IOCtrl.ioSetup.digitIdxDIF := IOSetup.o.digitIdxDIF
-  IOCtrl.ioSetup.digitIdxDIT := IOSetup.o.digitIdxDIT
+  val TwiddleSetup = DSPModule(new TwiddleSetup(GeneralSetup.setupDelay + IOSetup.setupDelay))
+  TwiddleSetup.setupTop <> globalInit.setupO
+  //TwiddleSetup.generalSetup <> GeneralSetup.o
+  TwiddleSetup.generalSetup.radStageSum := GeneralSetup.o.radStageSum
+  TwiddleSetup.generalSetup.stageRad := GeneralSetup.o.stageRad
+  TwiddleSetup.ioSetup.stagePrimeIdx := IOSetup.o.stagePrimeIdx
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  // Anything where only 1 is used? shorten
 
 
 
@@ -141,8 +111,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
     numPower(i) := numPowerLUT(i).dout
     debug(numPower(i))
   }
-
-
 
   // Ex: sum(0) = power(0)
   // sum(1) = power(0)+power(1)
@@ -232,10 +200,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
     debug(stageRadix(i))
     debug(maxStageCount(i))
   }
-
-
-
-
 
 
   val addrConstantLUT = DSPModule(new IntLUT2D(Params.getMem.addrC))
@@ -329,17 +293,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   radNTwiddleMul := Vec(testRadNMul.io.dout.map(_.toUInt))
 
 
-
-
-
-
-
-
-
-
-
-
-
   // For DIF: Initial RadXTwiddleMulFactor due to scaling max memory
   // based off of max coprime N to the coprime N actually used (see address gen block)
   // Subsequent radix-X stages have the mul
@@ -404,10 +357,30 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
       }
     }
   }
-  twiddleMul := twiddleMulTemp
+
+  twiddleMul := Vec(twiddleMulTemp.zip(GeneralSetup.o.stageRad).map(x => {
+    Chisel.Mux(x._2 === UInt(2),UInt(0),x._1)
+  }))
+
+
+
+  //twiddleMul := twiddleMulTemp
   for (i <- 0 until generalConstants.maxNumStages) {
     debug(twiddleMul(i))
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // Counter reset whenever new FFTN desired, stays constant after setup is done SHOULD OPTIMIZE
   val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3 + 20
@@ -426,64 +399,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   ////////////////////////////////////////////////////////////////////////////////////////////////////////
   // IO Addressing
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
   val ioWriteFlag = slowEn
 
-
-
-
-
-
-
-
-
-
-
-
-
 ////////////////////////////////////////////////
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -513,11 +431,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val discardCalcWrite = calcControl.io.discardCalcWrite // not delayed internally
 
 
-
-
   CheckDelay.on()
-
-
 
   val ioAddr = IOCtrl.o.addr
   val ioBank = IOCtrl.o.bank
@@ -545,8 +459,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   calcControl.io.calcMemChangeCond := calcMemChangeCond
   calcControl.io.startFirstFrame := ctrl.reset
 
-
-
   calcControl.io.maxStageCount := newMaxStageCount.asOutput
 
   //Mux(numPower(3) === UInt(0),newMaxStageCount.asOutput,maxStageCount)
@@ -562,6 +474,18 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val calcBank = calcControl.io.calcBank
 
 
+
+
+
+
+
+
+
+
+
+
+
+
   // Twiddle addressing
 
   val twiddleAddrMax = 2000
@@ -573,12 +497,12 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   // for the radix-2 stage, the overall twiddle count should be 0,
   // so it doesn't matter what the subcount value is
   // Subcount max depends on remaining coprimes
-  twiddleSubCountMaxUsed := twiddleSubCountMax(0)
+  twiddleSubCountMaxUsed := TwiddleSetup.o.twiddleSubCounts(currentStage) /*twiddleSubCountMax(0)
   for (i <- generalConstants.validPrimes.length - 1 to 0 by -1) {
     when(currentRadix === UInt(generalConstants.validPrimes(i))) {
       twiddleSubCountMaxUsed := twiddleSubCountMax(i)
     }
-  }
+  }*/
   debug(twiddleCountMaxUsed)
   debug(twiddleSubCountMaxUsed)
 
@@ -609,10 +533,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   // Switch rows/cols so Scala doesn't complain (originally columns are associated with twiddle up to radix-1, but want to address "column" first -> tranpose)
   var twiddleArray = Params.getTw.vals.map(
     _.transpose
-  )//Array.ofDim[ScalaComplex](generalConstants.validPrimes.length, 0, 0)
-  /*for (i <- 0 until twiddleArray.length) {
-    twiddleArray(i) = Params.getTw.twiddles(i).transpose  //twiddleConstants.twiddleConstantsArray(i).transpose
-  }*/
+  )
   val twiddleLUT = Vec((0 until twiddleArray.length).map(y => {
     Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x), gen)).io))
   }))
@@ -788,6 +709,33 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   debug(twiddleX)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   //////////////////////////////////////////////////////////////////////////////////////
   // Memory + Butterfly interface
 
@@ -835,13 +783,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val DINusedimag = Mux(DSPBool(setup.isFFT),io.din.imag,io.din.real)
   val DINused =  Complex(DINusedreal,DINusedimag).pipe(1+0)
 
-
-
-
-
-
-
-
   // Added normalization
 
   val normalizedDelay = if (Params.getFFT.normalized) {
@@ -862,42 +803,8 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
     0
   }
 
-
-
-
-
-
-
-
-
-
-
-
   // reset held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle reset is low
   memBanks.io.Din := Pipe(DINused,ioToCalcClkRatio+toAddrBankDly.sum+toMemAddrDly).asInstanceOf[Complex[T]]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).toBool
 
@@ -917,20 +824,8 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val firstDataFlagD5 = Reg(next = firstDataFlagD4 && ~ctrl.reset.toBool)
   val firstDataFlagD6 = Reg(next = firstDataFlagD5 && ~ctrl.reset.toBool)
 
-
   val firstDataFlagD7 = Reg(next = firstDataFlagD6 && ~ctrl.reset.toBool)
   val firstDataFlagD8 = Reg(next = firstDataFlagD7 && ~ctrl.reset.toBool)
-
-
-
-
-
-
-
-
-
-
-
 
   // note seqrd dly was already incremented so instead of originally starting at cycle 82 for 12, it starts at cycle 83, add 1 to make consistent w/ io
 
@@ -939,11 +834,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val frameFirstOutPreTemp = !ctrl.reset & frameFirstOutPre
   ctrl.outValid := Pipe(frameFirstOutPreTemp,1)
 
-
-
   // don't let frame first out change before setup done?
-
-
 
   // TODO: check timing of offsetCountEnable w/ frameFirstOutPreTemp
   val offsetCountEnable = RegInit(DSPBool(false))
@@ -953,32 +844,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   offsetCounter.iCtrl.change.get := slowEn & offsetCountEnable
   ctrl.k := offsetCounter.io.out
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   // Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
-
-
-
-
-
-
-
-
-
-
-
 
   val currentRadixD3 = Reg(next = currentRadixD2)
   debug(currentRadixD3)
@@ -992,9 +858,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 
   val rad = Pipe(currentRadixD2,toMemAddrDly+seqRdDly).asInstanceOf[UInt]
-
-
-
 
 
   CheckDelay.off()
@@ -1031,16 +894,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   }}
 
 
-
-
-
-
   // Can update twiddle port in butterfly??
-
-
-
-
-
 
   // if radix 2 --> 4
 
@@ -1057,16 +911,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   //currentRadixD2
   //memBanks.io.discardCalcWrite := Bool(false)
 
-
-
-
-
   //val currRad = Vec((0 until Params.getBF.rad.length).map( x => { val r = DSPBool(); r := DSPBool(rad === Count(Params.getBF.rad(x))); r }))
 
   val currRad = Vec((0 until butterfly.wfta.p.rad.length).map( x => { val r = DSPBool(); r := DSPBool(rad === Count(butterfly.wfta.p.rad(x))); r }))
-
-
-
 
   // ***** CHANGED FOR 2048 */
   butterfly.io.currRad.get := currRad //Vec(currRad(0),currRad(1))
@@ -1090,25 +937,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   for (i <- 0 until generalConstants.numBanks){
     memBanks.io.y(i) := pipeD(memBanks.io.x(i) * Complex(double2T(10.0),double2T(0)),pipeBFWriteDly).asInstanceOf[Complex[T]]
   }*/
-
-
-
-
-/*
-
-  val myArray = Vec(UInt(1),UInt(2),UInt(3),UInt(4),UInt(5),UInt(1),UInt(1),UInt(2))
-
-
-
-  val sum = myArray.foldLeft(UInt(0,width=5))((accum, e) => accum + e)
-  
-
-
-
-
-
-  debug(sum)*/
-
 
 
   /* val butterfly2 = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)

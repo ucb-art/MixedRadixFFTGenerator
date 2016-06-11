@@ -1,5 +1,5 @@
   // * twiddleCtrl (needs reset,enable) + setup
-  // overall setup done on right clk cycle + using counter (matches IOen)
+  // overall setup done on right clk cycle + using counter (matches IOen) -- hold setupdone
   // * calcControl (needs reset,enable)
   // * memBanks (mem needs enable)
   // fix frameout timing
@@ -7,3 +7,30 @@
   // mem readen, test 100?
   // w0z
   // tilelink
+
+
+
+
+
+
+
+currentStage
+
+use default counter:
+
+
+wrapcond when out = maxused
+inc = 1
+
+both need custom change cond -- also ioEnable
+!calcDoneFlag !discardCalcWrite
+above & subcounterwrap
+
+globalreset = calcResetCond??? (startFirstFrame, ioWrap -- is that inclusive?)
+
+---
+
+
+use stagePrimeIdx
+
+

@@ -184,7 +184,12 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def setupDebug(): Unit = {
     val temp = traceOn
     traceOn = true
-    if (Tracker.FFTN == 12){peek(c.IOCtrl.counterPrimeDigits)}
+    peek(c.IOSetup.o.stagePrimeIdx)
+    if (!peek(c.twiddleCount).toList.sameElements(peek(c.TwiddleSetup.o.twiddleCounts).toList)) Error("twiddlecnt")
+    //if (!peek(c.twiddleSubCountMax).toList.sameElements(peek(c.TwiddleSetup.o.twiddleSubCounts).toList)) Error("twiddlesubcount")
+
+
+    if (!peek(c.twiddleMul).toList.sameElements(peek(c.TwiddleSetup.o.twiddleMuls).toList)) Error("twiddlerenorm")
     traceOn = temp
   }
   def inSetupDebug(): Unit = {

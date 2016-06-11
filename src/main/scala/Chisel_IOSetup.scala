@@ -169,7 +169,7 @@ class IOSetup(prevSetupDelay: Int) extends DSPModule{
   val totalSetupDelay = setupDelay + prevSetupDelay
   // setupTop.done := setupTop.enable.pipe(totalSetupDelay)
 
-  Status("General setup + IOSetup take " + totalSetupDelay + " clocks.")
+  Status("General setup + IO Setup take " + totalSetupDelay + " clocks.")
 
   // TODO: Less conservative delay
 
