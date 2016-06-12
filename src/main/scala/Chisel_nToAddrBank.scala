@@ -11,6 +11,8 @@ class nToAddrBankIO extends IOBundle {
 }
 class nToAddrBank extends DSPModule {
 
+  val intDly = 1
+
   // TODO: possibly add additional pipeline in nesting
 
   val addrMax = Params.getMem.lengths.max-1
@@ -43,7 +45,7 @@ class nToAddrBank extends DSPModule {
   //        0
 
   val addrProd = Vec(generalSetup.addrConstants.zip(io.n).map{case (ac,n) => {
-    (ac * n).shorten(addrMax).pipe(1)
+    (ac * n).shorten(addrMax).pipe(intDly)
   }})
 
   val addrVec = (0 until nestDepth-1).foldLeft(
@@ -64,7 +66,7 @@ class nToAddrBank extends DSPModule {
   )(
     (accum,e) => Vec(accum.grouped(2).map(e => e.reduceLeft(addModFunc)).toList)
   )
-  io.bank := bankVec.head.pipe(1)
+  io.bank := bankVec.head.pipe(intDly)
 
   // TODO: Support parallel butterflies
 

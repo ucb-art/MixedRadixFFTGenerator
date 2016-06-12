@@ -40,7 +40,7 @@ object memBanks{
 
 class memBanks[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
-
+// outReg (1) + seqMem (1) dly = 2
 
   //memBanks.numBanks = 4
   //memBanks.bankMax = 4-1

@@ -24,23 +24,33 @@ class calc extends DSPModule {
   override val io = new  IOBundle {
 
 
-    val calcMemChangeCond = Bool(INPUT)
-    val startFirstFrame = Bool(INPUT)
-    val maxStageCount = Vec.fill(maxNumStages){Count(INPUT,maxRad-1)}
-    val stageSumM1 = Vec.fill(powColCount){Count(INPUT,maxNumStages-1)}
-    val addressConstant = Vec.fill(maxNumStages){Count(INPUT,math.pow(maxRad,maxNumStages-2).toInt)}
-    val maxRadix = Count(INPUT,maxRad)
-    val stageRadix = Vec.fill(maxNumStages){Count(INPUT,maxRad)}
-    val calcBank = Vec.fill(numBanks){Count(OUTPUT,bankMax)}
-    val calcAddr = Vec.fill(numBanks){Count(OUTPUT,addrMax)}
-    val currentRadix = Count(OUTPUT,maxRad)                                                               // NOTE NOT DELAYED
-    val currentStage = Count(OUTPUT,maxNumStages-1)
+    val calcMemChangeCond = Bool(INPUT) // == reset? -- io + wrap + enable
+    val startFirstFrame = Bool(INPUT) // == reset?? === reset -- slowEn & (setupEn | resetIO) -- reset takes precedence over ioenable
+
+
+    val maxStageCount = Vec.fill(maxNumStages){Count(INPUT,maxRad-1)}         // stageRadix-1 (redundant)
+    val stageSumM1 = Vec.fill(powColCount){Count(INPUT,maxNumStages-1)}     // --> usedStagesPerFFT -- general radStageSum.last - 1
+
+
+
+
+
+    val addressConstant = Vec.fill(maxNumStages){Count(INPUT,math.pow(maxRad,maxNumStages-2).toInt)} // general addressconstant
+    val maxRadix = Count(INPUT,maxRad) // general
+    val stageRadix = Vec.fill(maxNumStages){Count(INPUT,maxRad)} // general
+
+
+
+    val calcBank = Vec.fill(numBanks){Count(OUTPUT,bankMax)} //
+    val calcAddr = Vec.fill(numBanks){Count(OUTPUT,addrMax)} //
+    val currentRadix = Count(OUTPUT,maxRad)         // as batch of true/falses?                                                      // NOTE NOT DELAYED
+    val currentStage = Count(OUTPUT,maxNumStages-1) //
     val calcMemB = Bool(OUTPUT)
-    val calcDoneFlag = Bool(OUTPUT)
-    val calcResetCond = Bool(OUTPUT)
+    val calcDoneFlag = Bool(OUTPUT)     //
+    val calcResetCond = Bool(OUTPUT)    // startFirstFrame | calcMemChangeCond  (is it the same as io?
     val ioDIT = Bool(OUTPUT)
-    val calcDIT = Bool(OUTPUT)
-    val discardCalcWrite = Bool(OUTPUT)
+    val calcDIT = Bool(OUTPUT)          // twiddle
+    val discardCalcWrite = Bool(OUTPUT) // stall
     
   }
   
@@ -107,7 +117,8 @@ class calc extends DSPModule {
     val zro = Count(0,maxRad-1)
     maxStageCountUsed(i) := muxU(maxStageCount(i),zro,sel)
   }
-  
+
+  // last used stage of particular fft
   val currentStageMax = (currentStage === stageSumM1(powColCount-1))     
   val currentStageMin = (currentStage === Count(0,maxNumStages-1))
 
@@ -183,7 +194,7 @@ class calc extends DSPModule {
     else calcCounters(i).changeCond := calcCounters(i+1).changeCond & calcCountWrap(i+1)   
     calcCounters(i).globalReset := calcResetCond              // Reset counts to 0 when starting new FFT calculation 
     calcCounters(i).wrapCond := calcCountWrap(i)              // Wrap counter when reached max value
-    calcn(i) := calcCounters(i).out
+    calcn(i) := DSPUInt(calcCounters(i).out,7)
 
 
     println("getw" + calcn(i).getWidth + "," + calcCounters(i).out.getWidth)
@@ -191,6 +202,15 @@ class calc extends DSPModule {
 
 
   }
+
+
+
+  // reset -> 0 (highest priority)
+  // enable -> stageChandCond & ~calcDoneFlag & !(!calcDIT & currentStageMax & calcMemB) & !(calcDIT & currentStageMin & calcMemB)
+  // up when !calcDIT & !currentStageMax, else Down
+  // wrapCond = !calcDIT & currentStageMax | calcDIT & currentStageMin
+  // wrap to 0, wrap to stageSumM1(powColCount-1) = max
+
 
   when(startFirstFrame){                              // Always start DIF (priority reset)
     currentStage := UInt(0)
@@ -221,10 +241,17 @@ class calc extends DSPModule {
     }
   }
 
+
+
+
+
+
+
+
   // n1,n2,n3... -> calc address/banks
   val calcnToBankAddr = Module(new nToBankAddr(toAddrBankDly(0)))
   for (i <- 0 until maxNumStages){
-    calcnToBankAddr.io.n(i) := calcn(i)
+    calcnToBankAddr.io.n(i) := calcn(i).toUInt
     calcnToBankAddr.io.addrConstant(i) := addressConstant(i)
   }
   calcnToBankAddr.io.maxRadix := maxRadix    

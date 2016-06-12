@@ -1,21 +1,12 @@
-// TODO: Go through pipes; check delays are accounted for for all modules
-
-package FFT
+/*package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
-class IOCtrlIO extends IOBundle {
-  // Accepting new input/output data (can pause/resume IO, also hold if IO is slower than calc. clock)
-  val enable = DSPBool(INPUT)
-  // Reset IO counters & start inputting from n = 0 of frame
-  val reset = DSPBool(INPUT)
-  // Output valid (will go high sometime after startFrameIn, starting when corresponding k = 0 is valid)
-  val outValid = DSPBool(OUTPUT)
-  // Output k value
-  val k = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
+class TwiddleGenO extends IOBundle {
+  val o = Vec(Params.getBF.rad.max-1,Complex(gen))
 }
 
-class IOFlagsO extends IOBundle{
+class IOFlags extends IOBundle{
   // IO in DIF mode?
   val isDIF = DSPBool(OUTPUT)
   // IO using mem B?
@@ -27,17 +18,17 @@ class IOFlagsO extends IOBundle{
 class IOCtrl extends DSPModule {
 
   // TODO: Get rid of debug
-  val ioFlagsNoDelay = new IOFlagsO
+  val ioFlagsNoDelay = new IOFlags
 
   // TODO: Should pipe 1x or clkRatio?
-  // Internal delay from expected with reset, enable to n
+  // Internal delay from expected with reset, enable to output ioAddr, ioBank
   val intDelay = 1
 
   val ctrl = new IOCtrlIO
   val ioSetup = (new IOSetupO).flip
   val generalSetup = (new GeneralSetupO).flip
   val o = new nToAddrBankIO
-  // val ioFlags = new IOFlagsO
+  val ioFlags = new IOFlags
 
   val usedLoc = ioSetup.usedLoc
   val isUsed = ioSetup.isUsed
@@ -69,7 +60,7 @@ class IOCtrl extends DSPModule {
     ((used & max) | (!used)) & accum
   }) & ctrl.enable
   // Match ioAddr/ioBank delay
-  // ioFlags.wrapCond := frameWrapCond.pipe(intDelay)
+  ioFlags.wrapCond := frameWrapCond.pipe(intDelay)
   ioFlagsNoDelay.wrapCond := frameWrapCond
 
   // Is MemB the current memory used for IO?
@@ -78,7 +69,7 @@ class IOCtrl extends DSPModule {
   val ioMemBTemp = Mux(frameWrapCond,!ioMemB,ioMemB)
   ioMemB := ctrl.reset | (!ctrl.reset & ioMemBTemp)
   // Match ioAddr/ioBank delay
-  // ioFlags.isMemB := ioMemB.pipe(intDelay)
+  ioFlags.isMemB := ioMemB.pipe(intDelay)
   ioFlagsNoDelay.isMemB := ioMemB
 
   // Is IO in DIF mode?
@@ -93,7 +84,7 @@ class IOCtrl extends DSPModule {
   val ioDIFTemp = Mux(frameWrapCond & ioMemB,!ioDIF,ioDIF)
   ioDIF := ctrl.reset | (!ctrl.reset & ioDIFTemp)
   // Match ioAddr/ioBank delay
-  // ioFlags.isDIF := ioDIF.pipe(intDelay)
+  ioFlags.isDIF := ioDIF.pipe(intDelay)
   ioFlagsNoDelay.isDIF := ioDIF
 
   // Out valid should go high at the start of the 3rd frame (takes 2 frames to input + calculate)
@@ -185,7 +176,7 @@ class IOCtrl extends DSPModule {
   val coprimeCounts = Vec(coprimeCountsX.map(e => BaseN(e, e.rad).padTo(matchCoprimeCountLengths)))
 
   // Using delayed DIF flag
-  val digitIdx = Mux(ioDIF.pipe(intDelay),ioSetup.digitIdxDIF,ioSetup.digitIdxDIT)
+  val digitIdx = Mux(ioFlags.isDIF,ioSetup.digitIdxDIF,ioSetup.digitIdxDIT)
 
   // TODO: Make foldLeft into DSPUInt lookup function, decide on MixedRad vs. Vec?
   val nIOX = (0 until Params.getCalc.maxStages).map{ i => {
@@ -208,7 +199,4 @@ class IOCtrl extends DSPModule {
   nToAddrBank.generalSetup <> generalSetup
   o <> nToAddrBank.io
 
-  val delay = intDelay + nToAddrBank.delay
-  Status("Pipeline delay in IO Ctrl: " + delay)
-
-}
+}*/

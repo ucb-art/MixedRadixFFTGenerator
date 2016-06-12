@@ -172,24 +172,46 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       //peek(c.ioDIT)
       //peek(c.calcMemB)
       //peek(c.IOCtrl.ioIncCounters(0).ctrl.isMax)
+      //peek(c.CalcCtrl.maxStageCountUsed)
+      //peek(c.CalcCtrl.currentStage)
+      //peek(c.calcControl.calcn)
+      //peek(c.CalcCtrl.n)
+      //val a = peek(c.calcControl.calcn).toList
+      //val b = peek(c.CalcCtrl.n).toList
+      //if (!a.sameElements(b) && Tracker.inStep >= 2) Status("------------cc")
 
     }
+
+    /*if (Tracker.FFTN == 24){
+      val a = peek(c.calcControl.calcn).toList
+      val b = peek(c.CalcCtrl.n).toList
+      if (!a.sameElements(b) && Tracker.inStep >= 2) Error("------------cc")
+    }*/
+
     traceOn = temp
 
     //if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
     if (peek(c.ioAddr) != peek(c.IOCtrl.o.addr) && Tracker.inStep >= 2) Error("addr")
     if (peek(c.ioBank) != peek(c.IOCtrl.o.bank) && Tracker.inStep >= 2) Error("bank")
+    //if (peek(c.calcControl.calcn) != peek(c.CalcCtrl.n) && Tracker.inStep >= 2) Error("cc")
+
+    val a = peek(c.calcControl.calcn).toList
+    val b = peek(c.CalcCtrl.n).toList
+    if (!a.sameElements(b) && Tracker.inStep >= 2) Error("------------cc")
+
+    if (!peek(c.calcBank).toList.sameElements(peek(c.CalcCtrl.o.banks).toList) && Tracker.inStep >= 2) Error("calcbanks")
+    if (!peek(c.calcAddr).toList.sameElements(peek(c.CalcCtrl.o.addrs).toList) && Tracker.inStep >= 2) Error("calcaddrs")
 
   }
   def setupDebug(): Unit = {
     val temp = traceOn
     traceOn = true
     peek(c.IOSetup.o.stagePrimeIdx)
-    if (!peek(c.twiddleCount).toList.sameElements(peek(c.TwiddleSetup.o.twiddleCounts).toList)) Error("twiddlecnt")
+    //if (!peek(c.twiddleCount).toList.sameElements(peek(c.TwiddleSetup.o.twiddleCounts).toList)) Error("twiddlecnt")
     //if (!peek(c.twiddleSubCountMax).toList.sameElements(peek(c.TwiddleSetup.o.twiddleSubCounts).toList)) Error("twiddlesubcount")
 
 
-    if (!peek(c.twiddleMul).toList.sameElements(peek(c.TwiddleSetup.o.twiddleMuls).toList)) Error("twiddlerenorm")
+    //if (!peek(c.twiddleMul).toList.sameElements(peek(c.TwiddleSetup.o.twiddleMuls).toList)) Error("twiddlerenorm")
     traceOn = temp
   }
   def inSetupDebug(): Unit = {

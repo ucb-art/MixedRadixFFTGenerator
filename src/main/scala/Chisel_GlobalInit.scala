@@ -10,6 +10,7 @@ class GlobalInit extends DSPModule {
 
   val setupO = (new SetupTopIO).flip
   val ioCtrlO = (new IOCtrlIO).flip
+  val calcCtrlO = (new CalcCtrlI).flip
 
   // IO "clocking"
   val clkRatio = Params.getIO.clkRatio
@@ -46,7 +47,9 @@ class GlobalInit extends DSPModule {
   val globalCalcEnable = RegInit(DSPBool(false))
   val globalCalcEnTemp = globalCalcEnable ? (!initSetup)
   globalCalcEnable := resetCalc | (globalCalcEnTemp ? !resetCalc)
-  ioCtrlO.enable := (resetCalc | globalCalcEnable) & ioCtrlI.enable & slowEn
+  // Note calculation enables are not constrained by IO clock
+  calcCtrlO.enable := (resetCalc | globalCalcEnable) & ioCtrlI.enable
+  ioCtrlO.enable := calcCtrlO.enable & slowEn
   // Reset has precedence over enable (so that during setup, counters should be 0ed), no delay
   ioCtrlO.reset := initSetup | resetCalc
 

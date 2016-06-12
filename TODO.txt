@@ -1,10 +1,10 @@
-  // * twiddleCtrl (needs reset,enable) + setup
+  // * twiddleCtrl (needs reset,enable) 
   // overall setup done on right clk cycle + using counter (matches IOen) -- hold setupdone
   // * calcControl (needs reset,enable)
   // * memBanks (mem needs enable)
-  // fix frameout timing
+  // fix frameout timing - k, valid delay needs changing
   // 3 multiplies
-  // mem readen, test 100?
+  // mem readen, test 100?, 3780
   // w0z
   // tilelink
 
@@ -14,23 +14,27 @@
 
 
 
-currentStage
-
-use default counter:
 
 
-wrapcond when out = maxused
-inc = 1
-
-both need custom change cond -- also ioEnable
-!calcDoneFlag !discardCalcWrite
-above & subcounterwrap
-
-globalreset = calcResetCond??? (startFirstFrame, ioWrap -- is that inclusive?)
-
----
 
 
 use stagePrimeIdx
 
+---
+
+check calcResetCond = startFirstFrame | frameWrap 
+
+
+
+
+
+reset - ischange - wrap - updown
+-- check that globalsetup doesn't imply enable only on ioenable
+
+externalwrap externalwrapto, updown, customchange, customreset
+
+
+Load setup reg write to start setup reg. Prob for setup done (stay high) write to data in mem. Start frame = run for n clocks. Keep storing k , valid out, data out. After n clocks stop. Read out output. Input new data. Different input but without reset command (after original, pause). Read out again. Repeat. Check when valid. Increment frame after k = fft size-1. Repeat.
+
+-- another mode where it's one at a time
 

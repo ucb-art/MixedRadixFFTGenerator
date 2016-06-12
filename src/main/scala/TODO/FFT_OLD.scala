@@ -209,179 +209,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val addressConstant = Vec(addrConstantLUT.io.dout.map(_.cloneType.toUInt))
   addressConstant := Vec(addrConstantLUT.io.dout.map(_.reg().toUInt))
 
-
-
-
-
-
-
-
-
-  val twiddleCountArray = Params.getTw.countMax.transpose //twiddleConstants.twiddleCountMaxArray.transpose
-  val twiddleCountColCount = twiddleCountArray.length
-  val twiddleCountLUT = Vec((0 until twiddleCountColCount).map(x => Module(new UIntLUT(twiddleCountArray(x).toArray)).io))
-  val twiddleCount = Vec.fill(twiddleCountColCount) {
-    Reg(UInt())
-  }
-  var maxTwiddleCountBitWidth: Int = 0
-  for (i <- 0 until twiddleCountColCount) {
-    twiddleCountLUT(i).addr := fftIndex
-    twiddleCount(i) := twiddleCountLUT(i).dout
-    debug(twiddleCount(i))
-
-    var twiddleCountBitWidth = Helper.bitWidth(twiddleCountArray(i).max)
-    if (twiddleCountBitWidth > maxTwiddleCountBitWidth) {
-      maxTwiddleCountBitWidth = twiddleCountBitWidth
-    }
-  }
-
-  // For N = 32 = 4*4*2,
-  // Stage 1: Count 0 to 32/4-1 for radix-4 = 8 count * 4 radix
-  // Stage 2: Count 0 to 32/4/4-1 for radix-4 => 2 count * 4 radix * repeat 4x (for already calculated stage)
-  // Stage 3: Count 0 to 32/4/4/2-1 for radix 2 => 1 count * radix 2 * repeat 16x (for already calculated stages)
-  // For N = 24 = 4*2*3
-  // Note for N = 8 = 4*2, Stage 1: Count 0 to 8/4-1 and Stage 2: Count 0 to 8/4/2-1
-  // But for 24,
-  // Stage 1: count 0 (repeat 3x = hold count for 3 clks) to 1 (repeat 3x = hold count for 3 clks)
-  // => count 2 * repeat 3 (hold) * radix-4 = 24 points
-  // Stage 2:Count 0 to 0 (repeat 3x) => count 1 * repeat 3x (hold) * radix 2 * repeat 4x (prev. stage) = 24 points
-  // Stage 3: Count 0 to 0 repeat 8x = count 1 * radix 3 * repeat 8x (prev. stages) = 24.
-  // NOTE THAT for stage 3, repeat 8x is not the same as holding the count
-  // Holding a particular count is due to waiting for subCounter to max out.
-  // This sub counter has a max count defined by the product of coprimes still
-  // to be calculated (product of coprimes to the right of current coprime)
-  // Right-most count always = 0
-  // clk 3
-
-  // poor man's pipeD
-  val twiddleSubCountMax = Vec.fill(3) {
-    Reg(UInt(width = Helper.bitWidth(Params.getFFT.sizes.max)))
-  }
-
-
-
-
-
-
-  val twiddleSubcountLUT = DSPModule(new IntLUT2D(Params.getTw.subcountMax))
-  twiddleSubcountLUT.io.addr := fftIndex
-
-  twiddleSubCountMax.init.zipWithIndex.foreach{ case(x,i) => {
-    x := twiddleSubcountLUT.io.dout(i).toUInt
-  }}
-  twiddleSubCountMax.last := UInt(0,width=twiddleSubCountMax.last.getWidth)
-
-
-  //twiddleSubCountMax := Vec(twiddleSubcountLUT.io.dout.map(_.toUInt)) //twiddleSubcountLUT.io.dout
-
-  // Base Twiddle Address Multiplier (Renormalize to Twiddle ROM size)
-  // Unused signal should be optimized out in Verilog [ie Mul factor for powers of 2]
-  // clk 3
-
-
-  println("ccc" + Params.getTw.LUTScale)
-
-
-   val radNTwiddleMul = Vec.fill(3) {
-    Reg(UInt())
-  }
-
-
-
-  val testRadNMul = DSPModule (new IntLUT2D(Params.getTw.LUTScale))
-  testRadNMul.io.addr := fftIndex
-  radNTwiddleMul := Vec(testRadNMul.io.dout.map(_.toUInt))
-
-
-  // For DIF: Initial RadXTwiddleMulFactor due to scaling max memory
-  // based off of max coprime N to the coprime N actually used (see address gen block)
-  // Subsequent radix-X stages have the mul
-  // factor modified to correspond to *R1 for stage 2, *R1*R2 for
-  // stage 3, etc. as seen above
-  // clk 5
-  val twiddleMulTemp = Vec.fill(generalConstants.maxNumStages) {
-    Reg(UInt())
-  }
-  val twiddleMul = Vec.fill(generalConstants.maxNumStages) {
-    Reg(UInt())
-  }
-  // Note that whenever a radix-2 stage is used, regardless of the Mul value, the
-  // final twiddle address will always be 0
-  for (i <- 0 until generalConstants.maxNumStages) {
-    if (i == 0) {
-      // Always the start of a new radix, unless
-      // radix-4 is allowed but there is no radix-4 used in this FFT N
-      // i.e. if the first stage is radix-2, don't care
-
-      twiddleMulTemp(0) := radNTwiddleMul(3 - 1)
-      for (j <- 3 - 2 to 0 by -1) {
-        if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
-          when(stageSum(j + 1) != UInt(0)) {
-            // Radix {(42)35} -> Primes{235} re-index
-            twiddleMulTemp(0) := radNTwiddleMul(j)
-          }
-        }
-        else {
-          when(stageSum(j) != UInt(0)) {
-            // Re-index not needed
-            twiddleMulTemp(0) := radNTwiddleMul(j)
-          }
-        }
-      }
-    }
-    else {
-      when(stageRadix(i) === UInt(0)) {
-        // Unused stages (or radix-2, but ddon't care)
-        twiddleMulTemp(i) := UInt(0)
-      }.elsewhen(stageRadix(i) != stageRadix(i - 1)) {
-        // Current radix is different from previous radix --> need new Mul base
-        twiddleMulTemp(i) := radNTwiddleMul(3 - 1)
-        for (j <- 3 - 2 to 1 by -1) {
-          // If Rad2 (first) base mul was relevant, it would have already been used in stage 0
-          if (generalConstants.pow2SupportedTF && generalConstants.rad4Used) {
-            when(stageSum(j) === UInt(i)) {
-              // Radix {(42)35} -> Primes{235} re-index
-              twiddleMulTemp(i) := radNTwiddleMul(j)
-            }
-          }
-          else {
-            when(stageSum(j - 1) === UInt(i)) {
-              // Shift index compared to before
-              twiddleMulTemp(i) := radNTwiddleMul(j)
-            }
-          }
-        }
-      }.otherwise {
-        twiddleMulTemp(i) := twiddleMulTemp(i - 1) * stageRadix(i) //pipeD(twiddleMulTemp(i-1)*stageRadix(i),2).asInstanceOf[UInt] 				// If current stage has the same radix as the previous stage,
-        // Change the multiplication factor * radix
-      }
-    }
-  }
-
-  twiddleMul := Vec(twiddleMulTemp.zip(GeneralSetup.o.stageRad).map(x => {
-    Chisel.Mux(x._2 === UInt(2),UInt(0),x._1)
-  }))
-
-
-
-  //twiddleMul := twiddleMulTemp
-  for (i <- 0 until generalConstants.maxNumStages) {
-    debug(twiddleMul(i))
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   // Counter reset whenever new FFTN desired, stays constant after setup is done SHOULD OPTIMIZE
   val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3 + 20
   val setupCounter = Module(new accumulator(Helper.bitWidth(setupDoneCount)))
@@ -490,7 +317,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   val twiddleAddrMax = 2000
 
-  val twiddleCountMaxUsed = UInt(twiddleCount(currentStage), width = maxTwiddleCountBitWidth)
+  val twiddleCountMaxUsed = TwiddleSetup.o.twiddleCounts(currentStage).toUInt
   val twiddleSubCountMaxUsed = UInt(width = Helper.bitWidth(Params.getFFT.sizes.max))
   // Note for subcount, power of 2 is default.
   // Power of 2 includes radix 4. Also note that when calculating
@@ -510,7 +337,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   // Subcounter to handle coprimes (holds main count value)
   // Counter to deal with current coprime
   val twiddleSubCounter = Module(new accumulator(Helper.bitWidth(Params.getFFT.sizes.max))).io
-  val twiddleCounter = Module(new accumulator(maxTwiddleCountBitWidth)).io
+  val twiddleCounter = Module(new accumulator(twiddleCountMaxUsed.getWidth)).io
   val twiddleSubCounterWrap = (twiddleSubCounter.out === twiddleSubCountMaxUsed)
   val twiddleCounterWrap = (twiddleCounter.out === twiddleCountMaxUsed)
   twiddleSubCounter.inc := UInt(1, width = 1)
@@ -526,7 +353,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   debug(twiddleAddrTemp)
   // 0 cycle delay
 
-  val twiddleMulUsed = twiddleMul(currentStage) // twiddle address scale factor
+  val twiddleMulUsed = TwiddleSetup.o.twiddleMuls(currentStage).toUInt // twiddle address scale factor
   debug(twiddleMulUsed)
 
 
@@ -741,20 +568,16 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   val calcDoneFlagD = Pipe(calcDoneFlag, toAddrBankDly.sum).asInstanceOf[Bool]
 
-
   val memBanks = DSPModule(new memBanks(gen))
 
   CheckDelay.off()
-
 
   memBanks.io.ioBank := ioBank
   memBanks.io.ioAddr := ioAddr
   memBanks.io.calcMemB := calcMemB
   memBanks.io.calcDoneFlag := calcDoneFlagD
 
-
   val currentRadixD2 = Reg(next = currentRadixD1)
-
 
   // ASSUMES 4 ALWAYS EXISTS (BAD ASSUMPTION)
   // 4 is used and current radix = 2
@@ -950,6 +773,25 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   // *** needs to be changed to switch between versions i.e. support 3x, fail 120
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+// Same caps
+
+
+
+
+  val CalcCtrl = DSPModule(new CalcCtrl(butterfly.delay + 1))
+  CalcCtrl.ioCtrl.enable := globalInit.ioCtrlO.enable
+  CalcCtrl.ioCtrl.reset := globalInit.ioCtrlO.reset
+  CalcCtrl.generalSetup <> GeneralSetup.o
+  CalcCtrl.ioFlags <> IOCtrl.ioFlagsNoDelay
+  CalcCtrl.calcCtrlI <> globalInit.calcCtrlO
+  if (CalcCtrl.delay != IOCtrl.delay) Error("Delays must match")
+
+
+
+
 
 
 
