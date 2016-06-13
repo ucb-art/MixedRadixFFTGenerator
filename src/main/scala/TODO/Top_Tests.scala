@@ -123,11 +123,16 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
           Tracker.frameNum = Tracker.frameNum + 1
           firstOutValid = true
         }
+        else if (Tracker.outValid && Tracker.outStep%Tracker.FFTN == 0){
+          Status("///////////////////////////////////////// FRAME = %d, K = 0".format(Tracker.frameNum))
+          Tracker.frameNum = Tracker.frameNum + 1
+        }
+        if (Tracker.outValid && !firstOut) Error("Valid should still be high")
         Tracker.firstSymbol = firstOut
       }
       else{
-        // FRAME_FIRST_OUT should be held for clkRatio calc clk cycles if true
-        if (firstOutValid) expect(c.ctrl.outValid,true)
+        // FRAME_FIRST_OUT should be held held high
+        if (firstOutValid | Tracker.outValid) expect(c.ctrl.outValid,true)
         else expect(c.ctrl.outValid,false)
       }
       // Read output if valid & check for error
@@ -170,6 +175,10 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
     if (Tracker.FFTN == 12) {
 
+      //if (peek(c.IOCtrl.ctrl.k) != peek(c.ctrl.k) && Tracker.inStep >= 2) Error("k")
+      //if (peek(c.IOCtrl.ctrl.outValid) != peek(c.ctrl.outValid) && Tracker.inStep >= 2) Error("valid")
+
+
       /*0 until 4).foreach{ i =>
         if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
           peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Error("twiddles")
@@ -203,13 +212,13 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
 
       if (Tracker.inStep >= 2 && Tracker.inStep < 30){
-      peek(c.TwiddleGen.currentTwiddleAddrs)
-      peek(c.twiddleAddr)
+      /*peek(c.TwiddleGen.currentTwiddleAddrs)
+      //peek(c.twiddleAddr)
 
         (0 until 4).foreach{ i =>
           if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
             peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Status("twiddles")
-        }
+        }*/
 
       }
 
@@ -217,6 +226,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     }
 
     traceOn = temp
+
 
     /*if (Tracker.FFTN != 192)
       (0 until 4).foreach{ i =>
@@ -261,6 +271,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def inSetupDebug(): Unit = {
     val temp = traceOn
     traceOn = true
+    //peek(c.globalInit.setupI.enable)
+    //peek(c.globalInit.setupO.enable)
     traceOn = temp
   }
 

@@ -33,9 +33,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   CheckDelay.off()
 
 
-
-
-
 //////////////////////////////////////////////////////////////////
 
   // Data IO, setup IO, Operating controls
@@ -302,269 +299,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   val calcBank = calcControl.io.calcBank
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // Twiddle addressing
-
-  val twiddleAddrMax = 2000
-
-  val twiddleCountMaxUsed = TwiddleSetup.o.twiddleCounts(currentStage).toUInt
-  val twiddleSubCountMaxUsed = UInt(width = Helper.bitWidth(Params.getFFT.sizes.max))
-  // Note for subcount, power of 2 is default.
-  // Power of 2 includes radix 4. Also note that when calculating
-  // for the radix-2 stage, the overall twiddle count should be 0,
-  // so it doesn't matter what the subcount value is
-  // Subcount max depends on remaining coprimes
-  twiddleSubCountMaxUsed := TwiddleSetup.o.twiddleSubCounts(currentStage) /*twiddleSubCountMax(0)
-  for (i <- generalConstants.validPrimes.length - 1 to 0 by -1) {
-    when(currentRadix === UInt(generalConstants.validPrimes(i))) {
-      twiddleSubCountMaxUsed := twiddleSubCountMax(i)
-    }
-  }*/
-  debug(twiddleCountMaxUsed)
-  debug(twiddleSubCountMaxUsed)
-
-  // Non-scaled twiddle counters
-  // Subcounter to handle coprimes (holds main count value)
-  // Counter to deal with current coprime
-  val twiddleSubCounter = Module(new accumulator(Helper.bitWidth(Params.getFFT.sizes.max))).io
-  val twiddleCounter = Module(new accumulator(twiddleCountMaxUsed.getWidth)).io
-  val twiddleSubCounterWrap = (twiddleSubCounter.out === twiddleSubCountMaxUsed)
-  val twiddleCounterWrap = (twiddleCounter.out === twiddleCountMaxUsed)
-  twiddleSubCounter.inc := UInt(1, width = 1)
-  twiddleCounter.inc := UInt(1, width = 1)
-  twiddleSubCounter.changeCond := ~calcDoneFlag & ~discardCalcWrite
-  twiddleCounter.changeCond := twiddleSubCounter.changeCond && twiddleSubCounterWrap // max twiddle count differs depending on stage of given radix; only change when sub counter goes from max to 0 (to handle coprimes)
-  twiddleSubCounter.globalReset := calcResetCond
-  twiddleCounter.globalReset := calcResetCond
-  twiddleSubCounter.wrapCond := twiddleSubCounterWrap
-  twiddleCounter.wrapCond := twiddleCounterWrap
-  val twiddleAddrTemp = UInt()
-  twiddleAddrTemp := twiddleCounter.out
-  debug(twiddleAddrTemp)
-  // 0 cycle delay
-
-  val twiddleMulUsed = TwiddleSetup.o.twiddleMuls(currentStage).toUInt // twiddle address scale factor
-  debug(twiddleMulUsed)
-
-
-  // Switch rows/cols so Scala doesn't complain (originally columns are associated with twiddle up to radix-1, but want to address "column" first -> tranpose)
-  var twiddleArray = Params.getTw.vals.map(
-    _.transpose
-  )
-  val twiddleLUT = Vec((0 until twiddleArray.length).map(y => {
-    Vec((0 until twiddleArray(y).length).map(x => Module(new ComplexLUT(twiddleArray(y)(x), gen)).io))
-  }))
-  // For each radix, radix-1 twiddle factors being fed to butterfly (1 to radix-1)
-
-  val twiddleAddr = Count(null, twiddleAddrMax);
-  twiddleAddr := Pipe(twiddleAddrTemp * twiddleMulUsed, toAddrBankDly(0)).asInstanceOf[UInt] // Total delay: 1 cycles
-  debug(twiddleAddr)
-
-  val currentRadixD1 = Count(null, maxRad);
-  currentRadixD1 := Pipe(currentRadix, toAddrBankDly(0)).asInstanceOf[UInt] //Reg(next = currentRadix)									// Match current radix delay to twiddleAddr total delay
-  debug(currentRadixD1)
-
-  // For each of the coprimes
-  val twiddleAddrX = Vec.fill(twiddleArray.length) {
-    UInt()
-  }
-
-  // Distribute address to correct twiddle LUT
-  // Zeros LUT address when different radix used
-  for (i <- 0 until twiddleArray.length) {
-    if (i == 0) {
-      // radix-4/radix-2 always first	if used
-      if (generalConstants.rad4Used && generalConstants.pow2SupportedTF) {
-        when((currentRadixD1 === UInt(generalConstants.validPrimes(i))) || currentRadixD1 === UInt(4)) {
-          twiddleAddrX(i) := twiddleAddr
-        }.otherwise {
-          twiddleAddrX(i) := UInt(0)
-        }
-      }
-      else {
-        when((currentRadixD1 === UInt(generalConstants.validPrimes(i)))) {
-          twiddleAddrX(i) := twiddleAddr
-        }.otherwise {
-          twiddleAddrX(i) := UInt(0)
-        }
-      }
-    }
-    else {
-      when((currentRadixD1 === UInt(generalConstants.validPrimes(i)))) {
-        twiddleAddrX(i) := twiddleAddr
-      }.otherwise {
-        twiddleAddrX(i) := UInt(0)
-      }
-    }
-    debug(twiddleAddrX(i))
-  }
-
-  // todo: labeltwiddlelut
-  val calcDITD1 = Bool();
-  calcDITD1 := Pipe(calcDIT, toAddrBankDly.sum + toMemAddrDly).asInstanceOf[Bool]
-
-
-
-  //println(twiddleArray(0))
-
-  // Twiddles from 1(-1) to radix-1(-1) (indexed starting at 0) for each coprime
-  val twiddles = Vec((0 until twiddleArray.length).map(y => {
-    Vec.fill(twiddleArray(y).length) {
-      Complex(gen, gen)
-    }
-  }))
-
-  // TODO: Rename LUTs
-  for (i <- 0 until twiddleArray.length; j <- 0 until twiddleArray(i).length) {
-    // i corresponds to particular coprime; j corresponds to which twiddle brought out; all twiddles for particular coprime brought out with same address in
-    val DITtwiddleAddr = Count(null, twiddleAddrMax); DITtwiddleAddr := Pipe(twiddleAddrX(i), toAddrBankDly(1) + toMemAddrDly).asInstanceOf[UInt]
-    // Twiddles delayed by wftaDly cycles in DIF (multiplication occurs after WFTA)
-    val DIFtwiddleAddr = Count(null, twiddleAddrMax); DIFtwiddleAddr := Pipe(DITtwiddleAddr, wftaDly).asInstanceOf[UInt]
-    val tempAddr = muxU(DIFtwiddleAddr, DITtwiddleAddr, calcDITD1)
-    twiddleLUT(i)(j).addr := DSPUInt(tempAddr,twiddleLUT(i)(j).addr.getRange.max )
-    twiddles(i)(j) := twiddleLUT(i)(j).dout
-    debug(twiddles(i)(j))
-
-    //println(twiddles(i)(j).real.getRange + "," + twiddles(i)(j).imag.getRange)
-  }
-
-  // e^0 = 1 + 0 j ( = twiddle fed to butterfly's 0th input/output)
-  val e0Complex = Complex(double2T(1), double2T(0))
-
-  val twiddleXReal = Vec.fill(generalConstants.maxRadix - 1) {
-    gen.cloneType()
-  }
-  val twiddleXImag = Vec.fill(generalConstants.maxRadix - 1) {
-    gen.cloneType()
-  }
-
-  // Radix-M requires M-1 twiddle factors
-  for (i <- 0 until twiddleXReal.length) {
-    if (i == 0) {
-      twiddleXReal(i) := e0Complex.real // DIF radix-2 has twiddles W^0_N = 1 (calculated last in a 2^N FFT so no special twiddle needed) - default
-      twiddleXImag(i) := e0Complex.imag
-    }
-    else {
-      // Default twiddle value for butterfly indices with larger N = those associated with
-      // largest radix (i.e. for radix-5, all inputs 1-4 (except 0) would need to use
-      // twiddles associated with radix 5)
-      if (generalConstants.validRadices(0) > generalConstants.validRadices(generalConstants.validRadices.length - 1)) {
-        // If the first valid radix is larger then the last one (i.e. when only radix 4,2,3 supported rather than 5)
-        // the default would be associated with radix-4 rather than radix-3 (left most)
-        twiddleXReal(i) := twiddles(0)(i).real
-        twiddleXImag(i) := twiddles(0)(i).imag
-      }
-      else {
-        // If radix-4 isn't the largest, then the largest prime used is the right-most one
-        twiddleXReal(i) := twiddles(twiddles.length - 1)(i).real
-        twiddleXImag(i) := twiddles(twiddles.length - 1)(i).imag
-      }
-    }
-    for (j <- generalConstants.validPrimes.length - 1 to 0 by -1) {
-      // All possible twiddle types (corresponding to valid primes)
-      var jj: Int = 0
-      if (j != 0 && generalConstants.rad4Used && generalConstants.pow2SupportedTF) {
-        // If radix=4 is used, corresponding radix index is + 1 of prime index (i.e. for 3,5)
-        jj = j + 1
-      }
-      else {
-        jj = j
-        // Note that radix-2 butterfly doesn't need specific twiddle; only radix-4 does for 2^N,
-        // so prime of 2 -> radix of 4 (same index)
-        // Otherwise, if radix-4 not used, then prime and radix indices should match
-      }
-      val radixTemp: Int = generalConstants.validRadices(jj)
-      if (radixTemp > i + 1) {
-        // i = input index -1; therefore i = 0 actually corresponds to second input since first input is trivial
-        // If I have twiddle inputs 0 to 4 corresponding with supporting up to radix-5,
-        // Where input 0 doesn't have an associated special twiddle
-        // Input 1 would need to support twiddles associated with radix-2,-3,-4,-5 (where radix-2 twiddle = trivial 1)
-        // Input 2 would need to support twiddles associated with radix-3,-4,-5
-        // Input 3 would need to support twiddles associated with radix-4,-5
-        // i.e. radix-3 only has input indices 0-2, so it doesn't need to be supported
-        // by higher input #'s
-        // Input 4 would need to support twiddles associated with radix-5
-
-
-        // d2 = 1 + memAddrDly, wftaDly or not
-
-
-        val currentRadixDx = Count(null, maxRad);
-        currentRadixDx := Pipe(currentRadixD1, toAddrBankDly(1) + toMemAddrDly).asInstanceOf[UInt]
-        val currentRadixDx2 = Count(null, maxRad);
-        currentRadixDx2 := Pipe(currentRadixDx, wftaDly).asInstanceOf[UInt]
-        val cr = muxU(currentRadixDx2, currentRadixDx, calcDITD1) // NOTE TO SELF: DELAY CALCDIT appropriately even if still works
-
-        when(cr === UInt(radixTemp)) {
-          twiddleXReal(i) := twiddles(j)(i).real
-          twiddleXImag(i) := twiddles(j)(i).imag
-        }
-      }
-    }
-    debug(twiddleXReal(i))
-    debug(twiddleXImag(i))
-  }
-
-
-  // seq read dly
-  // Total delay: 3 cycles
-
-
-  val twiddleX = Vec((0 until generalConstants.maxRadix - 1).map(i => {
-    Complex(twiddleXReal(i), twiddleXImag(i)).pipe(1)
-
-  }))
-
-
-  /*Vec((0 until generalConstants.maxRadix-1).map(
-		i => {
-			Complex(twiddleXReal(i),twiddleXImag(i)).pipe(1)
-		}
-	))*/
-  //85-87
-
-  debug(twiddleX)
-
-
-
-
-
-
-  Status(Params.getTw.addrMax.toString)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   //////////////////////////////////////////////////////////////////////////////////////
   // Memory + Butterfly interface
 
@@ -579,7 +313,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   memBanks.io.calcMemB := calcMemB
   memBanks.io.calcDoneFlag := calcDoneFlagD
 
-  val currentRadixD2 = Reg(next = currentRadixD1)
+  val currentRadixD2 = Pipe(currentRadix,2)//Reg(next = currentRadixD1)
 
   // ASSUMES 4 ALWAYS EXISTS (BAD ASSUMPTION)
   // 4 is used and current radix = 2
@@ -657,17 +391,12 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   // + 1 used to be inside  2nd pipe (i.e. seqrddly + 1)
   val frameFirstOutPre =  Pipe(!ctrl.reset & Pipe(DSPBool(firstDataFlagD3	| firstDataFlagD4) & !ctrl.reset,seqRdDly),normalizedDelay)
   val frameFirstOutPreTemp = !ctrl.reset & frameFirstOutPre
-  ctrl.outValid := Pipe(frameFirstOutPreTemp,1)
+  ctrl.outValid := IOCtrl.ctrl.outValid //Pipe(frameFirstOutPreTemp,1)
 
   // don't let frame first out change before setup done?
 
-  // TODO: check timing of offsetCountEnable w/ frameFirstOutPreTemp
-  val offsetCountEnable = RegInit(DSPBool(false))
-  offsetCountEnable := Mux(frameFirstOutPreTemp & setup.done,DSPBool(true),offsetCountEnable)
-  val offsetCounter = IncReset(Params.getFFT.sizes.max-1,nameExt="offset")
-  offsetCounter.iCtrl.reset := frameFirstOutPreTemp
-  offsetCounter.iCtrl.change.get := slowEn & offsetCountEnable
-  ctrl.k := offsetCounter.io.out
+
+  ctrl.k := IOCtrl.ctrl.k
 
   // Delayed appropriately to be high when k = 0 output is read (held for 2 cycles)
 
@@ -691,13 +420,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val eq2 = DSPBool(rad.toUInt === UInt(2))
 
 
- /* butterfly.io.twiddles.zipWithIndex.foreach{case (e,i) => {
-    if (i < generalConstants.maxRadix-1){
-      e := twiddleX(i).reg() // noob reg to match dly on data out of mem (should move to reg address instead of data)
-    }
-  }}*/
-
-
   // Can update twiddle port in butterfly??
 
   // if radix 2 --> 4
@@ -707,15 +429,6 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
   memBanks.io.currRad := Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
 
-  // *** CHANGED
-
-  //currentRadixD2 //Mux(currentRadixD2 === UInt(2),UInt(4),currentRadixD2).toUInt
-
-
-  //currentRadixD2
-  //memBanks.io.discardCalcWrite := Bool(false)
-
-  //val currRad = Vec((0 until Params.getBF.rad.length).map( x => { val r = DSPBool(); r := DSPBool(rad === Count(Params.getBF.rad(x))); r }))
 
   val currRad = Vec((0 until butterfly.wfta.p.rad.length).map( x => { val r = DSPBool(); r := DSPBool(rad === Count(butterfly.wfta.p.rad(x))); r }))
 
@@ -775,9 +488,5 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
       e := TwiddleGen.o.twiddles(i) // noob reg to match dly on data out of mem (should move to reg address instead of data)
     }
   }}
-
-
-
-
 
 }

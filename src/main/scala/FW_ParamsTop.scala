@@ -205,7 +205,10 @@ case class PipelineParams (
   var memArbiterTop: Int = 1,
 
   // Twiddle address generation address = count * mul delay
-  var twiddleAddrGen: Int = 4
+  var twiddleAddrGen: Int = 4,
+
+  // Register the output
+  var topOut: Int = 1
 
 ){
 
@@ -255,6 +258,9 @@ case class PipelineParams (
     if (dly < 1) Error("Twiddle multiplication must be pipelined at least once!")
     dly
   }
+
+  // Delay from undelayed IO ctrl signal to data out of FFT top
+  def outFlagDelay = ioCtrl + memArbiterTop + memReadAtoD + normalize + topOut
 
   // TODO: Support pipeDin @ PE, 3 muls
 

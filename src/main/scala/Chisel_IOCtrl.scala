@@ -98,18 +98,16 @@ class IOCtrl extends DSPModule {
   val outValidTransitionCond = frameWrapCond & !ioMemB & !ioDIF
   val outValidNext = !ctrl.reset & (outValidTransitionCond | outValid)
   outValid := outValidNext
-  ctrl.outValid := outValid.pipe(intDelay)
 
   // TODO: kReset conditions redundant
   // K starts counting output # (mod FFT size) when output is valid
   val kEnableStart = !outValid & outValidNext & ctrl.enable
-  val kEnable = (kEnableStart | outValid & ctrl.enable)
-  val kReset = (kEnableStart) | ctrl.reset
+  val kEnable = kEnableStart | (outValid & ctrl.enable)
+  val kReset = kEnableStart | ctrl.reset | frameWrapCond
 
   val kCounter = IncReset(Params.getFFT.sizes.max-1,nameExt="kOffset")
   kCounter.iCtrl.reset := kReset
   kCounter.iCtrl.change.get := kEnable
-  ctrl.k := kCounter.io.out.pipe(intDelay)
 
   val isLastLoc = Vec(usedLoc.map(e => {
     // Is last used location? (not dependent on anything else)
@@ -206,5 +204,9 @@ class IOCtrl extends DSPModule {
 
   val delay = intDelay + nToAddrBank.delay
   Status("Total IO Ctrl delay: " + delay)
+
+  // Delayed to be @ the right time @ FFT Top
+  ctrl.k := kCounter.io.out.pipe(Params.getDelays.outFlagDelay)
+  ctrl.outValid := outValid.pipe(Params.getDelays.outFlagDelay)
 
 }

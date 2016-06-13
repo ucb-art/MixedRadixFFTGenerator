@@ -12,6 +12,8 @@ class GlobalInit extends DSPModule {
   val ioCtrlO = (new IOCtrlIO).flip
   val calcCtrlO = (new CalcCtrlI).flip
 
+  val setupDone = new SetupDoneIO
+
   // IO "clocking"
   val clkRatio = Params.getIO.clkRatio
   val clkDiv = DSPModule(new ClkDiv(clkRatio))
@@ -20,6 +22,7 @@ class GlobalInit extends DSPModule {
   // Flags used
   val initSetup = slowEn & setupI.enable
   val resetCalc = slowEn & ioCtrlI.reset
+  setupDone.init := initSetup
 
   // TODO: Double check clkRatio generaliation
   // Enable signal to other setup blocks only goes high after the top-level setup enable
@@ -29,6 +32,9 @@ class GlobalInit extends DSPModule {
   setupEnCapture(1) := Mux(slowEn,setupEnCapture(0),setupEnCapture(1))
   val validSetup = setupEnCapture(1) & !setupEnCapture(0)
   setupO.enable := (validSetup).pipe(clkRatio)
+  setupDone.lastSetupDelta := setupO.enable & slowEn
+
+  setupDone.inc := slowEn
 
   // Only update setup parameters when setup is enabled (last setup IO clock)
   val captureIn = slowEn & validSetup
