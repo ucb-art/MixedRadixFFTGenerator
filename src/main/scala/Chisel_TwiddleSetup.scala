@@ -14,7 +14,7 @@ class TwiddleSetupO extends IOBundle {
   val twiddleMuls = Vec(Params.getCalc.maxStages,DSPUInt(OUTPUT,Params.getTw.vals.map(x => x.length).max))
 }
 
-class TwiddleSetup(prevSetupDelay: Int) extends DSPModule{
+class TwiddleSetup extends DSPModule{
 
   val setupTop = new SetupTopIO
   val generalSetup = (new GeneralSetupO).flip
@@ -103,9 +103,7 @@ class TwiddleSetup(prevSetupDelay: Int) extends DSPModule{
 
   // Keep track of how long setup should take (this delay is added on top)
   val setupDelay = o.getMaxOutDelay()
-  val totalSetupDelay = setupDelay + prevSetupDelay
-
-  Status("General setup + IO Setup + Twiddle Setup take " + totalSetupDelay + " clocks.")
+  Status("Twiddle setup module delay: " + setupDelay)
 
   // TODO: Less conservative delay
 

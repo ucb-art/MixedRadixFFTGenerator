@@ -26,9 +26,10 @@ class PEIO[T <: DSPQnm[T]](gen : => T) extends WFTAIO(gen,outDlyMatch=false) {
 /** Processing element includes both DIT/DIF twiddle multiplication and WFTA butterfly
   * num = butterfly index
   */
-class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) extends GenDSPModule (gen) {
+class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0) extends GenDSPModule (gen) {
 
-  // TODO: Support pipeDin
+  // Pipeline delay for complex multiplication
+  val twiddleDelay = Params.getDelays.twiddle
 
   CheckDelay.on()
 
@@ -40,11 +41,6 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) exte
 
   // Turn off pipeline delay check because of feedback
   CheckDelay.off()
-
-  // Pipeline delay for complex multiplication
-  // TODO: Handle 3 muls for complex multiply
-  val twiddleDelay = math.floor(Complex.getAddPipe).toInt + Complex.getMulPipe
-  if (twiddleDelay < 1) Error("Twiddle multiplication must be pipelined at least once!")
 
   // Twiddle multiplication occurs after WFTA butterfly for DIF and before butterfly for DIT
   if (Params.getBF.rad.length > 1) {
@@ -62,7 +58,7 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) exte
   val twiddleMulOut = Vec(twiddleMulIn.zipWithIndex.map{case (e,i) => {
     val temp = {
       if (i == 0) e.pipe(twiddleDelay)
-      else e * io.twiddles(i-1)
+      else e * (io.twiddles(i-1),aPipe = math.floor(Params.getDelays.addPipe).toInt, mPipe = Params.getDelays.mulPipe)
     }
     temp.trim(gen.getFracWidth)
   }})
@@ -76,9 +72,7 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0, pipeDin: Boolean = true) exte
   CheckDelay.on()
 
   // Total delay through the whole processing element
-  val delay = twiddleDelay + wfta.delay // + (if (pipeDin) 1 else 0)
-  println("PE delay: " + delay)
-
-  // TODO: Don't use Complex.get*Pipe (not good for multiple blocks)
+  val delay = twiddleDelay + wfta.delay
+  Status("Total PE delay (WFTA + Twiddles): " + delay)
 
 }

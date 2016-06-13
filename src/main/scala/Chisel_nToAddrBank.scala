@@ -11,7 +11,7 @@ class nToAddrBankIO extends IOBundle {
 }
 class nToAddrBank extends DSPModule {
 
-  val intDly = 1
+  val intDly = Params.getDelays.nToAddrBank
 
   // TODO: possibly add additional pipeline in nesting
 
@@ -72,5 +72,6 @@ class nToAddrBank extends DSPModule {
 
   if (io.addr.getDelay != io.bank.getDelay) Error("Address, bank delays don't match")
   val delay = io.addr.getDelay
+  // Status ("nToAddBank module delay: " + delay)
 
 }

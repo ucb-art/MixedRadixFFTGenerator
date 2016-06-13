@@ -1,4 +1,3 @@
-// TODO: Print pipeline delay through all modules
 // TODO: Check for mistakes?
 
 package FFT
@@ -37,9 +36,10 @@ class CalcCtrlFlags extends IOBundle{
   val we = DSPBool(OUTPUT)
 }
 
-class CalcCtrl(val PEandMemOutRegDly : Int) extends DSPModule {
+class CalcCtrl extends DSPModule {
 
-  val intDly = 1
+  val intDly = Params.getDelays.calcTop
+  val PEandMemOutRegDly = Params.getDelays.pe + Params.getDelays.memOutRegDly
 
   // Reset (precedence over IO enable), enable
   val ioCtrl = new IOCtrlIO
@@ -232,7 +232,7 @@ class CalcCtrl(val PEandMemOutRegDly : Int) extends DSPModule {
   // current stage
   val currStageAddrConstant = currAddrConstant.pipe(nToAddrBank.delay)
   val calcAddr = Vec((0 until o.banks.length-1).scanLeft(nToAddrBank.io.addr)((accum,e) => {
-    accum + currStageAddrConstant
+    (accum + currStageAddrConstant).shorten(o.addrMax)
   }))
   o.addrs := Pipe(calcAddr,intDly)
 
@@ -243,5 +243,6 @@ class CalcCtrl(val PEandMemOutRegDly : Int) extends DSPModule {
 
   val delay = intDly + nToAddrBank.delay
   Status("Calc Control delay: " + delay)
+  Status("Stall cycles per stage: " + PEandMemOutRegDly)
 
 }

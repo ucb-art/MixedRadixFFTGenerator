@@ -1,6 +1,9 @@
+detect delay conflicts
+check delays match with paper (from when i wasraddr=waddr checking)
+
+
   // * twiddleCtrl (needs reset,enable) 
   // overall setup done on right clk cycle + using counter (matches IOen) -- hold setupdone
-  // * calcControl (needs reset,enable)
   // * memBanks (mem needs enable)
   // fix frameout timing - k, valid delay needs changing
   // 3 multiplies
@@ -8,17 +11,22 @@
   // w0z
   // tilelink
 
+mode for running same data through many times for power
 
 
+TwiddleSetup.o.twiddleCounts, tsiddleSubCounts, twiddleMuls
+CalcCtrl.flags currentStage, enable
+currentRadix
 
+use stagePrimeIdx to distribute addresses
 
+0 1 2 3 4
+0 1 2 3 *
+0 1 2 * *
+1 2 * * *
 
+prime chooses which twiddle, which you pad out
 
-
-
-
-
-use stagePrimeIdx
 
 ---
 
@@ -37,4 +45,6 @@ externalwrap externalwrapto, updown, customchange, customreset
 Load setup reg write to start setup reg. Prob for setup done (stay high) write to data in mem. Start frame = run for n clocks. Keep storing k , valid out, data out. After n clocks stop. Read out output. Input new data. Different input but without reset command (after original, pause). Read out again. Repeat. Check when valid. Increment frame after k = fft size-1. Repeat.
 
 -- another mode where it's one at a time
+
+** see recent email -- continue for power
 

@@ -71,7 +71,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val GeneralSetup =  DSPModule(new GeneralSetup)
   GeneralSetup.setupTop <> globalInit.setupO
 
-  val IOSetup = DSPModule (new IOSetup(GeneralSetup.setupDelay))
+  val IOSetup = DSPModule (new IOSetup)
   IOSetup.setupTop <> globalInit.setupO
   IOSetup.generalSetup <> GeneralSetup.o
 
@@ -83,7 +83,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   IOSetup.o <> IOCtrl.ioSetup
 
-  val TwiddleSetup = DSPModule(new TwiddleSetup(GeneralSetup.setupDelay + IOSetup.setupDelay))
+  // Total delay sum of all 3 (GeneralSetup.setupDelay + IOSetup.setupDelay) + twiddle
+
+  val TwiddleSetup = DSPModule(new TwiddleSetup)
   TwiddleSetup.setupTop <> globalInit.setupO
   //TwiddleSetup.generalSetup <> GeneralSetup.o
   TwiddleSetup.generalSetup.radStageSum := GeneralSetup.o.radStageSum
@@ -540,7 +542,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 
 
-
+  Status(Params.getTw.addrMax.toString)
 
 
 
@@ -690,28 +692,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 
   butterfly.io.twiddles.zipWithIndex.foreach{case (e,i) => {
-    /*if (i < generalConstants.maxRadix-1) {
-      println("xxx" + e.real.getRange + "," + e.imag.getRange + ",") //+ twiddleX(i).real.getRange)
-      e := twiddleX(i)
-
-      println("ttt" + e.real.getRange + "," + e.imag.getRange)
-      //e.imag := twiddleX(i).imag
-    }*/
-    /*if (Params.getBF.rad.contains(2)){
-      if (i == 1 || i == 2) {											// twiddle index is 1 off -- maybe not necessary? check always (1,0) for rad = 2
-
-        //val check2 = Mux(eq2,twiddleX(0),twiddleX(i))
-        //e :=  //Mux(eq2,twiddleX(0),twiddleX(i))
-        e.real := Mux(eq2,twiddleX(0).real,twiddleX(i).real)
-        e.imag := Mux(eq2,twiddleX(0).imag,twiddleX(i).imag)
-        //e := Complex(test.real,test.imag) //twiddleX(i)//Mux(DSPBool(rad.toUInt === UInt(2)),twiddleX(0),twiddleX(i))
-        //e := twiddleX(i)
-      }
-      else if (i < generalConstants.maxRadix-1){
-        e := twiddleX(i)
-      }
-    }     NOTE NEEDADDRESS AT 0 FOR RAD 2 twiddle!!!! for idx 0-3 seems i already did -- twiddles delayed earlier
-    else*/ if (i < generalConstants.maxRadix-1){
+    if (i < generalConstants.maxRadix-1){
       e := twiddleX(i).reg() // noob reg to match dly on data out of mem (should move to reg address instead of data)
     }
   }}
@@ -756,15 +737,10 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
     memBanks.io.calcAddr(i) := newCalcAddr(i).asOutput //calcAddr
   }
 
-  /*// Debug
-  for (i <- 0 until generalConstants.numBanks){
-    memBanks.io.y(i) := pipeD(memBanks.io.x(i) * Complex(double2T(10.0),double2T(0)),pipeBFWriteDly).asInstanceOf[Complex[T]]
-  }*/
 
 
-  /* val butterfly2 = DSPModule(new PE(gen,num = peNum), nameExt = peNum.toString)
-   val bfio = new PEIO(gen)
-   bfio <> butterfly2.io*/
+
+
 
   // butterfly has 2x
   // *** mem rad needs 4 to 2
@@ -781,7 +757,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 
 
-  val CalcCtrl = DSPModule(new CalcCtrl(butterfly.delay + 1))
+  val CalcCtrl = DSPModule(new CalcCtrl)
   CalcCtrl.ioCtrl.enable := globalInit.ioCtrlO.enable
   CalcCtrl.ioCtrl.reset := globalInit.ioCtrlO.reset
   CalcCtrl.generalSetup <> GeneralSetup.o

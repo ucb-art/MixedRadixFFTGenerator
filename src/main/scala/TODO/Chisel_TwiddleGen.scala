@@ -1,202 +1,229 @@
-/*package FFT
+package FFT
 import ChiselDSP._
-import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
+import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, Counter => _, _}
 
-class TwiddleGenO extends IOBundle {
-  val o = Vec(Params.getBF.rad.max-1,Complex(gen))
+class TwiddleGenO[T <: DSPQnm[T]](gen : => T) extends IOBundle {
+  val twiddles = Vec(Params.getBF.rad.max-1,Complex(gen))
 }
 
-class IOFlags extends IOBundle{
-  // IO in DIF mode?
-  val isDIF = DSPBool(OUTPUT)
-  // IO using mem B?
-  val isMemB = DSPBool(OUTPUT)
-  // IO is about to wrap
-  val wrapCond = DSPBool(OUTPUT)
-}
+class TwiddleGen[T <: DSPQnm[T]](gen : => T) extends GenDSPModule(gen) {
 
-class IOCtrl extends DSPModule {
+  val intDly = List(1,1)
 
-  // TODO: Get rid of debug
-  val ioFlagsNoDelay = new IOFlags
-
-  // TODO: Should pipe 1x or clkRatio?
-  // Internal delay from expected with reset, enable to output ioAddr, ioBank
-  val intDelay = 1
-
-  val ctrl = new IOCtrlIO
+  // twiddleCounts, twiddleSubCounts, twiddleMuls
+  val twiddleSetup = (new TwiddleSetupO).flip
+  // currStage, we, isDIT, reset
+  val calcCtrlFlag = (new CalcCtrlFlags).flip
+  // stagePrimeIdx
   val ioSetup = (new IOSetupO).flip
-  val generalSetup = (new GeneralSetupO).flip
-  val o = new nToAddrBankIO
-  val ioFlags = new IOFlags
 
-  val usedLoc = ioSetup.usedLoc
-  val isUsed = ioSetup.isUsed
-  val counterPrimeDigits = ioSetup.counterPrimeDigits
+  val o = new TwiddleGen(gen)
 
-  // IO Mod N counters (first set does (n+1)%coprime, second set does (r+Q)%coprime, with wrap
-  // condition off of the first set; reused for DIT/DIF)
-  val (ioIncCounters, ioQCounters) = Params.getIO.global.map{ case (prime,rad,maxCoprime) => {
-    val c1 = BaseNIncCounter(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioInc_rad_" + rad.toString)
-    val c2 = BaseNAccWithWrap(rad, maxCoprime, Params.getIO.clkRatio, nameExt = "ioQ_rad_" + rad.toString)
-    // TODO: Double check timing is ok
-    c1.ctrl.reset := ctrl.reset
-    c2.ctrl.reset := ctrl.reset
-    c1.ctrl.en.get := ctrl.enable
-    c2.ctrl.en.get := ctrl.enable
-    (c1, c2)
-  }}.unzip
+  // TODO: Function-ize
+  // Gets associated twiddle counter max, sub counter max, & mul for each stage
+  val twiddleCountUsed = twiddleSetup.twiddleCounts.zipWithIndex.foldLeft(DSPUInt(0))((accum,e) => {
+    (e._1 ? (calcCtrlFlag.currStage === DSPUInt(e._2))) | accum
+  })
+  val twiddleSubCountUsed = twiddleSetup.twiddleSubCounts.zipWithIndex.foldLeft(DSPUInt(0))((accum,e) => {
+    (e._1 ? (calcCtrlFlag.currStage === DSPUInt(e._2))) | accum
+  })
+  val twiddleMulUsed = twiddleSetup.twiddleMuls.zipWithIndex.foldLeft(DSPUInt(0))((accum,e) => {
+    (e._1 ? (calcCtrlFlag.currStage === DSPUInt(e._2))) | accum
+  })
 
-  val ioIncCounterUsed = ioIncCounters.zip(isUsed)
-  // TODO: Custom function, is this redundant logic somewhere? -- don't need to check used, just check max?
-  // Wrap when used counters are maxed (held for IO clock)
-  val frameWrapCond = ioIncCounterUsed.tail.foldLeft({
-    val (counter, used) = ioIncCounterUsed.head
-    val max = counter.ctrl.isMax
-    (used & max) | (!used)
-  })( (accum,e) => {
-    val (counter,used) = e
-    val max = counter.ctrl.isMax
-    ((used & max) | (!used)) & accum
-  }) & ctrl.enable
-  // Match ioAddr/ioBank delay
-  ioFlags.wrapCond := frameWrapCond.pipe(intDelay)
-  ioFlagsNoDelay.wrapCond := frameWrapCond
 
-  // Is MemB the current memory used for IO?
-  // Alternates every frame (starts true after reset)
-  val ioMemB = RegInit(DSPBool(false))
-  val ioMemBTemp = Mux(frameWrapCond,!ioMemB,ioMemB)
-  ioMemB := ctrl.reset | (!ctrl.reset & ioMemBTemp)
-  // Match ioAddr/ioBank delay
-  ioFlags.isMemB := ioMemB.pipe(intDelay)
-  ioFlagsNoDelay.isMemB := ioMemB
+  class TwiddleCounter extends Counter(CountParams(
+    countMax = twiddleSetup.twiddleCounts.map(x => x.getRange.max.intValue).max
+  ))
+  class TwiddleSubCounter extends Counter(CountParams(
+    countMax = twiddleSetup.twiddleSubCounts.map(x => x.getRange.max.intValue).max
+  ))
 
-  // Is IO in DIF mode?
-  // Note: switches every other frame. After startFrameIn, true for 1 frame,
-  // then false for 2 frames, then true for 2 frames.
-  val ioDIF = RegInit(DSPBool(false))
+  // TODO: Make a vec of counters?
+  val twiddleCounter = DSPModule (new TwiddleCounter, "twiddleCounter")
+  val twiddleSubCounter = DSPModule (new TwiddleSubCounter, "twiddleSubCounter")
+  twiddleCounter.io.max.get := twiddleCountUsed
+  twiddleSubCounter.io.max.get := twiddleSubCountUsed
+  twiddleCounter.iCtrl.reset := calcCtrlFlag.reset
+  twiddleSubCounter.iCtrl.reset := calcCtrlFlag.reset
+  twiddleSubCounter.iCtrl.change.get := calcCtrlFlag.we
+  twiddleCounter.iCtrl.change.get := twiddleSubCounter.oCtrl.change.get
 
-  // DIF DIT DIT DIF DIF
-  // B   A   B   A   B
-  // ioDIF transitions ever B -> A
+  // Complete twiddle address
+  val twiddleAddr = (twiddleCounter.io.out * twiddleMulUsed).shorten(Params.getTw.addrMax).pipe(intDly.head)
 
-  val ioDIFTemp = Mux(frameWrapCond & ioMemB,!ioDIF,ioDIF)
-  ioDIF := ctrl.reset | (!ctrl.reset & ioDIFTemp)
-  // Match ioAddr/ioBank delay
-  ioFlags.isDIF := ioDIF.pipe(intDelay)
-  ioFlagsNoDelay.isDIF := ioDIF
+  // Originally columns associated with twiddles up to radix-1, but want to address column first
+  val twiddleList = Params.getTw.vals.map(_.transpose)
+  val twiddleLUTs = twiddleList.zipWithIndex.map{ case (primeSet,primeSetIdx) => {
+    val setMaxRadix = Params.getIO.global(primeSetIdx)._2
+    primeSet.zipWithIndex.map{ case (radixSet,radixSetIdx) => {
+      // For each radix, radix-1 twiddle factors fed into butterfly (positions 1 to radix-1)
+      val setButterflyInput = radixSetIdx + 1
+      DSPModule(new ComplexLUT(radixSet,gen),"twiddleLUT_radix" + setMaxRadix + "_idx" + setButterflyInput)
+    }}
+  }}
 
-  // Out valid should go high at the start of the 3rd frame (takes 2 frames to input + calculate)
-  // This is on first IO A-> B transition with DIT
-  val outValid = RegInit(DSPBool(false))
-  val outValidTransitionCond = frameWrapCond & !ioMemB & !ioDIF
-  val outValidNext = !ctrl.reset & (outValidTransitionCond | outValid)
-  outValid := outValidNext
-  ctrl.outValid := outValid.pipe(intDelay)
+  // Get prime index (associated with List (1) ++ global) for current stage
+  val currPrimeIdx = ioSetup.stagePrimeIdx.zipWithIndex.foldLeft(DSPUInt(0))((accum,e) => {
+    (e._1 ? (calcCtrlFlag.currStage === DSPUInt(e._2))) | accum
+  })
 
-  // TODO: kReset conditions redundant
-  // K starts counting output # (mod FFT size) when output is valid
-  val kEnableStart = !outValid & outValidNext & ctrl.enable
-  val kEnable = (kEnableStart | outValid & ctrl.enable)
-  val kReset = (kEnableStart) | ctrl.reset
-
-  val kCounter = IncReset(Params.getFFT.sizes.max-1,nameExt="kOffset")
-  kCounter.iCtrl.reset := kReset
-  kCounter.iCtrl.change.get := kEnable
-  ctrl.k := kCounter.io.out.pipe(intDelay)
-
-  val isLastLoc = Vec(usedLoc.map(e => {
-    // Is last used location? (not dependent on anything else)
-    // Note: Misnomer: DIF = last; DIT = first (b/c counters should be flipped)
-    val lastLoc = Mux(ioDIF,DSPUInt(usedLoc.length-1),DSPUInt(0))
-    (e === lastLoc)
-  }))
-
-  // TODO: If order is consistent, get rid of extra logic
-  // TODO: Can you leverage previous counter's wrap conditions?
-  // Change flag for IO Inc Counters
-  val ioIncChange = Vec(usedLoc.zipWithIndex.map{case (usedLocE,i) => {
-    // Get other counters not including this
-    val otherCounters = ioIncCounters.zipWithIndex.filter(_._2 != i)
-    // This counter should update when the counters to its right wrap
-    val changeTemp = otherCounters.foldLeft(DSPBool(true))( (accum,counterIdx) => {
-      // Note, if a particular counter is unused, corresponding counterLoc will = 0 --> will not affect
-      // "true-ness" of changeTemp
-      val counterLoc = usedLoc(counterIdx._2)
-      // Note: Misnomer: DIF = right; DIT = left (b/c counters should be flipped)
-      // Also, when a counter is unused, the location defaults to 0. For DIF, this is ok, because
-      // 0 is never to the right of anything; for DIT, the location condition by itself is insufficient
-      val isRight = Mux(ioDIF,counterLoc > usedLocE, counterLoc < usedLocE)
-      val isRightUsed = isRight & isUsed(counterIdx._2)
-      ((counterIdx._1.ctrl.isMax ? isRightUsed) | (!isRightUsed) ) & accum
-    })
-    // Only update counter if actually used; note that if the counter is the right-most counter, it should always change
-    isUsed(i) & (changeTemp | isLastLoc(i))
+  // Assign the right address to the twiddle LUTs (0 if current LUT not needed)
+  // TODO: Don't need?
+  val assignedTwiddleAddrs = Vec(twiddleLUTs.zipWithIndex.map{ case(lut,i) => {
+    twiddleAddr ? (currPrimeIdx === DSPUInt(i))
   }})
 
-  val counterQs = Mux(ioDIF,ioSetup.counterQDIFs,ioSetup.counterQDITs)
 
-  // First layer counter outputs (see counters above)
-  val (ioIncCountsX,ioQCountsX) = ioIncCounters.zip(ioQCounters).zipWithIndex.map{case ((ioIncCounter,ioQCounter),i) =>{
-    // Assign # of base-r digits for modding each counter
-    // TODO: Debug? There's a cross-module error for counterPrimeDigits if I directly use shorten. To get around that,
-    // I did redundant << then >> operations that should be optimized out in hardware...
-    val counterPrimeDigitShort = ((counterPrimeDigits(i) << 1) >> 1).shorten(ioIncCounter.io.primeDigits.getRange.max)
-    ioIncCounter.io.primeDigits := counterPrimeDigitShort
-    ioQCounter.io.primeDigits := counterPrimeDigitShort
-    // Assign change condition to each IO counter
-    ioIncCounter.ctrl.change.get := ioIncChange(i)
-    // TODO: Cannot mix directions on left hand side of := ??? --> .asOutput
-    ioQCounter.io.inc.get := counterQs(i).padTo(ioQCounter.io.inc.get.length).asOutput
-    ioQCounter.ctrl.wrap.get := ioIncChange(i)
-    val ioIncCount = ioIncCounter.io.out.cloneType
-    ioIncCount := ioIncCounter.io.out
-    val ioQCount = ioQCounter.io.out.cloneType
-    ioQCount := ioQCounter.io.out
-    (ioIncCount,ioQCount)
-  }}.unzip
-  val ioIncCounts = Vec(ioIncCountsX)
-  val ioQCounts = Vec(ioQCountsX)
 
-  // IO indexing when broken into coprimes (before decomposition into relevant radices)
-  val coprimeCountsX = ioIncCounts.zipWithIndex.map {case (e,i) => {
-    val modSum = (e + ioQCounts(i)).maskWithMaxCheck(counterPrimeDigits(i))._1
-    // If radix 2 is used in the FFT decomposition, convert Base-4 representation to mixed radix
-    // [4,4,...4,2] representation (Note that doing x.rad still results in 4)
-    // TODO: Generalize?
-    if (modSum.rad == 4 && Params.getBF.rad.contains(2)) {
-      val temp = Mux(generalSetup.use2 & ioDIF,modSum.toRad42(),modSum)
-      Pipe(temp,intDelay)
+
+
+
+
+
+  /*val assignedTwiddleAddrsDIT = Pipe(assignedTwiddleAddrs,)
+
+    // calcnbankaddr dly
+
+  nToAddrAndAddrToMemDly
+    Pipe(twiddleAddrX(i), toAddrBankDly(1) + toMemAddrDly).asInstanceOf[UInt]
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+  val calcDITD1 = Bool();
+  calcDITD1 := Pipe(calcDIT, toAddrBankDly.sum + toMemAddrDly).asInstanceOf[Bool]
+
+
+
+
+
+
+  // TODO: Rename LUTs
+  for (i <- 0 until twiddleArray.length; j <- 0 until twiddleArray(i).length) {
+    // i corresponds to particular coprime; j corresponds to which twiddle brought out; all twiddles for particular coprime brought out with same address in
+    val DITtwiddleAddr = Count(null, twiddleAddrMax); DITtwiddleAddr := Pipe(twiddleAddrX(i), toAddrBankDly(1) + toMemAddrDly).asInstanceOf[UInt]
+    // Twiddles delayed by wftaDly cycles in DIF (multiplication occurs after WFTA)
+    val DIFtwiddleAddr = Count(null, twiddleAddrMax); DIFtwiddleAddr := Pipe(DITtwiddleAddr, wftaDly).asInstanceOf[UInt]
+    val tempAddr = muxU(DIFtwiddleAddr, DITtwiddleAddr, calcDITD1)
+    twiddleLUT(i)(j).addr := DSPUInt(tempAddr,twiddleLUT(i)(j).addr.getRange.max )
+    twiddles(i)(j) := twiddleLUT(i)(j).dout
+    debug(twiddles(i)(j))
+
+    //println(twiddles(i)(j).real.getRange + "," + twiddles(i)(j).imag.getRange)
+  }
+
+  // e^0 = 1 + 0 j ( = twiddle fed to butterfly's 0th input/output)
+  val e0Complex = Complex(double2T(1), double2T(0))
+
+  val twiddleXReal = Vec.fill(generalConstants.maxRadix - 1) {
+    gen.cloneType()
+  }
+  val twiddleXImag = Vec.fill(generalConstants.maxRadix - 1) {
+    gen.cloneType()
+  }
+
+  // Radix-M requires M-1 twiddle factors
+  for (i <- 0 until twiddleXReal.length) {
+    if (i == 0) {
+      twiddleXReal(i) := e0Complex.real // DIF radix-2 has twiddles W^0_N = 1 (calculated last in a 2^N FFT so no special twiddle needed) - default
+      twiddleXImag(i) := e0Complex.imag
     }
-    else Pipe(modSum,intDelay)
-  }}
-  // Note: need to have same lengths for addressing
-  val matchCoprimeCountLengths = coprimeCountsX.map(_.length).max
-  val coprimeCounts = Vec(coprimeCountsX.map(e => BaseN(e, e.rad).padTo(matchCoprimeCountLengths)))
+    else {
+      // Default twiddle value for butterfly indices with larger N = those associated with
+      // largest radix (i.e. for radix-5, all inputs 1-4 (except 0) would need to use
+      // twiddles associated with radix 5)
+      if (generalConstants.validRadices(0) > generalConstants.validRadices(generalConstants.validRadices.length - 1)) {
+        // If the first valid radix is larger then the last one (i.e. when only radix 4,2,3 supported rather than 5)
+        // the default would be associated with radix-4 rather than radix-3 (left most)
+        twiddleXReal(i) := twiddles(0)(i).real
+        twiddleXImag(i) := twiddles(0)(i).imag
+      }
+      else {
+        // If radix-4 isn't the largest, then the largest prime used is the right-most one
+        twiddleXReal(i) := twiddles(twiddles.length - 1)(i).real
+        twiddleXImag(i) := twiddles(twiddles.length - 1)(i).imag
+      }
+    }
+    for (j <- generalConstants.validPrimes.length - 1 to 0 by -1) {
+      // All possible twiddle types (corresponding to valid primes)
+      var jj: Int = 0
+      if (j != 0 && generalConstants.rad4Used && generalConstants.pow2SupportedTF) {
+        // If radix=4 is used, corresponding radix index is + 1 of prime index (i.e. for 3,5)
+        jj = j + 1
+      }
+      else {
+        jj = j
+        // Note that radix-2 butterfly doesn't need specific twiddle; only radix-4 does for 2^N,
+        // so prime of 2 -> radix of 4 (same index)
+        // Otherwise, if radix-4 not used, then prime and radix indices should match
+      }
+      val radixTemp: Int = generalConstants.validRadices(jj)
+      if (radixTemp > i + 1) {
+        // i = input index -1; therefore i = 0 actually corresponds to second input since first input is trivial
+        // If I have twiddle inputs 0 to 4 corresponding with supporting up to radix-5,
+        // Where input 0 doesn't have an associated special twiddle
+        // Input 1 would need to support twiddles associated with radix-2,-3,-4,-5 (where radix-2 twiddle = trivial 1)
+        // Input 2 would need to support twiddles associated with radix-3,-4,-5
+        // Input 3 would need to support twiddles associated with radix-4,-5
+        // i.e. radix-3 only has input indices 0-2, so it doesn't need to be supported
+        // by higher input #'s
+        // Input 4 would need to support twiddles associated with radix-5
 
-  // Using delayed DIF flag
-  val digitIdx = Mux(ioFlags.isDIF,ioSetup.digitIdxDIF,ioSetup.digitIdxDIT)
 
-  // TODO: Make foldLeft into DSPUInt lookup function, decide on MixedRad vs. Vec?
-  val nIOX = (0 until Params.getCalc.maxStages).map{ i => {
-    // Pick out used coprime @ stage; then pick out used digit of coprime @ stage
-    // Note: coprimeCounts uses global; stagePrimeIdx is _ ++ global i.e. prime = 1 to keep track of unused primes
-    val coprime = coprimeCounts.zipWithIndex.foldLeft(
-      MixedRad(Vec(matchCoprimeCountLengths,DSPUInt(0,Params.getBF.rad.max-1)))
-    )(
-      (accum,e) => accum | (MixedRad(e._1) ? (DSPUInt(e._2+1) === ioSetup.stagePrimeIdx(i)))
-    )
-    val digit = coprime.zipWithIndex.foldLeft(DSPUInt(0,Params.getBF.rad.max-1))(
-      (accum,e) => accum | (e._1 ? (digitIdx(i) === DSPUInt(e._2)))
-    )
-    Mux(ioSetup.stageIsActive(i),digit,DSPUInt(0))
-  }}
-  val nIO = Vec(nIOX)
+        // d2 = 1 + memAddrDly, wftaDly or not
 
-  val nToAddrBank = DSPModule(new nToAddrBank)
-  nToAddrBank.io.n := nIO
-  nToAddrBank.generalSetup <> generalSetup
-  o <> nToAddrBank.io
 
-}*/
+        val currentRadixDx = Count(null, maxRad);
+        currentRadixDx := Pipe(currentRadixD1, toAddrBankDly(1) + toMemAddrDly).asInstanceOf[UInt]
+        val currentRadixDx2 = Count(null, maxRad);
+        currentRadixDx2 := Pipe(currentRadixDx, wftaDly).asInstanceOf[UInt]
+        val cr = muxU(currentRadixDx2, currentRadixDx, calcDITD1) // NOTE TO SELF: DELAY CALCDIT appropriately even if still works
+
+        when(cr === UInt(radixTemp)) {
+          twiddleXReal(i) := twiddles(j)(i).real
+          twiddleXImag(i) := twiddles(j)(i).imag
+        }
+      }
+    }
+    debug(twiddleXReal(i))
+    debug(twiddleXImag(i))
+  }
+
+
+  // seq read dly
+  // Total delay: 3 cycles
+
+
+  val twiddleX = Vec((0 until generalConstants.maxRadix - 1).map(i => {
+    Complex(twiddleXReal(i), twiddleXImag(i)).pipe(1)
+
+  }))
+
+
+
+  debug(twiddleX)
+
+ */
+
+}

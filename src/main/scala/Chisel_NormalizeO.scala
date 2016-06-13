@@ -37,10 +37,11 @@ class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val normalizeFactor = fftNormalizeFactor
 
   // TODO: Don't depend on trim defaults in complex!
-  io.dout := (io.din ** (normalizeFactor,Real)).trim(gen.getFracWidth)
+  io.dout := (io.din ** (normalizeFactor,Real, mPipe = Params.getDelays.mulPipe)).trim(gen.getFracWidth)
 
   // Delay through this block
   val delay = io.dout.getDelay-io.din.getDelay
+  Status ("Output normalization module delay: " + delay)
 
 }
 

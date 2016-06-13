@@ -31,13 +31,12 @@ class IOCtrl extends DSPModule {
 
   // TODO: Should pipe 1x or clkRatio?
   // Internal delay from expected with reset, enable to n
-  val intDelay = 1
+  val intDelay = Params.getDelays.ioTop
 
   val ctrl = new IOCtrlIO
   val ioSetup = (new IOSetupO).flip
   val generalSetup = (new GeneralSetupO).flip
   val o = new nToAddrBankIO
-  // val ioFlags = new IOFlagsO
 
   val usedLoc = ioSetup.usedLoc
   val isUsed = ioSetup.isUsed
@@ -69,7 +68,6 @@ class IOCtrl extends DSPModule {
     ((used & max) | (!used)) & accum
   }) & ctrl.enable
   // Match ioAddr/ioBank delay
-  // ioFlags.wrapCond := frameWrapCond.pipe(intDelay)
   ioFlagsNoDelay.wrapCond := frameWrapCond
 
   // Is MemB the current memory used for IO?
@@ -78,7 +76,6 @@ class IOCtrl extends DSPModule {
   val ioMemBTemp = Mux(frameWrapCond,!ioMemB,ioMemB)
   ioMemB := ctrl.reset | (!ctrl.reset & ioMemBTemp)
   // Match ioAddr/ioBank delay
-  // ioFlags.isMemB := ioMemB.pipe(intDelay)
   ioFlagsNoDelay.isMemB := ioMemB
 
   // Is IO in DIF mode?
@@ -93,7 +90,6 @@ class IOCtrl extends DSPModule {
   val ioDIFTemp = Mux(frameWrapCond & ioMemB,!ioDIF,ioDIF)
   ioDIF := ctrl.reset | (!ctrl.reset & ioDIFTemp)
   // Match ioAddr/ioBank delay
-  // ioFlags.isDIF := ioDIF.pipe(intDelay)
   ioFlagsNoDelay.isDIF := ioDIF
 
   // Out valid should go high at the start of the 3rd frame (takes 2 frames to input + calculate)
@@ -209,6 +205,6 @@ class IOCtrl extends DSPModule {
   o <> nToAddrBank.io
 
   val delay = intDelay + nToAddrBank.delay
-  Status("Pipeline delay in IO Ctrl: " + delay)
+  Status("Total IO Ctrl delay: " + delay)
 
 }
