@@ -169,6 +169,13 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     traceOn = true
 
     if (Tracker.FFTN == 12) {
+
+      /*0 until 4).foreach{ i =>
+        if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
+          peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Error("twiddles")
+      }*/
+
+
       //peek(c.ioDIT)
       //peek(c.calcMemB)
       //peek(c.IOCtrl.ioIncCounters(0).ctrl.isMax)
@@ -188,7 +195,43 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       if (!a.sameElements(b) && Tracker.inStep >= 2) Error("------------cc")
     }*/
 
+    if (Tracker.FFTN == 192){
+      /*(0 until 4).foreach{ i =>
+        if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
+          peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Error("twiddles")
+      }*/
+
+
+      if (Tracker.inStep >= 2 && Tracker.inStep < 30){
+      peek(c.TwiddleGen.currentTwiddleAddrs)
+      peek(c.twiddleAddr)
+
+        (0 until 4).foreach{ i =>
+          if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
+            peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Status("twiddles")
+        }
+
+      }
+
+
+    }
+
     traceOn = temp
+
+    /*if (Tracker.FFTN != 192)
+      (0 until 4).foreach{ i =>
+      if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
+        peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Error("twiddles")
+    }*/
+
+    /*c.butterfly.io.twiddles.zip(c.TwiddleGen.o.twiddles).foreach{ e => {
+      peek(e._1)
+      //if (!peek(o).toList.sameElements(peek(n).toList) & Tracker.inStep >= 2) Error("twiddles")
+    }}*/
+
+    //peek(c.butterfly.io.twiddles)
+
+
 
     //if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
     //if (peek(c.ioAddr) != peek(c.IOCtrl.o.addr) && Tracker.inStep >= 2) Error("addr")
@@ -210,7 +253,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //peek(c.IOSetup.o.stagePrimeIdx)
     //if (!peek(c.twiddleCount).toList.sameElements(peek(c.TwiddleSetup.o.twiddleCounts).toList)) Error("twiddlecnt")
     //if (!peek(c.twiddleSubCountMax).toList.sameElements(peek(c.TwiddleSetup.o.twiddleSubCounts).toList)) Error("twiddlesubcount")
-    peek(c.TwiddleSetup.o.twiddleCounts)
+    //peek(c.TwiddleSetup.o.twiddleCounts)
 
     //if (!peek(c.twiddleMul).toList.sameElements(peek(c.TwiddleSetup.o.twiddleMuls).toList)) Error("twiddlerenorm")
     traceOn = temp

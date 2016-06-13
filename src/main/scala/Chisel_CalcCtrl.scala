@@ -1,5 +1,3 @@
-// TODO: Check for mistakes?
-
 package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, Counter => _, _}

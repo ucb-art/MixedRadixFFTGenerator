@@ -199,9 +199,19 @@ case class PipelineParams (
   // Memory output is registered
   var memOutReg: Boolean = true,
   // Memory sequential read (address delayed)
-  var memSeqRead: Boolean = true
+  var memSeqRead: Boolean = true,
+
+  // Delay from memBankInterface input controls -> Memory control + r/w address inputs
+  var memArbiterTop: Int = 1,
+
+  // Twiddle address generation address = count * mul delay
+  var twiddleAddrGen: Int = 4
 
 ){
+
+  if (calcCtrl != ioCtrl) Error("Calculation + IO control delays must match")
+  if ((calcCtrl + memArbiterTop + memSeqReadDly) != twiddleAddrGen)
+    Error("Twiddle address must be valid when address into (internal) data memory is valid")
 
   // Delay between read address valid and dout
   def memReadAtoD = memOutRegDly + memSeqReadDly
@@ -209,7 +219,7 @@ case class PipelineParams (
   def memSeqReadDly = {if (memSeqRead) 1 else 0}
 
   // Total pipeline delay in CalcCtrl
-  def calcCtl = nToAddrBank + calcTop
+  def calcCtrl = nToAddrBank + calcTop
 
   // Total pipeline delay in IOCtrl
   def ioCtrl = nToAddrBank + ioTop

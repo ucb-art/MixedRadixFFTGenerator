@@ -691,11 +691,11 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val eq2 = DSPBool(rad.toUInt === UInt(2))
 
 
-  butterfly.io.twiddles.zipWithIndex.foreach{case (e,i) => {
+ /* butterfly.io.twiddles.zipWithIndex.foreach{case (e,i) => {
     if (i < generalConstants.maxRadix-1){
       e := twiddleX(i).reg() // noob reg to match dly on data out of mem (should move to reg address instead of data)
     }
-  }}
+  }}*/
 
 
   // Can update twiddle port in butterfly??
@@ -763,9 +763,18 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   CalcCtrl.generalSetup <> GeneralSetup.o
   CalcCtrl.ioFlags <> IOCtrl.ioFlagsNoDelay
   CalcCtrl.calcCtrlI <> globalInit.calcCtrlO
-  if (CalcCtrl.delay != IOCtrl.delay) Error("Delays must match")
+
+  val TwiddleGen = DSPModule(new TwiddleGen(gen))
+  TwiddleGen.twiddleSetup <> TwiddleSetup.o
+  TwiddleGen.calcCtrlFlag <> CalcCtrl.calcFlagsNoDelay
+  TwiddleGen.ioSetup <> IOSetup.o
 
 
+  butterfly.io.twiddles.zipWithIndex.foreach{case (e,i) => {
+    if (i < generalConstants.maxRadix-1){
+      e := TwiddleGen.o.twiddles(i) // noob reg to match dly on data out of mem (should move to reg address instead of data)
+    }
+  }}
 
 
 
