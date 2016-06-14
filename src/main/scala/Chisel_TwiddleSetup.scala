@@ -70,8 +70,10 @@ class TwiddleSetup extends DSPModule{
   }))
 
   // For a given stage i, the radix of the previous stage (i-1)
-  val prevStageRad = Vec(List(DSPUInt(1)) ++ generalSetup.stageRad.init)
-  val stageRadPrevStageRad = generalSetup.stageRad.zip(prevStageRad)
+  // TODO: Get rid of delay on stageRad (weird cross-boundary issue)
+  val stageRad = Pipe(generalSetup.stageRad,1)
+  val prevStageRad = Vec(List(DSPUInt(1)) ++ stageRad.init)
+  val stageRadPrevStageRad = stageRad.zip(prevStageRad)
 
   // Longest twiddle memory length needed
   val maxTwiddleMemLen = Params.getTw.vals.map(x => x.length).max
@@ -95,7 +97,7 @@ class TwiddleSetup extends DSPModule{
   // Radix 2 always doesn't have any non-trivial twiddles (i.e. 1)
   o.twiddleMuls := {
     if (Params.getBF.rad.contains(2))
-      Vec(twiddleMuls.zip(generalSetup.stageRad).map(x => {
+      Vec(twiddleMuls.zip(stageRad).map(x => {
         Mux(x._2 === DSPUInt(2),DSPUInt(0),x._1).pipe(1)
       }))
     else twiddleMuls

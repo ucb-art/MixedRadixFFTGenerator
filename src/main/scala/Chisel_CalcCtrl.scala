@@ -2,6 +2,20 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, Counter => _, _}
 
+class StageCounter extends Counter(CountParams(
+  countMax = Params.getCalc.maxStages-1,
+  wrapCtrl = External,
+  countType = UpDown,
+  customWrap = true
+))
+
+class StallCounter(PEandMemOutRegDly: Int) extends Counter(CountParams(
+  countMax = PEandMemOutRegDly,
+  resetVal = PEandMemOutRegDly
+))
+
+class CalcCounter extends Counter(CountParams(countMax = Params.getBF.rad.max-1))
+
 class CalcCtrlI extends IOBundle {
   val enable = DSPBool(INPUT)
 }
@@ -68,12 +82,6 @@ class CalcCtrl extends DSPModule {
   calcFlagsNoDelay.reset := calcReset
 
   // (Local) Stage Counter
-  class StageCounter extends Counter(CountParams(
-    countMax = Params.getCalc.maxStages-1,
-    wrapCtrl = External,
-    countType = UpDown,
-    customWrap = true
-  ))
   val stageCounter = DSPModule(new StageCounter,"stageCounter")
   // TODO: Do I need this cloneType?
   val currentStage = stageCounter.io.out.cloneType
@@ -131,7 +139,6 @@ class CalcCtrl extends DSPModule {
   val isLeftMostStage = (currentStage === DSPUInt(0))
 
   // Stage counters
-  class CalcCounter extends Counter(CountParams(countMax = Params.getBF.rad.max-1))
   val calcCounters = maxStageCountUsed.zipWithIndex.map{case (max,i) => {
     val counter = DSPModule(new CalcCounter,"calcCounters_" + i)
     counter.io.max.get := max
@@ -178,11 +185,8 @@ class CalcCtrl extends DSPModule {
   // results (don't write stale values). Subsequent stages expect that the current stage has finished calculating,
   // which pipelining messes up. Therefore, you need to stall. When stalling, you hold n counters @ 0.
 
-  class StallCounter extends Counter(CountParams(
-    countMax = PEandMemOutRegDly,
-    resetVal = PEandMemOutRegDly
-  ))
-  val stallCounter = DSPModule (new StallCounter, "stallCounter")
+  // TODO: Check OutReg or RAtoD
+  val stallCounter = DSPModule (new StallCounter(PEandMemOutRegDly), "stallCounter")
   val stallCount = stallCounter.io.out.cloneType
   stallCount := stallCounter.io.out
   // Note: this DOESN'T contain enable

@@ -99,7 +99,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 
 
-// CHECK BELOW, add IFFT back in
+// CHECK BELOW, add IFFT back in capitalize bf
 
 
 
