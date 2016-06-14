@@ -253,7 +253,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     //if (!a.sameElements(b) && Tracker.inStep >= 2) Error("------------cc")
 
     //if (!peek(c.calcBank).toList.sameElements(peek(c.CalcCtrl.o.banks).toList) && Tracker.inStep >= 2) Error("calcbanks")
-    //if (!peek(c.calcAddr).toList.sameElements(peek(c.CalcCtrl.o.addrs).toList) && Tracker.inStep >= 2) Error("calcaddrs")
+    //if (!peek(c.memBanks.io.calcAddr).toList.sameElements(peek(c.CalcCtrl.o.addrs).toList) && Tracker.inStep >= 2) Error("calcaddrs")
 
   }
   def setupDebug(): Unit = {

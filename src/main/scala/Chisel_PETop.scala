@@ -13,6 +13,8 @@ import ChiselDSP._
   */
 class PEIO[T <: DSPQnm[T]](gen : => T) extends WFTAIO(gen,outDlyMatch=false) {
 
+  // TODO: extend IO???
+
   // TODO: Check unused x, twiddles are 0ed externally, case out when FFTN <= 7 (no twiddles)
   // TODO: Pass input delays?
   // Double check for rad = 2, twiddles are all 1

@@ -89,6 +89,8 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   TwiddleSetup.generalSetup.stageRad := GeneralSetup.o.stageRad
   TwiddleSetup.ioSetup.stagePrimeIdx := IOSetup.o.stagePrimeIdx
 
+  val CalcCtrl = DSPModule(new CalcCtrl)
+
   // Anything where only 1 is used? shorten
 
 
@@ -299,8 +301,8 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   memBanks.io.ioBank := ioBank
   memBanks.io.ioAddr := ioAddr
-  memBanks.io.calcMemB := calcMemB
-  memBanks.io.calcDoneFlag := calcDoneFlagD
+  memBanks.io.calcMemB := (!IOCtrl.ioFlagsNoDelay.isMemB).pipe(toAddrBankDly.sum).toBool  // not delayed in my version
+  memBanks.io.calcDoneFlag := (!CalcCtrl.calcFlagsNoDelay.we).pipe(toAddrBankDly.sum).toBool  //not delayed in my version
 
   val currentRadixD2 = Pipe(currentRadix,2)//Reg(next = currentRadixD1)
 
@@ -321,7 +323,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   debug(newCalcAddr)
 
 
-  memBanks.io.discardCalcWrite := Pipe(discardCalcWrite,toAddrBankDly.sum).asInstanceOf[Bool]
+  memBanks.io.discardCalcWrite :=(!CalcCtrl.calcFlagsNoDelay.we).pipe(toAddrBankDly.sum).toBool//Pipe(discardCalcWrite,toAddrBankDly.sum).asInstanceOf[Bool]
 
   // If first value comes in when reset is asserted high,
   // there is a delay until address to the memory is valid
@@ -351,10 +353,13 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
     0
   }
 
+  // NEW VERSION EXPECTS MEMADDRDLY INTERNAL SO LESS THAT
+
+
   // reset held for ioToCalcClkRatio cycles -> Count 0 valid on the 1st cycle reset is low
   memBanks.io.Din := Pipe(DINused,ioToCalcClkRatio+toAddrBankDly.sum+toMemAddrDly).asInstanceOf[Complex[T]]
 
-  memBanks.io.ioWriteFlag := Pipe(ioWriteFlag,0).toBool
+  memBanks.io.ioWriteFlag := IOCtrl.ioFlagsNoDelay.we //Pipe(ioWriteFlag,0).toBool
 
   val firstDataFlag = Reg(next = calcMemChangeCond && ~ctrl.reset.toBool)	// Cycle 0 - don't output when first frame is being fed in (output data not valid)
 
@@ -416,14 +421,51 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val tempcurrRad = Mux(currentRadixD2 === UInt(2),UInt(4),currentRadixD2).toUInt
 
   Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
-  memBanks.io.currRad := Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
+  // dly through calc
+  memBanks.io.currRad := CalcCtrl.calcFlagsNoDelay.currRadNum.pipe(2).toUInt
+
+  //Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
+
+
+
+
+
+
+
+
 
 
   val currRad = Vec((0 until butterfly.wfta.p.rad.length).map( x => { val r = DSPBool(); r := DSPBool(rad === Count(butterfly.wfta.p.rad(x))); r }))
 
   // ***** CHANGED FOR 2048 */
-  butterfly.io.currRad.get := currRad //Vec(currRad(0),currRad(1))
-  butterfly.io.calcDIT := DSPBool(calcPhaseD3)
+  // for calc dly
+  butterfly.io.currRad.get := Pipe(CalcCtrl.calcFlagsNoDelay.currRad,2+toMemAddrDly+seqRdDly)    //currRad //Vec(currRad(0),currRad(1))
+
+
+
+
+
+
+
+
+
+  butterfly.io.calcDIT := CalcCtrl.calcFlagsNoDelay.isDIT.pipe(2+toMemAddrDly+seqRdDly)
+
+
+
+  //  val calcPhaseD3 = Pipe(calcDIT,toAddrBankDly.sum+toMemAddrDly+seqRdDly)
+
+  // DSPBool(calcPhaseD3)
+
+
+
+
+
+
+
+
+
+
 
 
   for (i <- 0 until butterfly.wfta.p.rad.max) {//generalConstants.maxRadix){
@@ -435,8 +477,8 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
   // CHANGED
   for (i <- 0 until butterfly.wfta.p.rad.max) {
-    memBanks.io.calcBank(i) := calcBank(i)
-    memBanks.io.calcAddr(i) := newCalcAddr(i).asOutput //calcAddr
+    memBanks.io.calcBank(i) := CalcCtrl.o.banks(i)//calcBank(i)
+    memBanks.io.calcAddr(i) := CalcCtrl.o.addrs(i)//newCalcAddr(i).asOutput //calcAddr
   }
 
 
@@ -461,7 +503,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   setup.done := SetupDone.io.done
 
 
-  val CalcCtrl = DSPModule(new CalcCtrl)
+  //val CalcCtrl = DSPModule(new CalcCtrl)
   CalcCtrl.ioCtrl.enable := globalInit.ioCtrlO.enable
   CalcCtrl.ioCtrl.reset := globalInit.ioCtrlO.reset
   CalcCtrl.generalSetup <> GeneralSetup.o

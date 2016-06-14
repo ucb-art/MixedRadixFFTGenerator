@@ -21,6 +21,8 @@ class CalcCtrlFlags extends IOBundle{
 
   val usedRads = Params.getBF.rad
 
+  // Current radix (as number) -- used by MemoryBank interface
+  val currRadNum = DSPUInt(OUTPUT,Params.getBF.rad.max)
   // Current radix -- for each used radix, true indicates it's the current one, false indicates it's not
   val currRad = Vec(usedRads.length,DSPBool(OUTPUT))
   // Current calculation stage
@@ -93,7 +95,7 @@ class CalcCtrl extends DSPModule {
 
 // TODO: NEEDED FOR SCHEDULING HACK. GENERALIZE AND REPLACE
 
-  val maxStageCountWithScheduling = {
+  val (maxStageCountWithScheduling,currRadNum,hack) = {
     // TODO: Generalize
     if (usedRad.contains(2) && usedRad.contains(4)){
       val idx2 = usedRad.indexOf(2)
@@ -104,11 +106,16 @@ class CalcCtrl extends DSPModule {
       // Also, not sure why noUse5 is needed (meets conditions for the two N's that went over 2x clock cycles)
       // For FFTNs with both radix 4 and radix 2, when operating in the radix-2 stage,
       // want to do 2 radix-2 butterflies in parallel --> halve radix 4 counts
-      val leftMost4MaxStageCount = Mux(currRad2AndUse4 & noUse5,DSPUInt(1),generalSetup.stageMaxCount.head)
-      Vec(List(leftMost4MaxStageCount) ++ generalSetup.stageMaxCount.tail)
+      val tcond = currRad2AndUse4 & noUse5
+      val leftMost4MaxStageCount = Mux(tcond,DSPUInt(1),generalSetup.stageMaxCount.head)
+      val stgCount = Vec(List(leftMost4MaxStageCount) ++ generalSetup.stageMaxCount.tail)
+      // Membanks treat as radix 4
+      val newRad = Mux(tcond,DSPUInt(4),currRad)
+      (stgCount,newRad,tcond)
     }
-    else generalSetup.stageMaxCount
+    else (generalSetup.stageMaxCount,currRad,DSPBool(false))
   }
+  calcFlagsNoDelay.currRadNum := currRadNum
 
 // END SCHEDULING HACK
 
@@ -232,7 +239,21 @@ class CalcCtrl extends DSPModule {
   val calcAddr = Vec((0 until o.banks.length-1).scanLeft(nToAddrBank.io.addr)((accum,e) => {
     (accum + currStageAddrConstant).shorten(o.addrMax)
   }))
-  o.addrs := Pipe(calcAddr,intDly)
+  //o.addrs := Pipe(calcAddr,intDly)
+
+// TODO: NEEDED FOR SCHEDULING HACK. GENERALIZE AND REPLACE
+
+  val hackDelay = hack.pipe(nToAddrBank.delay)
+  val modAddrs = Vec(calcAddr.zipWithIndex.map{case (addr,i) => {
+    // To support 2x rad 2
+    if (i == 2 | i == 3){
+      Mux(hackDelay,calcAddr(i-2),addr)
+    }
+    else addr
+  }})
+  o.addrs := Pipe(modAddrs,intDly)
+
+// END HACK
 
   // Bank is just (bank0 + i)%maxRadix for the ith input to butterfly
   val bank0 = nToAddrBank.io.bank

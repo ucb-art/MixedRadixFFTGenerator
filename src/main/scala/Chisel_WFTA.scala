@@ -37,6 +37,7 @@ class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOB
 
   // TODO: WFTA have more fractional widths than memory?
   // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further, condition (**)
+  // Pull out conditions for multiple PEs
 
   val p = Params.getBF
   val maxRadAdj = if (p.rad.contains(2)) 4 else 0       // **

@@ -17,7 +17,7 @@ object ScheduleCalc {
           val newRad = if (rad == 2 && usedStages.contains(4) && !usedStages.contains(5)){rad * 2} else rad
           accum + fftn/newRad
         })
-        val pipeDelay = Params.getDelays.pe + Params.getDelays.memOutRegDly
+        val pipeDelay = Params.getDelays.pe + Params.getDelays.memReadAtoD
         val totalCycles = rad2cycles + usedStages.length * pipeDelay
         val maxAllowedCycles = Params.getIO.clkRatio*fftn
         if (totalCycles > maxAllowedCycles)

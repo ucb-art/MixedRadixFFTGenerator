@@ -2,16 +2,14 @@ f1
 
 scr
 
-check delays match with paper (from when i wasraddr=waddr checking)
 
-  // * memBanks (mem needs enable)
   // 3 multiplies
   // mem readen, test 100?, 3780
   // w0z
   // tilelink
-  // turn off valid -- check enable randomly turn off -- how affects? (maybe just bad output? but internally ok?) -- on all dspmodule pipes; check any regs in ctrl???
+  // turn off valid -- check enable randomly turn off -- how affects? (maybe just bad output? but internally ok?) -- on all dspmodule pipes; check any regs in ctrl??? -- on reset, what happens w/ pipe? all pipe elems should be 0'ed?: does it affect din?
 
-mode for running same data through many times for power
+
 
 
 test that outvalid goes low on new setup
@@ -30,37 +28,4 @@ Load setup reg write to start setup reg. Prob for setup done (stay high) write t
 -- another mode where it's one at a time
 
 ** see recent email -- continue for power
-
-
-TO MEM:
-
-newCalcAddr
-
-
-val eq2 = DSPBool(rad.toUInt === UInt(2))
-
-val tempcurrRad = Mux(currentRadixD2 === UInt(2),UInt(4),currentRadixD2).toUInt
-
-  Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
-  memBanks.io.currRad := Mux(numPower(3) === UInt(0),tempcurrRad,currentRadixD2)
-
-  memBanks.io.calcAddr(i) := newCalcAddr(i).asOutput //calcAddr
-
-
-
-
-
-  val rad2Dbl = (currentRadixD2.toUInt === UInt(2)).toBool & (numPower(0).toUInt =/= UInt(0)).toBool
-  val newCalcAddr = Vec(calcAddr.zipWithIndex.map { case (e, i) => {
-    val eNew = e.cloneType
-    eNew := e.toUInt
-    if (i == 2 || i == 3) {
-      val temp = calcAddr(i - 2).cloneType
-      temp := calcAddr(i - 2).toUInt
-      Mux(rad2Dbl, temp, e).toUInt
-    }
-    else eNew
-  }
-  })
-  debug(newCalcAddr)
 

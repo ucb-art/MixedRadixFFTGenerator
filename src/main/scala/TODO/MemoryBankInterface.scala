@@ -51,28 +51,28 @@ class memBanks[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   override val io = new  IOBundle {
 
-    val calcBank = Vec.fill(numBanks){Count(INPUT,bankMax)}
-    val calcAddr = Vec.fill(numBanks){Count(INPUT,addrMax)}
-    val ioBank = Count(INPUT,bankMax)
-    val ioAddr = Count(INPUT,addrMax)
+    val calcBank = Vec.fill(numBanks){Count(INPUT,bankMax)} //
+    val calcAddr = Vec.fill(numBanks){Count(INPUT,addrMax)} //
+    val ioBank = Count(INPUT,bankMax) //
+    val ioAddr = Count(INPUT,addrMax) //
 
-    val currRad = Count(INPUT,maxRad)
+    val currRad = Count(INPUT,maxRad) //
 
     // y (from butterflies) -> write to memory
     // read from memory -> x (to butterflies)
-    val y = Vec.fill(numBanks){Complex(gen,gen).asInput}
-    val x = Vec.fill(numBanks){Complex(gen,gen).asOutput}
-    val Din = Complex(gen,gen).asInput
-    val Dout = Complex(gen,gen).asOutput
+    val y = Vec.fill(numBanks){Complex(gen,gen).asInput} //
+    val x = Vec.fill(numBanks){Complex(gen,gen).asOutput} //
+    val Din = Complex(gen,gen).asInput //
+    val Dout = Complex(gen,gen).asOutput //
 
     // If Mem A is in calculation, Mem B is collecting IO
-    val calcMemB = Bool(INPUT)
+    val calcMemB = Bool(INPUT) //
     // If done, hold calculation memory values
-    val calcDoneFlag = Bool(INPUT)
+    val calcDoneFlag = Bool(INPUT) //
     // When to read/write IO (when calculation clock != IO clock)
-    val ioWriteFlag = Bool(INPUT)
+    val ioWriteFlag = Bool(INPUT) //
     // Don't save bad value (pipeline stall between stages)
-    val discardCalcWrite = Bool(INPUT)
+    val discardCalcWrite = Bool(INPUT) //
 
   }
 

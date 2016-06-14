@@ -48,7 +48,7 @@ object Params {
     io.coprimes = coprimes
     io.global = global
 
-    Status("Used butterfly radices: " + rad.toString)
+    Status("Used butterfly radices: " + rad.mkString(","))
 
     ScheduleCalc(calc.radPow,calc.radOrder,calc.maxStages)
 
@@ -61,8 +61,8 @@ object Params {
     mem.banks = numBanks
     mem.lengths = memLengths
 
-    Status("# memory banks: 2x " + numBanks)
-    Status("Memory bank lengths: " + memLengths.toString)
+    Status("# memory banks: 2x" + numBanks)
+    Status("Memory bank lengths: " + memLengths.mkString(","))
 
     val (twiddleCountMax,twiddleLUTScale,twiddles,twiddleSubcountMax) = Twiddles(io.coprimes,
                                                                                  io.global,

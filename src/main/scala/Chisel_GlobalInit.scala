@@ -2,6 +2,8 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
+// TODO: Refactor IO
+
 class GlobalInit extends DSPModule {
 
   // Comes directly from FFT top IO

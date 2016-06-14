@@ -22,6 +22,8 @@ class IOFlagsO extends IOBundle{
   val isMemB = DSPBool(OUTPUT)
   // IO is about to wrap
   val wrapCond = DSPBool(OUTPUT)
+  // Write enable
+  val we = DSPBool(OUTPUT)
 }
 
 class IOCtrl extends DSPModule {
@@ -54,6 +56,7 @@ class IOCtrl extends DSPModule {
     c2.ctrl.en.get := ctrl.enable
     (c1, c2)
   }}.unzip
+  ioFlagsNoDelay.we := ctrl.enable
 
   val ioIncCounterUsed = ioIncCounters.zip(isUsed)
   // TODO: Custom function, is this redundant logic somewhere? -- don't need to check used, just check max?
