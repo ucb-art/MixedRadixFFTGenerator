@@ -2,6 +2,13 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, Counter => _, _}
 
+class TwiddleCounter(max: Int) extends Counter(CountParams(
+  countMax = max
+))
+class TwiddleSubCounter(max: Int) extends Counter(CountParams(
+  countMax = max
+))
+
 class TwiddleGenO[T <: DSPQnm[T]](gen : => T) extends IOBundle {
   val twiddles = Vec(Params.getBF.rad.max-1,Complex(gen).asOutput)
 }
@@ -29,17 +36,14 @@ class TwiddleGen[T <: DSPQnm[T]](gen : => T) extends GenDSPModule(gen) {
     (e._1 ? (calcCtrlFlag.currStage === DSPUInt(e._2))) | accum
   })
 
-
-  class TwiddleCounter extends Counter(CountParams(
-    countMax = twiddleSetup.twiddleCounts.map(x => x.getRange.max.intValue).max
-  ))
-  class TwiddleSubCounter extends Counter(CountParams(
-    countMax = twiddleSetup.twiddleSubCounts.map(x => x.getRange.max.intValue).max
-  ))
-
   // TODO: Make a vec of counters?
-  val twiddleCounter = DSPModule (new TwiddleCounter, "twiddleCounter")
-  val twiddleSubCounter = DSPModule (new TwiddleSubCounter, "twiddleSubCounter")
+  val twiddleCounter = DSPModule (new TwiddleCounter(twiddleSetup.twiddleCounts.map(x => x.getRange.max.intValue).max),
+    "twiddleCounter"
+  )
+  val twiddleSubCounter = DSPModule (
+    new TwiddleSubCounter(twiddleSetup.twiddleSubCounts.map(x => x.getRange.max.intValue).max),
+    "twiddleSubCounter"
+  )
   twiddleCounter.io.max.get := twiddleCountUsed
   twiddleSubCounter.io.max.get := twiddleSubCountUsed
   twiddleCounter.iCtrl.reset := calcCtrlFlag.reset
