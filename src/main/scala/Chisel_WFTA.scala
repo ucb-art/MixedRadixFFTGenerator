@@ -24,9 +24,6 @@ object WFTA{
   val validRad = List(List(4,2),List(3),List(5),List(7))
   // WFTA stages
   val stages = List(Add,Add,Add,Mul,Add,Add,Add,Add)
-  // Input pipe amount
-  // TODO: Should this be parameterized?
-  val inPipe = 1
 
   def getValidRad = validRad.flatten
   def vRadIdx(rad: Int) = getValidRad.indexOf(rad)
@@ -38,9 +35,9 @@ case object Add extends StageType
 
 class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
 
-  // TODO: Don't use Complex.get*Pipe (not good for multiple blocks)
   // TODO: WFTA have more fractional widths than memory?
   // TODO: Pass input delay?, get rid of double negative across registers, optimize 2x rad 2 further, condition (**)
+  // Pull out conditions for multiple PEs
 
   val p = Params.getBF
   val maxRadAdj = if (p.rad.contains(2)) 4 else 0       // **
@@ -61,6 +58,9 @@ class WFTAIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOB
   */
 class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen) {
 
+  val inPipe = Params.getDelays.wftaInPipe
+  val dly = Params.getDelays.wftaInternalDelays
+
   // Output delays should be matched
   override val io = new WFTAIO(gen)
 
@@ -75,7 +75,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
     // Supported radix unused
     else if(!isUsed) DSPBool(false)
     // Otherwise matches valid radices to supported radices
-    else Pipe(io.currRad.get,WFTA.inPipe)(p.rad.indexOf(x))
+    else Pipe(io.currRad.get,inPipe)(p.rad.indexOf(x))
   }))
   debug(radIn)
 
@@ -96,7 +96,7 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
   // Assign internal "inputs" to 0 if >= max used radix
   val xp = Vec((0 until WFTA.getValidRad.max).map( i => {
     if (i >= maxRad) zero
-    else io.x(i).pipe(WFTA.inPipe)
+    else io.x(i).pipe(inPipe)
   }))
 
   // Input mux
@@ -110,20 +110,6 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
     ((xp(1) ? r2i) | (xp(4) ? r5i)) | ((xp(6) ? r7i) | (xp(2) ? r3r4i))
   )
   debug(x)
-
-  var count = 0
-  val addPipe = Complex.getAddPipe
-  // Spreads out add delays (handles addPipe < 1 too) + mul delays
-  val dly = WFTA.stages.map{ x => {
-    count = {
-      if (x != Add) 0
-      else if (floor(count*addPipe) == 1) 1
-      else count + 1
-    }
-    if (x == Mul) Complex.getMulPipe
-    else if (addPipe < 1) floor(count*addPipe).toInt
-    else floor(addPipe).toInt
-  }}
 
   // Values of rad(t) = outputs of delay stages @ t
   // i.e. rad(0) is the output of [radIn[Vec] fed through 1 delay stage]
@@ -328,6 +314,8 @@ class WFTA[T <: DSPQnm[T]](gen : => T , num: Int = 0) extends GenDSPModule (gen)
 
   // Total pipeline delay through WFTA butterfly
   val delay = io.getOutDelay-inputDelay
+
+  Status("WFTA delay: " + delay)
 
   // TODO: Check fftSizes = List(2) by itself case; change contains(2) to separate var 'isUsed2'
 }

@@ -2,8 +2,6 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
-// TODO: Add FFT?
-
 // TODO: Get rid of IO that's not used
 
 class SetupTopIO extends IOBundle {
@@ -11,7 +9,9 @@ class SetupTopIO extends IOBundle {
   val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount - 1)
   // Enable setup
   val enable = DSPBool(INPUT)
-  // Done with IO setup
+  // Is FFT? (otherwise IFFT)
+  val isFFT = DSPBool(INPUT)
+  // Done with setup
   val done = DSPBool(OUTPUT)
 }
 
@@ -29,16 +29,25 @@ class GeneralSetupO extends IOBundle {
   val prevPrimeStageSum = Vec(maxStages,DSPUInt(OUTPUT,maxStages))
   // Radix needed for each stage
   val stageRad = Vec(maxStages,DSPUInt(OUTPUT,globalMaxRad))
+  // Max count associated with each stage n
+  val stageMaxCount = Vec(maxStages,DSPUInt(OUTPUT,globalMaxRad-1))
   // Is radix 2 used in current FFT?
   val use2 = DSPBool(OUTPUT)
+
+// TODO: Get rid of after generalized
+// NEEDED FOR SCHEDULING HACK
+  // Is radix 4 used in current FFT?
+  val use4 = DSPBool(OUTPUT)
+  // Is radix 5 used in current FFT?
+  val use5 = DSPBool(OUTPUT)
+// END SCHEDULING HACK
+
   // Max radix needed in current FFT
   val maxRad = DSPUInt(OUTPUT,globalMaxRad)
   // Address constants for n -> address
-  // TODO: Write function
-  val addrConstants = Vec(Params.getMem.addrC.transpose.map(x => {
-    val stageACMax = x.max
-    DSPUInt(OUTPUT,stageACMax)
-  }))
+  val addrConstants = IntLUT2DHelper.getOutputType(Params.getMem.addrC)
+  // Right-most stage index
+  val rightMostStageIdx = DSPUInt(OUTPUT,maxStages-1)
 }
 
 class GeneralSetup extends DSPModule {
@@ -76,10 +85,21 @@ class GeneralSetup extends DSPModule {
     l := r.shorten(l.getRange)
   }}
 
+  // Right-most stage index
+  // TODO: Support wrap for DSPUInt
+  o.rightMostStageIdx := (o.radStageSum.last - DSPUInt(1)).shorten(o.rightMostStageIdx.getRange.max).pipe(1)
+
   // Radix associated with each stage (0 if unused for given FFT)
   o.stageRad := Vec((0 until Params.getCalc.maxStages).map(i => {
     // TODO: Check what happens with reverse in HDL?
     o.radStageSum.zip(radOrder).foldRight(DSPUInt(0))((e,accum) => Mux(DSPUInt(i) < e._1,e._2,accum)).pipe(1)
+  }))
+  // stageRad - 1 (max count for each stage n)
+  // TODO: Save logic?
+  o.stageMaxCount := Vec(o.stageRad.map(x => {
+    val diff = (x - DSPUInt(1)).shorten(Params.getBF.rad.max-1)
+    // Max stage count is still 0 if stage unused
+    Mux(x === DSPUInt(0),DSPUInt(0),diff).pipe(1)
   }))
 
   // Is 2 used for this FFT?
@@ -94,10 +114,17 @@ class GeneralSetup extends DSPModule {
   // TODO: Generalize?
   // Is 4 used for this FFT?
   val idx4 = possibleRad.indexOf(4)
-  val use4 = {
+  o.use4 := {
     // If 4 not required by any generated FFT sizes
     if (idx4 == -1) DSPBool(false)
-    else radIdxOrder.foldLeft(DSPBool(false))((accum,e) => accum | (e === DSPUInt(idx4)))
+    else radIdxOrder.foldLeft(DSPBool(false))((accum,e) => accum | (e === DSPUInt(idx4))).pipe(1)
+  }
+  // Is 5 used for this FFT?
+  val idx5 = possibleRad.indexOf(5)
+  o.use5 := {
+    // If 5 not required by any generated FFT sizes
+    if (idx5 == -1) DSPBool(false)
+    else radIdxOrder.foldLeft(DSPBool(false))((accum,e) => accum | (e === DSPUInt(idx5))).pipe(1)
   }
 
   // Max radix for given FFT (max of elements)
@@ -133,7 +160,7 @@ class GeneralSetup extends DSPModule {
         if (e == prevRadStageSum.head) e
         else {
           val is2Loc = radIdxOrder(i) === DSPUInt(possibleRad.indexOf(2))
-          val is2LocUse4 = is2Loc & use4
+          val is2LocUse4 = is2Loc & o.use4
           Mux(is2LocUse4, prevRadStageSum(i - 1), e)
         }
       }})
@@ -168,8 +195,7 @@ class GeneralSetup extends DSPModule {
 
   // Keep track of how long setup should take (+1 for RegNext on LUT out -- should be consistent throughout)
   val setupDelay = o.getMaxOutDelay() + 1
-  setupTop.done := setupTop.enable.pipe(setupDelay)
 
-  Status("General setup takes " + setupDelay + " clocks.")
+  Status("General setup delay (+1 for LUT): " + setupDelay)
 
 }

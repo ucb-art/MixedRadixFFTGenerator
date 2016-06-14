@@ -1,0 +1,31 @@
+f1
+
+scr
+
+
+  // 3 multiplies
+  // mem readen, test 100?, 3780
+  // w0z
+  // tilelink
+  // turn off valid -- check enable randomly turn off -- how affects? (maybe just bad output? but internally ok?) -- on all dspmodule pipes; check any regs in ctrl??? -- on reset, what happens w/ pipe? all pipe elems should be 0'ed?: does it affect din?
+
+
+
+
+test that outvalid goes low on new setup
+
+
+// rewrite tester
+
+
+
+
+
+
+
+Load setup reg write to start setup reg. Prob for setup done (stay high) write to data in mem. Start frame = run for n clocks. Keep storing k , valid out, data out. After n clocks stop. Read out output. Input new data. Different input but without reset command (after original, pause). Read out again. Repeat. Check when valid. Increment frame after k = fft size-1. Repeat.
+
+-- another mode where it's one at a time
+
+** see recent email -- continue for power
+

@@ -4,19 +4,18 @@ Module => _, ModuleOverride => _, when => _, switch => _, is => _, unless => _, 
 import ChiselDSP._
 
 // TODO: Pass enable, FFT/IFFT optional(!)
+// TODO: fftIdx should  be optional?
 
-class NormalizeIO[T <: DSPQnm[T]](gen : => T, outDlyMatch:Boolean = true) extends IOBundle (outDlyMatch = outDlyMatch) {
-  val in = Complex(gen).asInput
-  val normalizedOut = Complex(gen).asOutput
-  val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount-1)
-  val FFT = DSPBool(INPUT)
-
-  // TODO: fftIdx should  be optional? 
+class FFTIO[T <: DSPQnm[T]](gen : => T) extends IOBundle {
+  val din = Complex(gen).asInput
+  val dout = Complex(gen).asOutput
 }
 
 class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
-  override val io = new NormalizeIO(gen)
+  override val io = new FFTIO(gen)
+  val setupTop = new SetupTopIO
+
   // TODO: Add in support for IFFT (!)
 
   // Create LUT for FFT: To normalize, scale by * (1/sqrt(n))
@@ -25,22 +24,24 @@ class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   // val ifftNormalizeVals = Params.getFFT.sizes.map(math.sqrt(_))
   val fftNormalizeLUT = DSPModule(new DblLUT(fftNormalizeVals,gen),"fftNormalizeFactor")
   // val ifftNormalizeLUT = DSPModule(new DblLUT(ifftNormalizeVals,gen),"ifftNormalizeFactor")
-  fftNormalizeLUT.io.addr := io.fftIdx
-  //ifftNormalizeLUT.io.addr := io.fftIdx
+
+  fftNormalizeLUT.io.addr := setupTop.fftIdx
+  //ifftNormalizeLUT.io.addr := setupTop.fftIdx
 
   // TODO: Do I actually need to cloneType?
   val fftNormalizeFactor = fftNormalizeLUT.io.dout.cloneType()
   fftNormalizeFactor := fftNormalizeLUT.io.dout
   //val ifftNormalizeFactor = ifftNormalizeLUT.io.dout.cloneType()
   //ifftNormalizeFactor := ifftNormalizeLUT.io.dout
-  //val normalizeFactor = Mux(io.FFT,fftNormalizeFactor,ifftNormalizeFactor)
+  //val normalizeFactor = Mux(setupTop.isFFT,fftNormalizeFactor,ifftNormalizeFactor)
   val normalizeFactor = fftNormalizeFactor
 
   // TODO: Don't depend on trim defaults in complex!
-  io.normalizedOut := (io.in ** (normalizeFactor,Real)).trim(gen.getFracWidth)
+  io.dout := (io.din ** (normalizeFactor,Real, mPipe = Params.getDelays.mulPipe)).trim(gen.getFracWidth)
 
   // Delay through this block
-  val delay = io.normalizedOut.getDelay-io.in.getDelay
+  val delay = io.dout.getDelay-io.din.getDelay
+  Status ("Output normalization module delay: " + delay)
 
 }
 

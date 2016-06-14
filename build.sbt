@@ -32,7 +32,7 @@ lazy val ChiselDSP = {
 // ARBOR for Matlab interfaces + Type classes
 val arborVersion = "13b02578d48034f35fbd4f555e1316890b518b5d"
 lazy val arbor = ProjectRef(
-  uri("ssh://git@github.com/grebe/arbor.git#%s".format(arborVersion)),
+  uri("https://github.com/ucb-art/arbor.git#%s".format(arborVersion)),
   "root"
 )
 

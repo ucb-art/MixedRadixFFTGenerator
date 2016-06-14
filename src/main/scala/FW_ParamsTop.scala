@@ -16,6 +16,7 @@ object Params {
   private var mem = MemParams()
   private var fft = FFTParams()
   private var test = TestParams()
+  private var delays = PipelineParams()
 
   // Different components should access parameters via the below functions
   def getBF() = butterfly.copy()
@@ -25,9 +26,15 @@ object Params {
   def getMem() = mem.copy()
   def getFFT() = fft.copy()
   def getTest() = test.copy()
+  def getDelays() = delays.copy()
 
   // Pass in params extracted from JSON to setup used params
   def apply(p: GeneratorParams) : Unit = {
+
+    // Make delay parameters local
+    delays.mulPipe = p.complex.mulPipe
+    delays.addPipe = p.complex.addPipe
+
     fft = p.fft
     test = p.test
     TestVectors(fft.sizes,test.frames)
@@ -41,14 +48,21 @@ object Params {
     io.coprimes = coprimes
     io.global = global
 
+    Status("Used butterfly radices: " + rad.mkString(","))
+
     ScheduleCalc(calc.radPow,calc.radOrder,calc.maxStages)
 
     val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes,io.global)
     io.qDIF = qDIF
     io.qDIT = qDIT
 
-    val addrC = MemoryAccess(calc.radPow,calc.radOrder,calc.maxStages,calc.maxRad)
+    val (addrC,numBanks,memLengths) = MemoryAccess(calc.radPow,calc.radOrder,calc.maxStages,calc.maxRad,getFFT.sizes)
     mem.addrC = addrC
+    mem.banks = numBanks
+    mem.lengths = memLengths
+
+    Status("# memory banks: 2x" + numBanks)
+    Status("Memory bank lengths: " + memLengths.mkString(","))
 
     val (twiddleCountMax,twiddleLUTScale,twiddles,twiddleSubcountMax) = Twiddles(io.coprimes,
                                                                                  io.global,
@@ -110,7 +124,7 @@ case class IOParams (
   // digits needed to represent a range of #'s up to the coprime value
   // [coprime,prime,numDigits]
   var coprimes:List[List[Tuple3[Int,Int,Int]]] = List.fill(10)(List((1,1,1))),
-  // Ratio of fast clock (Calculation) to slow clock (IO) frequencies
+  // ? Ratio of fast clock (Calculation) to slow clock (IO) frequencies
   var clkRatio: Int = 2,
   // DIF Q with corresponding base
   var qDIF: List[List[Tuple2[Int,Int]]] = List(List((1,1))),
@@ -145,16 +159,111 @@ case class TwiddleParams (
   var vals: List[List[List[ScalaComplex]]] = List(List(List(Complex(0.0,0.0)))),
   // Counts to hold twiddle (for PFA, based off of subsequent coprimes)
   var subcountMax: List[List[Int]] = List(List(1))
-
-)
+){
+  // TODO: more of this
+  def addrMax = vals.map(x => x.length).max-1
+}
 
 case class ButterflyParams (
   // Radices actually needed
   var rad: List[Int] = List(2,3,4,5,7),
-  // Number of butterflies needed
+  // ? Number of butterflies needed
   var num: Int = 1
 ){
   def possibleRad = List(1) ++ rad
 }
 
-// TODO: # butterflies, clk ratio, banks, length
+// TODO: Figure out how to include twiddle, IO, general setup delays
+
+case class PipelineParams (
+
+  // TODO: Generalize based off size of multiply + add?
+
+  // Amount to pipeline fixed-point multiply
+  var mulPipe: Int = 0,
+  // Amount to pipeline fixed-point add
+  var addPipe: Double = 0.0,
+
+  // Total pipeline delay in nToAddrBank block
+  var nToAddrBank: Int = 1,
+
+  // Delay just in top level module code of CalcCtrl
+  var calcTop: Int = 1,
+
+  // Amount to pipeline input into WFTA before doing calculations
+  var wftaInPipe: Int = 1,
+
+  // Delay just in top level module code of IOCtrl
+  var ioTop: Int = 1,
+
+  // Memory output is registered
+  var memOutReg: Boolean = true,
+  // Memory sequential read (address delayed)
+  var memSeqRead: Boolean = true,
+
+  // Delay from memBankInterface input controls -> Memory control + r/w address inputs
+  var memArbiterTop: Int = 1,
+
+  // Twiddle address generation address = count * mul delay
+  var twiddleAddrGen: Int = 4,
+
+  // Register the output
+  var topOut: Int = 1
+
+){
+
+  if (calcCtrl != ioCtrl) Error("Calculation + IO control delays must match")
+  if ((calcCtrl + memArbiterTop + memSeqReadDly) != twiddleAddrGen)
+    Error("Twiddle address must be valid when address into (internal) data memory is valid")
+
+  // Delay between read address valid and dout
+  def memReadAtoD = memOutRegDly + memSeqReadDly
+  def memOutRegDly = {if (memOutReg) 1 else 0}
+  def memSeqReadDly = {if (memSeqRead) 1 else 0}
+
+  // Total pipeline delay in CalcCtrl
+  def calcCtrl = nToAddrBank + calcTop
+
+  // Total pipeline delay in IOCtrl
+  def ioCtrl = nToAddrBank + ioTop
+
+  // Delays through WFTA stages (as dictated by amount to pipeline fixed-point multiply and add operations)
+  def wftaInternalDelays = {
+    var count = 0
+    // Spreads out add delays (handles addPipe < 1 too) + mul delays
+    WFTA.stages.map { x => {
+      count = {
+        if (x != Add) 0
+        else if (math.floor(count * addPipe) == 1) 1
+        else count + 1
+      }
+      if (x == Mul) mulPipe
+      else if (addPipe < 1) math.floor(count * addPipe).toInt
+      else math.floor(addPipe).toInt
+    }}
+  }
+
+  // Total wfta delay
+  def wfta = wftaInPipe + wftaInternalDelays.sum
+
+  // Delay in normalize module
+  def normalize = mulPipe
+
+  // Delay through processing element
+  def pe = twiddle + wfta
+
+  // Twiddle multiply delay
+  def twiddle = {
+    val dly = math.floor(addPipe).toInt + mulPipe
+    if (dly < 1) Error("Twiddle multiplication must be pipelined at least once!")
+    dly
+  }
+
+  // Delay from undelayed IO ctrl signal to data out of FFT top
+  def outFlagDelay = ioCtrl + memArbiterTop + memReadAtoD + normalize + topOut
+
+  // TODO: Support pipeDin @ PE, 3 muls
+
+}
+
+// TODO: # butterflies, clk ratio
