@@ -208,18 +208,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   val addressConstant = Vec(addrConstantLUT.io.dout.map(_.cloneType.toUInt))
   addressConstant := Vec(addrConstantLUT.io.dout.map(_.reg().toUInt))
 
-  // Counter reset whenever new FFTN desired, stays constant after setup is done SHOULD OPTIMIZE
-  val setupDoneCount: Int = 4 + generalConstants.maxNumStages * 3 + 20
-  val setupCounter = Module(new accumulator(Helper.bitWidth(setupDoneCount)))
-  val setupDoneTemp = (UInt(setupDoneCount) === setupCounter.io.out)
-  setupCounter.io.inc := UInt(1, width = 1)
-  setupCounter.io.changeCond := ~setupDoneTemp
-  setupCounter.io.globalReset := setup.enable
-  setupCounter.io.wrapCond := Bool(false)
 
-  val setupDoneTempD1 = Reg(next = setupDoneTemp)
-  setup.done := DSPBool(setupDoneTemp || setupDoneTempD1)
-  // Hold for 2 cycles
 
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -467,7 +456,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
 
 // Same caps
 
-
+  val SetupDone = DSPModule(new SetupDone(GeneralSetup.setupDelay + IOSetup.setupDelay + TwiddleSetup.setupDelay))
+  SetupDone.io <> globalInit.setupDone
+  setup.done := SetupDone.io.done
 
 
   val CalcCtrl = DSPModule(new CalcCtrl)

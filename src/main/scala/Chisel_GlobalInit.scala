@@ -12,7 +12,7 @@ class GlobalInit extends DSPModule {
   val ioCtrlO = (new IOCtrlIO).flip
   val calcCtrlO = (new CalcCtrlI).flip
 
-  val setupDone = new SetupDoneIO
+  val setupDone = (new SetupDoneIO).flip
 
   // IO "clocking"
   val clkRatio = Params.getIO.clkRatio
