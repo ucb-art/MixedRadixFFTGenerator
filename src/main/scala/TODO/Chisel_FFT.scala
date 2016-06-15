@@ -37,6 +37,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
   IOCtrl.ctrl.reset := GlobalInit.ioCtrlO.reset
   IOCtrl.generalSetup <> GeneralSetup.o
   IOCtrl.ioSetup <> IOSetup.o
+  IOCtrl.calcCtrlI <> GlobalInit.calcCtrlO
 
   // IOCtrl generates output flags
   ctrl.k := IOCtrl.ctrl.k
@@ -113,8 +114,12 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (
     Normalize.setupTop <> GlobalInit.setupO
     val normalizedOut = Normalize.io.dout.cloneType()
     normalizedOut := Normalize.io.dout
-    io.dout.real := Mux(DSPBool(setup.isFFT), normalizedOut.real, normalizedOut.imag).pipe(1)
-    io.dout.imag := Mux(DSPBool(setup.isFFT), normalizedOut.imag, normalizedOut.real).pipe(1) // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
+
+    io.dout.real := normalizedOut.real.pipe(1)
+    io.dout.imag := normalizedOut.imag.pipe(1)
+
+    //io.dout.real := Mux(DSPBool(setup.isFFT), normalizedOut.real, normalizedOut.imag).pipe(1)
+    //io.dout.imag := Mux(DSPBool(setup.isFFT), normalizedOut.imag, normalizedOut.real).pipe(1) // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
     Normalize.delay
   }
   else {

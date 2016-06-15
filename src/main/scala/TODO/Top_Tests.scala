@@ -48,231 +48,208 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
         None
       }
     }
+    // TODO: Support IFFT
     testFFTNio(idxN,fftTF = true,inVec,outVec)
   }
 
   /** Setup new FFTN (Runtime configuration) where fftTF true -> FFT else IFFT */
   def newSetup(fftIndex:Int, fftTF:Boolean){
-    Status("///////////////////////////////////////// NEW SETUP")
-    val initT = t
+
+    Status("///////////////////////////////////////// NEW SETUP @ t = " + t)
+    Tracker.initT = t
+
     poke(c.setup.enable,true)
     poke(c.setup.fftIdx,fftIndex)
     poke(c.setup.isFFT,fftTF)
+
     step(Params.getIO.clkRatio)
+
+    // Output should not be valid after setup mode detected
+    expect(c.ctrl.outValid,false)
+    expect(c.setup.done,false)
+
+    // Invalidate setup parameters to make sure engine doesn't pick up the wrong ones
     poke(c.setup.enable,false)
-    poke(c.setup.fftIdx,0)
-    // Wait until done setting up before checking setup constants (note that step size is not always 1 -- depends on
-    // user parameters)
+    poke(c.setup.fftIdx,(fftIndex+1)%Params.getFFT.nCount)
+    poke(c.setup.isFFT,!fftTF)
+
+    // Wait until done setting up
     var setupDone = peek(c.setup.done)
     var whileCnt = 0
     while (!setupDone){
       whileCnt = whileCnt + 1
       if (whileCnt > 100) Error("Setup is not completing...")
-      inSetupDebug()
       step(1)
       setupDone = peek(c.setup.done)
+
+      // Output should not be valid after setup mode detected
+      expect(c.ctrl.outValid,false)
+
     }
+
+    Status("///////////////////////////////////////// N = " + Tracker.FFTN + " SETUP DONE @ t = " + t)
     setupDebug()
-    val modT = (t-initT)%Params.getIO.clkRatio
-    if (modT != 0) Error("Setup done and other control signals should occur as expected from IO clock rate")
-    // SETUP_DONE should be held for clkRatio calc clk cycles
-    for (i <- 0 until Params.getIO.clkRatio-1) {step(1);expect(c.setup.done,true)}
-    Status("///////////////////////////////////////// SETUP DONE")
+
+    val modT = (t-Tracker.initT)%Params.getIO.clkRatio
+    if (modT != 0) Error("Setup done should occur @ right time corresponding to IO clk rate")
+
+    // Make sure setup done held for at least the full IO clock period
+    for (i <- 0 until Params.getIO.clkRatio-1) {step(1); expect(c.setup.done,true)}
+
+    // After setup, should be @ first fast clk in IO clk (poke directly @ core time)
+    step(1)
+
+    expect(c.setup.done,true)
+    expect(c.ctrl.outValid,false)
+
   }
 
   /** Feed in FFT inputs and read FFT outputs */
   def testFFTNio(fftIndex:Int, fftTF:Boolean, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
-    // Safety initialize control signals to false
+
+    // Initialize control signals to false
     reset(Params.getIO.clkRatio)
-    poke(c.ctrl.enable,true)
-    poke(c.ctrl.reset,false)
+
     poke(c.setup.enable,false)
-    newSetup(fftIndex,fftTF)
-    step(Params.getIO.clkRatio + 1)
-    // After setup, start sending data to process (start on the second IO clock period after SETUP_DONE)
-    poke(c.ctrl.reset,true)
-    stepTrack(Params.getIO.clkRatio,in,out)
+    poke(c.setup.fftIdx,(fftIndex+1)%Params.getFFT.nCount)
+    poke(c.setup.isFFT,!fftTF)
+
+    poke(c.ctrl.enable,false)
+    // Means not starting yet
     poke(c.ctrl.reset,false)
-    val n = Params.getFFT.sizes(fftIndex)
-    val frames = in.length/n
-    // Output k = 0 starts 2 frames after n = 0
-    for (i <- 0 until frames + 2; j <- 0 until n){
-      stepTrack(Params.getIO.clkRatio,in,out)
-    }
-    // Go a little past to account for pipeline delay
+
+    step(Params.getIO.clkRatio)
+
+    newSetup(fftIndex,fftTF)
+
+    // Step a full IO clock cycle for good measure
+    step(Params.getIO.clkRatio)
+
+    // After setup, start sending data to process
+    // When first data in is valid, reset is high (note stepTrack doesn't step until after pokes)
+    poke(c.ctrl.enable,true)
+    poke(c.ctrl.reset,true)
+    stepTrack(Params.getIO.clkRatio,in,out, enable = true)
+
+    // Reset only high 1 IO clock cycle
+    poke(c.ctrl.reset,false)
+
+    // Wait until as many outputs checked as there were inputs
     while (Tracker.outStep < in.length){
-      stepTrack(Params.getIO.clkRatio,in,out)
+
+      val ioCycle = (t-Tracker.initT)/Params.getIO.clkRatio
+
+      if (!Tracker.outPropagated && ioCycle > 4 * Tracker.FFTN)
+        Error("Data out never seems valid")
+
+      //val en = if (ioCycle == 3 * Tracker.FFTN + 1) false else true
+      val en = true
+      stepTrack(Params.getIO.clkRatio,in,out, enable = en)
     }
-    if (!Tracker.outValid) Error("Output valid was never detected...")
+
   }
 
-  /** Peek and then step, where num should be = clkRatio */
-  def stepTrack(num:Int, in:List[ScalaComplex], out:Option[List[ScalaComplex]]){
-    var firstOutValid = false
-    for (i <- 0 until num) {
-      calcDebug(i)
-      val inVal = in(Tracker.inStep % in.length)
-      // Checks when k = 0 is output (Detects transition to first symbol) & dumps input
-      if (i == 0) {
-        poke(c.io.din, inVal)
-        val firstOut = peek(c.ctrl.outValid)
-        if (firstOut && !Tracker.firstSymbol) {
-          Status("///////////////////////////////////////// FRAME = %d, K = 0".format(Tracker.frameNum))
-          // Streaming output valid after start of first output symbol detected
-          Tracker.outValid = true
-          Tracker.frameNum = Tracker.frameNum + 1
-          firstOutValid = true
-        }
-        else if (Tracker.outValid && Tracker.outStep%Tracker.FFTN == 0){
-          Status("///////////////////////////////////////// FRAME = %d, K = 0".format(Tracker.frameNum))
-          Tracker.frameNum = Tracker.frameNum + 1
-        }
-        if (Tracker.outValid && !firstOut) Error("Valid should still be high")
-        Tracker.firstSymbol = firstOut
+  /** Peek+poke and then step */
+  def stepTrack(cycles:Int, in:List[ScalaComplex], out:Option[List[ScalaComplex]], enable:Boolean): Unit ={
+
+    expect(c.setup.done,true)
+
+    // Enable/disable IO
+    poke(c.ctrl.enable,enable)
+
+    // Wraps input data (since it takes extra cycles to get all of corresponding out)
+    val inVal = in(Tracker.inStep % in.length)
+    poke(c.io.din, inVal)
+
+    // Check @ fast clock cycle rate
+    for (i <- 0 until cycles){
+
+      calcDebug()
+
+      // Check if output is valid
+      val prevOutValid = Tracker.outValid
+      Tracker.outValid = peek(c.ctrl.outValid)
+
+      // Track when output is first valid after reset
+      if (Tracker.outValid && !Tracker.outPropagated){
+        // First frame out
+        Status("///////////////////////////////////////// N = " + Tracker.FFTN + ", FRAME = 0, K = 0 @ t = " + t)
+        // Next time reporting happens should be on the following frame
+        Tracker.frameNum = Tracker.frameNum + 1
+        Tracker.outPropagated = true
       }
-      else{
-        // FRAME_FIRST_OUT should be held held high
-        if (firstOutValid | Tracker.outValid) expect(c.ctrl.outValid,true)
-        else expect(c.ctrl.outValid,false)
+      // Only report once per frame
+      else if (i == 0 && Tracker.outValid && (Tracker.outStep%Tracker.FFTN == 0)){
+        // Frame out
+        Status("///////////////////////////////////////// N = " + Tracker.FFTN + ", FRAME = " + Tracker.frameNum
+          + ", K = 0 @ t = " + t)
+        // Next time reporting happens should be on the following frame
+        Tracker.frameNum = Tracker.frameNum + 1
       }
+
+      // Output should transition on the correct fast clock cycle (note that output valid can go low if io enable
+      // ever goes low)
+      if ((Tracker.outValid && !prevOutValid) || (!Tracker.outValid && prevOutValid)){
+        // TODO: Make function?
+        val modT = (t-Tracker.initT)%Params.getIO.clkRatio
+        val k = Tracker.outStep%Tracker.FFTN
+        if (modT != 0) Error("Out valid should occur @ right time corresponding to IO clk rate: K = " + k)
+      }
+
       // Read output if valid & check for error
       if (Tracker.outValid){
+
+        // Note that Tracker.frameNum is always one ahead
         val errorString = " FFTN = " + Tracker.FFTN + ", FRAME = " + (Tracker.frameNum-1) +
-                          ",  k = " + Tracker.outStep%Tracker.FFTN + "\n "
+          ",  k = " + Tracker.outStep % Tracker.FFTN + " @ t = " + t + "\n "
+
+        // Check that k matches as expected
+        if(genOffset)
+          expect(c.ctrl.k,Tracker.outStep % Tracker.FFTN, "Offset value unexpected" + errorString)
+
+        // Compare with expected output
         if (out != None) {
           val outExpected = out.get(Tracker.outStep)
           // TODO: Support IFFT(!)
           // Normalize FFT appropriately
           val outExpectedNormalized = {
-            if(normalized) outExpected**(1/math.sqrt(Tracker.FFTN),typ = Real)
+            if (normalized) outExpected**(1/math.sqrt(Tracker.FFTN),typ = Real)
             else outExpected
           }
           expect(c.io.dout, outExpectedNormalized, Tracker.FFTN.toString, errorString)
         }
         // Doesn't compare, just stores results for post-processing
-        else if (i == 0) {
-          Tracker.FFTOut = Tracker.FFTOut :+ peek(c.io.dout)
+        else{
+          val outVal = peek(c.io.dout)
+          if (i == 0) Tracker.FFTOut = Tracker.FFTOut :+ outVal
+          else {
+            if (outVal != Tracker.FFTOut.last) Error("Dout inconsistent across fast clk cycles within 1 IO cycle")
+          }
         }
-        if(genOffset) expect(c.ctrl.k,Tracker.outStep%Tracker.FFTN, "Offset value unexpected")
+
       }
-      else{
-        if(genOffset) expect(c.ctrl.k,0, "Offset value should be 0 if output isn't valid initially")
-      }
+
       step(1)
     }
+
     // Steps by IO clock rate (output only steps if output is known to be valid)
-    Tracker.inStep =  Tracker.inStep + 1
-    if (Tracker.outValid) {
-      Tracker.outStep = Tracker.outStep + 1
-    }
+    if (enable) Tracker.inStep =  Tracker.inStep + 1
+    if (Tracker.outValid) Tracker.outStep = Tracker.outStep + 1
+
   }
 
   /** Placeholder for debugging signals */
-  var calcDone = false
-  def calcDebug(i:Int): Unit = {
+  def calcDebug(): Unit = {
     val temp = traceOn
     traceOn = true
-
-    if (Tracker.FFTN == 12) {
-
-      //if (peek(c.IOCtrl.ctrl.k) != peek(c.ctrl.k) && Tracker.inStep >= 2) Error("k")
-      //if (peek(c.IOCtrl.ctrl.outValid) != peek(c.ctrl.outValid) && Tracker.inStep >= 2) Error("valid")
-
-
-      /*0 until 4).foreach{ i =>
-        if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
-          peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Error("twiddles")
-      }*/
-
-
-      //peek(c.ioDIT)
-      //peek(c.calcMemB)
-      //peek(c.IOCtrl.ioIncCounters(0).ctrl.isMax)
-      //peek(c.CalcCtrl.maxStageCountUsed)
-      //peek(c.CalcCtrl.currentStage)
-      //peek(c.calcControl.calcn)
-      //peek(c.CalcCtrl.n)
-      //val a = peek(c.calcControl.calcn).toList
-      //val b = peek(c.CalcCtrl.n).toList
-      //if (!a.sameElements(b) && Tracker.inStep >= 2) Status("------------cc")
-
-    }
-
-    /*if (Tracker.FFTN == 24){
-      val a = peek(c.calcControl.calcn).toList
-      val b = peek(c.CalcCtrl.n).toList
-      if (!a.sameElements(b) && Tracker.inStep >= 2) Error("------------cc")
-    }*/
-
-    if (Tracker.FFTN == 192){
-      /*(0 until 4).foreach{ i =>
-        if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
-          peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Error("twiddles")
-      }*/
-
-
-      if (Tracker.inStep >= 2 && Tracker.inStep < 30){
-      /*peek(c.TwiddleGen.currentTwiddleAddrs)
-      //peek(c.twiddleAddr)
-
-        (0 until 4).foreach{ i =>
-          if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
-            peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Status("twiddles")
-        }*/
-
-      }
-
-
-    }
-
+    // if (!a.toList.sameElements(b.toList)) Error(":(")
     traceOn = temp
-
-
-    /*if (Tracker.FFTN != 192)
-      (0 until 4).foreach{ i =>
-      if (!peek(c.butterfly.io.twiddles(i)).toList.sameElements(
-        peek(c.TwiddleGen.o.twiddles(i)).toList) & Tracker.inStep >= 2) Error("twiddles")
-    }*/
-
-    /*c.butterfly.io.twiddles.zip(c.TwiddleGen.o.twiddles).foreach{ e => {
-      peek(e._1)
-      //if (!peek(o).toList.sameElements(peek(n).toList) & Tracker.inStep >= 2) Error("twiddles")
-    }}*/
-
-    //peek(c.butterfly.io.twiddles)
-
-
-
-    //if (!peek(c.ons).toList.sameElements(peek(c.IOCtrl.nIO).toList) & Tracker.inStep >= 2) Error("nio")
-    //if (peek(c.ioAddr) != peek(c.IOCtrl.o.addr) && Tracker.inStep >= 2) Error("addr")
-    //if (peek(c.ioBank) != peek(c.IOCtrl.o.bank) && Tracker.inStep >= 2) Error("bank")
-    //if (peek(c.calcControl.calcn) != peek(c.CalcCtrl.n) && Tracker.inStep >= 2) Error("cc")
-
-    //val a = peek(c.calcControl.calcn).toList
-    //val b = peek(c.CalcCtrl.n).toList
-    //if (!a.sameElements(b) && Tracker.inStep >= 2) Error("------------cc")
-
-    //if (!peek(c.calcBank).toList.sameElements(peek(c.CalcCtrl.o.banks).toList) && Tracker.inStep >= 2) Error("calcbanks")
-    //if (!peek(c.memBanks.io.calcAddr).toList.sameElements(peek(c.CalcCtrl.o.addrs).toList) && Tracker.inStep >= 2) Error("calcaddrs")
-
   }
+
   def setupDebug(): Unit = {
     val temp = traceOn
-
     traceOn = true
-    //peek(c.IOSetup.o.stagePrimeIdx)
-    //if (!peek(c.twiddleCount).toList.sameElements(peek(c.TwiddleSetup.o.twiddleCounts).toList)) Error("twiddlecnt")
-    //if (!peek(c.twiddleSubCountMax).toList.sameElements(peek(c.TwiddleSetup.o.twiddleSubCounts).toList)) Error("twiddlesubcount")
-    //peek(c.TwiddleSetup.o.twiddleCounts)
-
-    //if (!peek(c.twiddleMul).toList.sameElements(peek(c.TwiddleSetup.o.twiddleMuls).toList)) Error("twiddlerenorm")
-    traceOn = temp
-  }
-  def inSetupDebug(): Unit = {
-    val temp = traceOn
-    traceOn = true
-    //peek(c.globalInit.setupI.enable)
-    //peek(c.globalInit.setupO.enable)
+    // if (!a.toList.sameElements(b.toList)) Error(":(")
     traceOn = temp
   }
 
@@ -281,13 +258,19 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 object Tracker {
 
   // Variables to track tester progress
-  var firstSymbol = false
+  // Output currently valid
   var outValid = false
+  // Current frame + 1
   var frameNum = 0
   var inStep = 0
   var outStep = 0
   var FFTN = 0
+  // FFTs tested up until now
   var testedFFTs = List[Int]()
+  // Time when each FFTN starts
+  var initT = 0
+  // After reset, valid has gone high at least once (for each FFTN)
+  var outPropagated = false
 
   // Store output data
   var FFTOut = List[ScalaComplex]()
@@ -301,13 +284,12 @@ object Tracker {
     // val fixedTol = (DSPFixed.toFixed(dblTol,Complex.getFrac).bitLength-2).max(1)
 
     // TODO: Don't use Complex.getFrac!
-
-    val fixedTol = Complex.getFrac/2
+    val fixedTol = Params.getComplex.fracBits/3
     // val floTol = (0.00000001).max(dblTol/n/100000)
     val floTol = 0.0000000001
     DSPTester.setTol(floTol = floTol, fixedTol = fixedTol)
 
-    firstSymbol = false
+    outPropagated = false
     outValid = false
     frameNum = 0
     inStep = 0

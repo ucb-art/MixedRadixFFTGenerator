@@ -40,6 +40,8 @@ class IOCtrl extends DSPModule {
   val generalSetup = (new GeneralSetupO).flip
   val o = new nToAddrBankIO
 
+  val calcCtrlI = new CalcCtrlI
+
   val usedLoc = ioSetup.usedLoc
   val isUsed = ioSetup.isUsed
   val counterPrimeDigits = ioSetup.counterPrimeDigits
@@ -97,10 +99,15 @@ class IOCtrl extends DSPModule {
 
   // Out valid should go high at the start of the 3rd frame (takes 2 frames to input + calculate)
   // This is on first IO A-> B transition with DIT
+  // This should stay high even though io.enable might go low
   val outValid = RegInit(DSPBool(false))
   val outValidTransitionCond = frameWrapCond & !ioMemB & !ioDIF
   val outValidNext = !ctrl.reset & (outValidTransitionCond | outValid)
   outValid := outValidNext
+
+  // Module outValid will go low if IO disabled
+  val realOutValid = RegInit(DSPBool(false))
+  realOutValid := outValidNext ? calcCtrlI.enable
 
   // TODO: kReset conditions redundant
   // K starts counting output # (mod FFT size) when output is valid
@@ -210,6 +217,11 @@ class IOCtrl extends DSPModule {
 
   // Delayed to be @ the right time @ FFT Top
   ctrl.k := kCounter.io.out.pipe(Params.getDelays.outFlagDelay)
-  ctrl.outValid := outValid.pipe(Params.getDelays.outFlagDelay)
+
+  // At any point, reset should invalidate output
+  ctrl.outValid := (0 until Params.getDelays.outFlagDelay).foldLeft(realOutValid)((accum,e) => {
+    val temp = accum ? !ctrl.reset
+    temp.pipe(1)
+  })
 
 }

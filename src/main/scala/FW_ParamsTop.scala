@@ -18,6 +18,8 @@ object Params {
   private var test = TestParams()
   private var delays = PipelineParams()
 
+  private var complex = ComplexParams()
+
   // Different components should access parameters via the below functions
   def getBF() = butterfly.copy()
   def getTw() = twiddle.copy()
@@ -28,8 +30,13 @@ object Params {
   def getTest() = test.copy()
   def getDelays() = delays.copy()
 
+  def getComplex() = complex.copy()
+
   // Pass in params extracted from JSON to setup used params
   def apply(p: GeneratorParams) : Unit = {
+
+    // Copy complex parameters
+    complex = p.complex
 
     // Make delay parameters local
     delays.mulPipe = p.complex.mulPipe
