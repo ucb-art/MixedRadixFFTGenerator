@@ -37,7 +37,9 @@ object SERAnalysis {
       //val normalizedOut = out.toList.map(_ * (1/math.sqrt(fftn)))
       val runType = if(!isFixed) "Dbl" else (intBits+fb+1).toString
       //Data1D2File(normalizedOut,"build/analysis/ser_"+runType+".txt")
-      Data1D2File(out.toList,"build/analysis/ser_"+runType+".txt")
+      try {
+        Data1D2File(out.toList,"build/analysis/ser_"+runType+".txt")
+      }  
     }}
 
   }
