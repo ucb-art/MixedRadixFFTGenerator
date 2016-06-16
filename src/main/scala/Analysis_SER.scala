@@ -39,7 +39,11 @@ object SERAnalysis {
       //Data1D2File(normalizedOut,"build/analysis/ser_"+runType+".txt")
       try {
         Data1D2File(out.toList,"build/analysis/ser_"+runType+".txt")
-      }  
+      } 
+      catch {
+        case ex: Exception => Warn("File exception")
+      }
+
     }}
 
   }

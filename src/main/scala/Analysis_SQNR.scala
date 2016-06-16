@@ -46,6 +46,9 @@ object SQNRAnalysis {
         scala.tools.nsc.io.File("build/analysis/sqnr.json").appendAll("\n" + x)
       }
     }  
+    catch {
+      case ex: Exception => Warn("File exception")
+    }
 
   }
 
