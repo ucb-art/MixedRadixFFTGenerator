@@ -13,6 +13,8 @@ class IOCtrlIO extends IOBundle {
   val outValid = DSPBool(OUTPUT)
   // Output k value
   val k = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
+  // Slow enable (associated with clock)
+  val clkEn = DSPBool(OUTPUT)
 }
 
 class IOFlagsO extends IOBundle{

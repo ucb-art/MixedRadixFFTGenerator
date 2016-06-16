@@ -129,7 +129,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     // When first data in is valid, reset is high (note stepTrack doesn't step until after pokes)
     poke(c.ctrl.enable,true)
     poke(c.ctrl.reset,true)
-    stepTrack(Params.getIO.clkRatio,in,out, enable = true)
+    stepTrack(2*Params.getIO.clkRatio,in,out, enable = true)
 
     // Reset only high 1 IO clock cycle
     poke(c.ctrl.reset,false)

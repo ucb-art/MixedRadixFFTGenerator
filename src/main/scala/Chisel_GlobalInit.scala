@@ -21,12 +21,15 @@ class GlobalInit extends DSPModule {
   val clkDiv = DSPModule(new ClkDiv(clkRatio))
   val slowEn = clkDiv.io.slowEn
 
+  // Slow clock to the outside world
+  ioCtrlI.clkEn := slowEn
+
   // Flags used
   val initSetup = slowEn & setupI.enable
   val resetCalc = slowEn & ioCtrlI.reset
   setupDone.init := initSetup
 
-  // TODO: Double check clkRatio generaliation
+  // TODO: Double check clkRatio generalization
   // Enable signal to other setup blocks only goes high after the top-level setup enable
   // goes from high to low (@ IO clock rate) -- held high for IO clock rate
   val setupEnCapture = Vec(2,RegInit(DSPBool(false)))

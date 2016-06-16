@@ -63,6 +63,8 @@ outvalid& enable
 
 out on correct cycle -- fynction of clkratio pipeline?
 
+// enable pass through for continuous cycle to avoid read/write conflict?
+
 ----
 
 
@@ -86,6 +88,17 @@ need to check done + outValid (in continuous mode)
 
 // mode to send baack data
 
+
+
+see rocketchipinterface
+
+
+
+
+
+// CHECK ON BOTH EDGES
+
+// STORED K
 
 
 
