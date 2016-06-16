@@ -44,4 +44,5 @@ lazy val root = Project(
 ).dependsOn(ChiselDSP, arbor)
 
 // Define default sbt run main class
-mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
+// mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
+mainClass in (Compile, run) := Some("FFT.RocketInterface")

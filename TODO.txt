@@ -11,7 +11,7 @@
 print + save + compare w/ full list @ end dout
 
 
-
+loop
 
 
 
@@ -84,7 +84,7 @@ need to check done + outValid (in continuous mode)
 
 
 
-
+// mode to send baack data
 
 
 
