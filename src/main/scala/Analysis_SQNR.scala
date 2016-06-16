@@ -39,11 +39,13 @@ object SQNRAnalysis {
     // JSON file: List of # bits tested; JSON with FFTN followed by SQNR (dB) for # of bits tested
     implicit val formats = DefaultFormats
     val jsonBits = write(("Number of Bits",bits))
-    scala.tools.nsc.io.File("build/analysis/sqnr.json").writeAll(jsonBits)
-    val jsonSQNRs = sqnrdb.zip(fftn).map{case (sqnr,n) => write((n.toString,sqnr))}
-    jsonSQNRs.foreach{ x =>
-      scala.tools.nsc.io.File("build/analysis/sqnr.json").appendAll("\n" + x)
-    }
+    try {
+      scala.tools.nsc.io.File("build/analysis/sqnr.json").writeAll(jsonBits)
+      val jsonSQNRs = sqnrdb.zip(fftn).map{case (sqnr,n) => write((n.toString,sqnr))}
+      jsonSQNRs.foreach{ x =>
+        scala.tools.nsc.io.File("build/analysis/sqnr.json").appendAll("\n" + x)
+      }
+    }  
 
   }
 

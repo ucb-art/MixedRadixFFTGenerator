@@ -9,6 +9,14 @@ class RocketToFFTTests(c: RocketToFFT) extends Tester(c) {
   read(3)
   read(4)
   read(0)
+  // setup
+  write(2*2048+2,1)
+  var setupDone = read(2*2048+2)
+  /*while(setupDone == 0){
+    step(1)
+    setupDone = read(2*2048+2)
+  }*/
+  Status("yay")
 
   def write(d:BigInt,a:BigInt): Unit ={
     var fftReady = peek(c.io.smi.req.ready)

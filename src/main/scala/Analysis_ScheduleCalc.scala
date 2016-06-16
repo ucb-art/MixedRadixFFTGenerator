@@ -29,6 +29,8 @@ object ScheduleCalc {
         List(fftn,cycles,rad2cycles)
       })
     // TODO: Generic analysis folder needed
-    Data2D2File(clks,"build/analysis/cycleCount.csv")
+    try{
+      Data2D2File(clks,"build/analysis/cycleCount.csv")
+    }  
   }
 }
