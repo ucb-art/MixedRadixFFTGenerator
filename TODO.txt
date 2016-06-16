@@ -1,6 +1,3 @@
-f1
-
-scr
 
 
   // 3 multiplies
@@ -11,14 +8,19 @@ scr
 
 
 
-test that outvalid goes low on new setup
+print + save + compare w/ full list @ end dout
 
 
-// rewrite tester
+loop
 
 
 
 
+4 kinds of start: 
+start and then keep going (disable until next start)
+start then stop
+start then repeat (loop)
+start then disable until next enabling_start (while still valid)
 
 
 
@@ -27,4 +29,81 @@ Load setup reg write to start setup reg. Prob for setup done (stay high) write t
 -- another mode where it's one at a time
 
 ** see recent email -- continue for power
+
+
+ioCtrlO.reset := initSetup | resetCalc
+
+
+
+
+
+actually want: !slowen to hold**
+is writeenable aligned with din???
+
+
+
+outvalid pipe??? should be clk ratio delays
+
+
+
+outvalid& enable
+
+
+
+-----
+
+*calcdoneflag
+*twiddleCounter ---> usescalcreset
+*twiddleSubCounter --> calcreset
+*kcounter
+*outvalid ---
+*calccounters
+
+
+
+out on correct cycle -- fynction of clkratio pipeline?
+
+// enable pass through for continuous cycle to avoid read/write conflict?
+
+----
+
+
+setup: fftidx*, enable*, isfft* --> done*
+io: din?, dout
+ctrl: enable?, reset* --> outValid**, k
+
+
+setup.en, reset --> resets chain of outvalid pipes
+k should eventually get reset?
+
+io en goes low --> needs to update valid
+
+
+store invalid k if outValid = 0
+0 to max fftn read/write
+need to check done + outValid (in continuous mode)
+
+
+
+
+// mode to send baack data
+
+
+
+see rocketchipinterface
+
+
+
+
+
+// CHECK ON BOTH EDGES
+
+// STORED K
+
+
+
+
+
+
+
 

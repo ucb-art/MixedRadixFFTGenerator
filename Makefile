@@ -33,16 +33,16 @@ asic: clean_asic setup_asic vlsi
 
 # Generic Make VLSI (should not use directly)
 vlsi: clean_vlsi setup_vlsi clean_analysis setup_analysis
-	sbt "run -params_true_false $(MEM) --genHarness --backend v --targetDir $(VLSI_ROOT) --W0W --compileInitializationUnoptimized"
+	sbt "run -params_true_false $(MEM) --genHarness --backend v --targetDir $(VLSI_ROOT) --W0W --compileInitializationUnoptimized "
 
 # Debug without VCD dump (no large files)
 debug: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
-	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --targetDir $(TEST_ROOT) --W0W --compileInitializationUnoptimized" | tee $(DEBUG_ROOT)/console_out.txt
+	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --targetDir $(TEST_ROOT) --W0W --compileInitializationUnoptimized " | tee $(DEBUG_ROOT)/console_out.txt
 	cp $(ANALYSIS_ROOT)/generator_out.json $(DEBUG_ROOT)/.
 
 # Debug with VCD dump
 debug_vcd: clean_test setup_test clean_analysis setup_analysis clean_debug setup_debug
-	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --vcd --targetDir $(TEST_ROOT) --W0W --compileInitializationUnoptimized" | tee $(DEBUG_ROOT)/console_out.txt
+	sbt "run -params_$(FIXED)_$(VERILOGTB) --test --debugMem --genHarness --compile --debug --vcd --targetDir $(TEST_ROOT) --W0W --compileInitializationUnoptimized " | tee $(DEBUG_ROOT)/console_out.txt
 	cp $(ANALYSIS_ROOT)/generator_out.json $(DEBUG_ROOT)/.
 
 # Debug with Verilog TB generation
