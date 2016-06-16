@@ -32,5 +32,8 @@ object ScheduleCalc {
     try{
       Data2D2File(clks,"build/analysis/cycleCount.csv")
     }  
+    catch {
+      case ex: Exception => Warn("File exception")
+    }
   }
 }
