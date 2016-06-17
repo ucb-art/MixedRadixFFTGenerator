@@ -69,15 +69,8 @@ class GeneralSetup extends DSPModule {
   val radIdxOrderLUT = DSPModule(new IntLUT2D(radIdxOrderS), "radIdxOrder")
   radIdxOrderLUT.io.addr := setupTop.fftIdx
   val radIdxOrder = radIdxOrderLUT.io.dout.cloneType
-
-  radIdxOrder.foreach{a => Status("aaa" + a.getRange) }
-
   val radIdxOrderNext = RegNext(Mux(setupTop.enable,radIdxOrderLUT.io.dout,radIdxOrder))
-
-  radIdxOrderNext.foreach{a => Status("bbb" + a.getRange) }
-
   radIdxOrder := radIdxOrderNext
-
 
   // Now using actual radices
   val radOrder = Vec(radIdxOrder.map( x => {

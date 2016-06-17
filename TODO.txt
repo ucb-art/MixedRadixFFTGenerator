@@ -1,3 +1,12 @@
+git checkout master (first, when you access submodule)
+git pull
+git push
+
+
+
+
+
+
 
 
   // 3 multiplies
@@ -25,30 +34,11 @@ start then disable until next enabling_start (while still valid)
 
 
 Load setup reg write to start setup reg. Prob for setup done (stay high) write to data in mem. Start frame = run for n clocks. Keep storing k , valid out, data out. After n clocks stop. Read out output. Input new data. Different input but without reset command (after original, pause). Read out again. Repeat. Check when valid. Increment frame after k = fft size-1. Repeat.
+e9e5bb28ac230ab7c54aab9ca30fbe164bbb84be
 
 -- another mode where it's one at a time
 
 ** see recent email -- continue for power
-
-
-ioCtrlO.reset := initSetup | resetCalc
-
-
-
-
-
-actually want: !slowen to hold**
-is writeenable aligned with din???
-
-
-
-outvalid pipe??? should be clk ratio delays
-
-
-
-outvalid& enable
-
-
 
 -----
 
@@ -68,9 +58,6 @@ out on correct cycle -- fynction of clkratio pipeline?
 ----
 
 
-setup: fftidx*, enable*, isfft* --> done*
-io: din?, dout
-ctrl: enable?, reset* --> outValid**, k
 
 
 setup.en, reset --> resets chain of outvalid pipes
@@ -90,7 +77,7 @@ need to check done + outValid (in continuous mode)
 
 
 
-see rocketchipinterface
+
 
 
 
