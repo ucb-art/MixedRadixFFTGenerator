@@ -2,6 +2,8 @@ package FFT
 import ChiselDSP._
 import Chisel._
 
+// Module
+/*
 object RocketInterface {
 
   def main(args: Array[String]): Unit = {
@@ -18,6 +20,26 @@ object RocketInterface {
   }
 
 }
+*/
+
+// DSPModule
+object RocketInterfaceWrapper {
+
+  def main(args: Array[String]): Unit = {
+
+    Status("Starting Rocket Interface Wrapper testbench")
+
+    // TODO: Fix
+    val runArgs = args.slice(1, args.length)
+
+    Chisel.chiselMainTest( runArgs, () => DSPModule(new RocketToFFTWrapper) ) {
+      c => new RocketToFFTWrapperTests(c)
+    }
+
+  }
+
+}
+
 
 
 

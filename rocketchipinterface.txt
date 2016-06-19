@@ -1,23 +1,8 @@
-is writable is readable
+keep running
 
 
 
-wAddr
-rAddr
-we
-din
-dout
 
-val io = new Bundle {
-    val smi = new FFTSmiIO(dataWidth,addrWidth).flip
-    val ctrl = new Bundle {
-      val wAddr = DSPUInt(OUTPUT,DSPUInt.toMax(addrWidth))
-      val rAddr = DSPUInt(OUTPUT,DSPUInt.toMax(addrWidth))
-      val we = DSPBool(OUTPUT)
-      val din = Bits(width = dataWidth).asOutput
-      val dout = Bits(width = dataWidth).asInput
-    }
-  }
 
 
 

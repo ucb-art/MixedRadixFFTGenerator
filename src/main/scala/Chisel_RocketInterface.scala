@@ -4,11 +4,13 @@ import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, Count
 
 // Allows use of DSPTester
 class RocketToFFTWrapper extends DSPModule {
-  val rocketToFFT = new RocketToFFT
+  val rocketToFFT = Module(new RocketToFFT)
   override val io = new Bundle {
     val smi = new FFTSmiIO(rocketToFFT.dataWidth,rocketToFFT.addrWidth).flip
   }
   io <> rocketToFFT.io
+
+  val memMap = rocketToFFT.memMap
 }
 
 // Module for Rocket support
@@ -232,9 +234,11 @@ class RocketToFFT extends Module {
   dataMem.foreach{x => {
     val key = x._1
     when(rocketREs(key)){
-      ioHandling.io.ctrl.dout := x._2.io.dOut.toBits
+      ioHandling.io.ctrl.dout := x._2.io.dOut.asInstanceOf[Complex[DSPFixed]].toFixedBits(32)
     }
   }}
+
+  // TODO: Parameterize 32,64
 
 ///////////////////////////////////////////// ROCKET <--> FFT INTERFACE
 
