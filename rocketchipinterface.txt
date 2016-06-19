@@ -1,0 +1,79 @@
+keep running
+
+
+
+
+
+
+
+
+
+
+
+
+see if synthesis runs -- check fft ports
+check fttgen synth, fpga sim
+
+
+From Rocket
+*io.smi.req.valid       --- Rocket wants to read or write
+*io.smi.req.bits.rw     --- Rocket wants to read (false) or write (true)
+*io.smi.req.bits.addr   --- Memory location Rocket wants to access
+*io.smi.req.bits.data   --- Data Rocket wants to write (FFT should ignore on read)
+*io.smi.resp.ready      --- Rocket ready to take back response
+
+From FFT
+*io.smi.req.ready       --- FFT capable of taking requests (tied high; nothing to stall)
+*io.smi.resp.valid      --- FFT did something (write to memory successful; data to Rocket valid)
+*io.smi.resp.bits       --- FFT data to be sent to Rocket
+
+fftIdx
+*we
+*din
+*dout
+
+isFFT
+*we
+*din
+*dout
+
+FFT IO
+*din
+*dout
+
+isSetupDone
+*we
+*din
+*dout
+
+FFT SETUP
+*fftidx
+*isfft
+*enable
+*done
+
+isCalcDone
+*we
+*din
+*dout ( on last one; also want to input @ right cycle)
+
+INMEM
+*val rAddr = DSPUInt(INPUT,depth-1)          (if in calc mode, calc counter, else rocket) *delayed out
+*val wAddr = DSPUInt(INPUT,depth-1)
+*val dIn = gen.cloneType.asInput
+*val dOut = gen.cloneType.asOutput
+*val WE = DSPBool(INPUT)
+
+OUTMEM
+*val rAddr = DSPUInt(INPUT,depth-1)
+*val wAddr = DSPUInt(INPUT,depth-1)
+*val dIn = gen.cloneType.asInput
+*val dOut = gen.cloneType.asOutput
+*val WE = DSPBool(INPUT)                     (outValid & not state done & clk)
+
+FFT Ctrl
+*enable
+*reset
+*outValid
+*k
+*clken

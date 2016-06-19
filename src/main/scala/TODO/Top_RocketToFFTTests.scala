@@ -2,25 +2,90 @@ package FFT
 import ChiselDSP._
 import Chisel.{Complex => _, _}
 
-class RocketToFFTTests(c: RocketToFFT) extends Tester(c) {
+class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
-  write(3,3)
-  write(4,4)
-  read(3)
-  read(4)
-  read(0)
-  // setup
-  write(2*2048+2,1)
-  var setupDone = read(2*2048+2)
-  /*while(setupDone == 0){
-    step(1)
-    setupDone = read(2*2048+2)
-  }*/
-  Status("yay")
+  traceOn = false
 
-  def write(d:BigInt,a:BigInt): Unit ={
+  Params.getFFT.sizes.foreach { n =>
+    Tracker.reset(n)
+    setup(n = n, isFFT = true)
+    val idx = Params.getFFT.sizes.indexOf(n)
+    val in = TestVectors.getIn(idx).grouped(n).toList
+    val out = TestVectors.getOut(idx).grouped(n).toList
+
+    in.zip(out).zipWithIndex.foreach { x => {
+      Status("Loading inputs for N = " + n + ", frame " + x._2)
+      load(x._1._1)
+      calculate()
+      Status("Verifying outputs for N = " + n + ", frame " + x._2)
+      check(x._1._2)
+    }}
+  }
+
+///////////////////////////////////////////// MACRO FUNCTIONS
+
+  val rocketBase = "0x48000000"
+
+  def check(x: List[ScalaComplex]): Unit = {
+    val n = x.length
+    val fromFFTAddr = c.memMap("fromFFT").base
+    val fracWidth = Params.getComplex.fracBits
+    for (i <- 0 until x.length){
+      val outBigInt = read(fromFFTAddr + i)
+      val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
+      // TODO: Add in IFFT
+      val normalized = x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
+      checkError(normalized,out,orb,oib,"@ [Out] FFT = " + n + ", i = " + i)
+    }
+    Status("Successfully verified outputs for N = " + n)
+  }
+
+  def calculate(): Unit = {
+    val calcAddr = c.memMap("calcDone").base
+    write(calcAddr,0)
+    var calcDone = read(calcAddr)
+    while (calcDone != BigInt(1)){
+      calcDone = read(calcAddr)
+    }
+    Status("Done calculating!")
+  }
+
+  def load(x: List[ScalaComplex]): Unit = {
+    val n = x.length
+    val toFFTAddr = c.memMap("toFFT").base
+    val fracWidth = Params.getComplex.fracBits
+    for (i <- 0 until x.length){
+      // real is MSB (out of 64)
+      val in = x(i).toBigInt(fracWidth,32)
+      write(toFFTAddr + i,in)
+      val outBigInt = read(toFFTAddr + i)
+      val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
+      checkError(x(i),out,orb,oib,"@ [In] FFT = " + n + ", i = " + i)
+    }
+    Status("Successfully loaded inputs for N = " + n)
+  }
+
+  def setup(n:Int, isFFT:Boolean): Unit = {
+    val idx = Params.getFFT.sizes.indexOf(n)
+    val fftIdxAddr = c.memMap("fftIdx").base
+    val isFFTAddr = c.memMap("isFFT").base
+    val setupAddr = c.memMap("setupDone").base
+    val isFFTInt = if (isFFT) 1 else 0
+    write(fftIdxAddr,idx)
+    write(isFFTAddr,isFFTInt)
+    write(setupAddr,0)
+    var setupDone = read(setupAddr)
+    while (setupDone != BigInt(1)){
+      setupDone = read(setupAddr)
+    }
+    if (read(fftIdxAddr) != BigInt(idx)) Error("fftIdx doesn't match " + idx)
+    if (read(isFFTAddr) != BigInt(isFFTInt)) Error("isFFT doesn't match " + isFFT)
+    Status("Setup FFT = " + n + " in Mode = " + {if (isFFT) "FFT" else "IFFT"})
+  }
+
+  def write(a:Int, d:BigInt): Unit = {
     var fftReady = peek(c.io.smi.req.ready)
-    while(fftReady == 0){
+    while(!fftReady){
       // Not ready
       step(1)
       fftReady = peek(c.io.smi.req.ready)
@@ -34,16 +99,16 @@ class RocketToFFTTests(c: RocketToFFT) extends Tester(c) {
     poke(c.io.smi.req.valid,false)
     poke(c.io.smi.resp.ready,true)
     var fftValid = peek(c.io.smi.resp.valid)
-    while(fftValid == 0){
+    while(!fftValid){
       // Not valid
       step(1)
       fftValid = peek(c.io.smi.resp.valid)
     }
   }
 
-  def read(a:BigInt): BigInt ={
+  def read(a:Int): BigInt ={
     var fftReady = peek(c.io.smi.req.ready)
-    while(fftReady == 0){
+    while(!fftReady){
       // Not ready
       step(1)
       fftReady = peek(c.io.smi.req.ready)
@@ -56,12 +121,22 @@ class RocketToFFTTests(c: RocketToFFT) extends Tester(c) {
     poke(c.io.smi.req.valid,false)
     poke(c.io.smi.resp.ready,true)
     var fftValid = peek(c.io.smi.resp.valid)
-    while(fftValid == 0){
+    while(!fftValid){
       // Not valid
       step(1)
       fftValid = peek(c.io.smi.resp.valid)
     }
     peek(c.io.smi.resp.bits)
+  }
+
+  def checkError(exp: ScalaComplex, out: ScalaComplex, outrBI: BigInt, outiBI: BigInt, errmsg: String = ""): Boolean = {
+    val (goodR, toleranceR) = checkDecimal(c.rocketToFFT.fft.io.din.real, exp.real, out.real, outrBI)
+    val (goodI, toleranceI) = checkDecimal(c.rocketToFFT.fft.io.dout.imag, exp.imag, out.imag, outiBI)
+    val good = goodR && goodI
+    if (!good) {
+      Error("Output value " + out.toString + " doesn't match expected " + exp.toString + " " + errmsg)
+    }
+    good
   }
 
 }
