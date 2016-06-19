@@ -22,38 +22,6 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     }}
   }
 
-
-
-
-
-
-
-
-
-
-
-
-  override def step(n:Int) = {
-    /*peek(c.rocketToFFT.ioHandling.io.ctrl.din)
-    peek(c.rocketToFFT.dataMem("toFFT").io.dIn.asInstanceOf[Complex[DSPFixed]].real.asInstanceOf[Bits])
-    peek(c.rocketToFFT.dataMem("toFFT").io.dIn.asInstanceOf[Complex[DSPFixed]].imag.asInstanceOf[Bits])
-    peek(c.rocketToFFT.dataMem("toFFT").io.dOut.asInstanceOf[Complex[DSPFixed]].real.asInstanceOf[Bits])
-    peek(c.rocketToFFT.dataMem("toFFT").io.dOut.asInstanceOf[Complex[DSPFixed]].imag.asInstanceOf[Bits])
-    peek(c.rocketToFFT.ioHandling.io.ctrl.dout)*/
-    traceOn = true
-    peek(c.rocketToFFT.fft.io.din)
-    peek(c.rocketToFFT.calcInCounter.io.out)
-    peek(c.rocketToFFT.fft.ctrl.k)
-    peek(c.rocketToFFT.fft.io.dout)
-    traceOn = false
-    super.step(n)
-  }
-
-
-
-
-
-
 ///////////////////////////////////////////// MACRO FUNCTIONS
 
   val rocketBase = "0x48000000"
@@ -63,7 +31,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     val fromFFTAddr = c.memMap("fromFFT").base
     val fracWidth = Params.getComplex.fracBits
     for (i <- 0 until x.length){
-      val outBigInt = read(fromFFTAddr)
+      val outBigInt = read(fromFFTAddr + i)
       val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
       // TODO: Add in IFFT
       val normalized = x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
@@ -89,8 +57,8 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     for (i <- 0 until x.length){
       // real is MSB (out of 64)
       val in = x(i).toBigInt(fracWidth,32)
-      write(toFFTAddr,in)
-      val outBigInt = read(toFFTAddr)
+      write(toFFTAddr + i,in)
+      val outBigInt = read(toFFTAddr + i)
       val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
       checkError(x(i),out,orb,oib,"@ [In] FFT = " + n + ", i = " + i)
     }
