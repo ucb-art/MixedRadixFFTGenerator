@@ -4,6 +4,8 @@ import Chisel.{Complex => _, _}
 
 class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
+  // TODO: Support IFFT
+
   traceOn = false
 
   Params.getFFT.sizes.foreach { n =>
@@ -14,10 +16,12 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     val out = TestVectors.getOut(idx).grouped(n).toList
 
     in.zip(out).zipWithIndex.foreach { x => {
-      Status("Loading inputs for N = " + n + ", frame " + x._2)
+      Status("///////////////////////////////////////////// FFT N = " + n)
+      Status("Loading inputs for N = " + n + ", Frame " + x._2)
       load(x._1._1)
       calculate()
-      Status("Verifying outputs for N = " + n + ", frame " + x._2)
+      if (read(c.memMap("k").base)!= n-1) Error("K not expected -- should be " + (n-1))
+      Status("Verifying outputs for N = " + n + ", Frame " + x._2)
       check(x._1._2)
     }}
   }
@@ -35,7 +39,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
       val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
       // TODO: Add in IFFT
       val normalized = x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
-      checkError(normalized,out,orb,oib,"@ [Out] FFT = " + n + ", i = " + i)
+      checkError(normalized,out,orb,oib,"@ [Out] FFT = " + n + ", k = " + i)
     }
     Status("Successfully verified outputs for N = " + n)
   }
@@ -60,7 +64,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
       write(toFFTAddr + i,in)
       val outBigInt = read(toFFTAddr + i)
       val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
-      checkError(x(i),out,orb,oib,"@ [In] FFT = " + n + ", i = " + i)
+      checkError(x(i),out,orb,oib,"@ [In] FFT = " + n + ", n = " + i)
     }
     Status("Successfully loaded inputs for N = " + n)
   }

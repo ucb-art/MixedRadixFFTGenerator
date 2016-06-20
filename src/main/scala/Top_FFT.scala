@@ -3,10 +3,10 @@
 package FFT
 import ChiselDSP._
 import Chisel.{Complex => _, _}
-import arbor.{Math => _, _}
+//import arbor.{Math => _, _}
 import java.io._
 
-object MainWithMatlab extends arbor.matlab.MATLABRepl {
+object MainWithMatlab { // extends arbor.matlab.MATLABRepl {
 
   // How to refer to objects in Matlab
   val imports = Seq(
@@ -20,11 +20,13 @@ object MainWithMatlab extends arbor.matlab.MATLABRepl {
 
     // TODO: Move to Arbor? Pull out helper for write to file
     // Handles spaces in folder + file names for Macs, create javapaths file for Matlab interface
+    /*
     val matlabTemplate = getStartup.replaceAll("%20"," ")
     val javapaths = new File("MatlabScratch/javapaths.m")
     val javapathsBW = new BufferedWriter(new FileWriter(javapaths))
     javapathsBW.write(matlabTemplate)
     javapathsBW.close()
+    */
 
     val fft = new ChiselFFT
 
@@ -35,7 +37,7 @@ object MainWithMatlab extends arbor.matlab.MATLABRepl {
 
 }
 
-class ChiselFFT() extends ArborSpec {
+class ChiselFFT() { // extends ArborSpec {
 
   // TODO: Support IFFT
 
@@ -57,6 +59,22 @@ class ChiselFFT() extends ArborSpec {
                : Array[Double] = {
     val inVec = (inReal.toList).zip(inImag.toList).map{case (real,imag) => Complex(real,imag)}
     // SBT run parameters (overridden)
+
+    // TODO: To include Arbor or not?
+
+    def dir = java.nio.file.Files.createTempDirectory("arbor-tests")
+    val baseArgs = chiselEnvironmentArguments() ++
+      Array[String](
+        "--debug",
+        "--compile",
+        "--test"
+      )
+    val testArgs = baseArgs ++ Array(
+      "--genHarness",
+      "--targetDir",
+      dir.toString()
+    )
+
     val args = Array("-params_false_false") ++ testArgs
     val out = run(args,Some(fftn),Some(inVec),Some(isFixed),fixedParams, Some(normalized), Some(generateOffset))
 
