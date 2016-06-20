@@ -1,9 +1,12 @@
 keep running
+error
+push through fpga
+push through rocket
+write fpga tester, write rocket tester
 
 
 
-
-
+CHECK K is right
 
 
 
