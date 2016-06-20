@@ -1,6 +1,10 @@
 // Test Setup
 #define NUM_TESTS 2
 #define TEST_MEM_SIZE 4101
+// Base of FFT-used interface memory
+#define TEST_BASE 0x48000000UL
+// 48000000 - 4800ffff
+//io:int:fft 48000000 - 4800ffff
 
 // Test Memory Locations
 #define toFFT_BASE 0
@@ -40,6 +44,8 @@ unsigned long *outptr[NUM_TESTS]={o3,o4};
 
 // Used Functions
 int setup(unsigned long currFFTIdx, unsigned long currIsFFT);
+int load(int testNum, int idxStart, int currN);
+void calculate (void);
 
 //////////// TEST MEMORY -- REMOVE
 unsigned long test[TEST_MEM_SIZE];

@@ -1,12 +1,19 @@
 keep running
 error
-push through fpga
 push through rocket
-write fpga tester, write rocket tester
+write rocket tester
 
 fix c,h
+fft, fftio tests
+
+decimal oto large for fpga tester need 64'd explicitly
+try x40 as define
+
+
 
 TODO
+
+try decreasing tolerance more
 
 see if synthesis runs -- check fft ports
 check fttgen synth, fpga sim

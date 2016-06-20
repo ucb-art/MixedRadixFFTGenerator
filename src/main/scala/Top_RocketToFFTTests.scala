@@ -8,6 +8,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
   traceOn = false
 
+  //.slice(0,4)
   Params.getFFT.sizes.foreach { n =>
     Tracker.reset(n)
     setup(n = n, isFFT = true)

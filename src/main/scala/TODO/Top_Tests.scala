@@ -284,7 +284,7 @@ object Tracker {
     // val fixedTol = (DSPFixed.toFixed(dblTol,Complex.getFrac).bitLength-2).max(1)
 
     // TODO: Don't use Complex.getFrac!
-    val fixedTol = Params.getComplex.fracBits/3
+    val fixedTol = Params.getComplex.fracBits/4
     // val floTol = (0.00000001).max(dblTol/n/100000)
     val floTol = 0.0000000001
     DSPTester.setTol(floTol = floTol, fixedTol = fixedTol)
