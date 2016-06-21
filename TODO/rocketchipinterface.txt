@@ -9,7 +9,10 @@ fft, fftio tests
 decimal oto large for fpga tester need 64'd explicitly
 try x40 as define
 
+ifft
 
+
+// need scala tester out -- check for neg
 
 TODO
 
