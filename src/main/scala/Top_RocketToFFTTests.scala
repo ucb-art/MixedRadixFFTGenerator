@@ -7,32 +7,56 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
   // TODO: Support IFFT
 
   traceOn = false
-
-  val rocketBase = "0x48000000"
-  val sizes = Params.getFFT.sizes //.slice(0,4)
+  val sizes = Params.getFFT.sizes.slice(1,4)
   val (cins,couts) = test(sizes)
 
+///////////////////////////////////////////// C HEADER
 
+  val numTests = sizes.length
+  val testMemSize = c.rocketToFFT.addrMax + 1
+  val testBase = "0x48000000"
+  val memLocs = c.rocketToFFT.memMap.map(x => x._1 -> x._2.base).toMap
+  val numFrames = List.fill(numTests)(Params.getTest.frames)
+  val fftIdxs = sizes.map(n => Params.getFFT.sizes.indexOf(n))
+  val isFFTs = List.fill(numTests)(1)
 
+  val ch = new java.io.BufferedWriter(new java.io.FileWriter("build/debug/RocketToFFTTester.h"))
 
+  ch write "int setup(unsigned long currFFTIdx, unsigned long currIsFFT); \n"
+  ch write "int load(int testNum, int idxStart, int currN); \n"
+  ch write "void calculate(void); \n"
+  ch write "int checkOut(int testNum, int idxStart, int currN); \n\n"
+  ch write "#define START 0UL \n"
+  ch write "#define DONE 1UL \n\n"
+  ch write "#define TEST_MEM_SIZE %d \n".format(testMemSize)
+  ch write "#define TEST_BASE %sUL \n".format(testBase)
+  memLocs.foreach{ x =>
+    ch write "#define %s_OFFSET %d \n".format(x._1,x._2)
+  }
+  ch write "\n"
+  ch write "#define NUM_TESTS %d \n".format(numTests)
+  ch write "int fftn[NUM_TESTS] = {%s}; \n".format(sizes.mkString(","))
+  ch write "int frames[NUM_TESTS] = {%s}; \n".format(numFrames.mkString(","))
+  ch write "unsigned long fftIdx[NUM_TESTS] = {%s}; \n".format(fftIdxs.mkString(","))
+  ch write "unsigned long isFFT[NUM_TESTS] = {%s}; \n\n".format(isFFTs.mkString(","))
+  val inames = cins.zipWithIndex.map{ x => {
+    val n = sizes(x._2)
+    val length = x._1.length
+    ch write "unsigned long i%d[%d] = {%s}; \n".format(n,length,x._1.mkString(","))
+    "i" + n
+  }}
+  ch write "\n"
+  val onames = couts.zipWithIndex.map{ x => {
+    val n = sizes(x._2)
+    val length = x._1.length
+    ch write "unsigned long o%d[%d] = {%s}; \n".format(n,length,x._1.mkString(","))
+    "o" + n
+  }}
+  ch write "\n"
+  ch write "unsigned long *inptr[NUM_TESTS] = {%s}; \n".format(inames.mkString(","))
+  ch write "unsigned long *outptr[NUM_TESTS] = {%s}; \n".format(onames.mkString(","))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  ch.close()
 
 ///////////////////////////////////////////// MACRO FUNCTIONS
 

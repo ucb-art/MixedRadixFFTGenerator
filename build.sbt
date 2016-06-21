@@ -20,15 +20,41 @@ val prjSettings = Project.defaultSettings ++ Seq(
   libraryDependencies <+= scalaVersion("org.scala-lang" % "scala-compiler" % _ ) 
 )
 
+
 // Local ChiselDSP (for experimentation)
 val ChiselDSPLocal = file("../ChiselDSP")
 // Official ChiselDSP version
-val ChiselDSPRepo = uri("git://github.com/ucb-art/ChiselDSP.git#master")
+//val ChiselDSPRepo = uri("git://github.com/ucb-art/ChiselDSP.git#master")
 lazy val ChiselDSP = {
-  if (ChiselDSPLocal.exists) ProjectRef(ChiselDSPLocal, "chisel-dsp")
-  else ProjectRef(ChiselDSPRepo, "chisel-dsp")
+  //if (ChiselDSPLocal.exists) ProjectRef(ChiselDSPLocal, "chisel-dsp")
+  //else ProjectRef(ChiselDSPRepo, "chisel-dsp")
+  //ProjectRef(ChiselDSPRepo, "chisel-dsp")
+  ProjectRef(ChiselDSPLocal, "chisel-dsp")
 }
 
+/*
+lazy val chisel = Project(
+  id = "chisel",
+  base = file("ChiselDSP/chisel/"),
+  settings = prjSettings
+)
+
+
+//project in file("ChiselDSP/chisel")
+lazy val ChiselCompatibility = Project(
+  id = "chisel-compatibility",
+  base = file("ChiselDSP/ChiselCompatibility/"),
+  settings = prjSettings
+).dependsOn(chisel
+).aggregate(chisel)
+
+lazy val ChiselDSP = Project(
+  id = "chisel-dsp",
+  base = file("ChiselDSP/src/main/scala/"),
+  settings = prjSettings
+).dependsOn(chisel,ChiselCompatibility
+).aggregate(chisel,ChiselCompatibility)
+*/
 // ARBOR for Matlab interfaces + Type classes
 /*
 val arborVersion = "13b02578d48034f35fbd4f555e1316890b518b5d"
@@ -44,6 +70,8 @@ lazy val root = Project(
   base = file("."),
   settings = prjSettings
 ).dependsOn(ChiselDSP)
+//).dependsOn(chisel, ChiselCompatibility, ChiselDSP
+//).aggregate(chisel, ChiselCompatibility, ChiselDSP)
 //.dependsOn(ChiselDSP, arbor)
 
 // Define default sbt run main class
