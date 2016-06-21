@@ -8,41 +8,75 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
   traceOn = false
 
-  //.slice(0,4)
-  Params.getFFT.sizes.foreach { n =>
-    Tracker.reset(n)
-    setup(n = n, isFFT = true)
-    val idx = Params.getFFT.sizes.indexOf(n)
-    val in = TestVectors.getIn(idx).grouped(n).toList
-    val out = TestVectors.getOut(idx).grouped(n).toList
+  val rocketBase = "0x48000000"
+  val sizes = Params.getFFT.sizes //.slice(0,4)
+  val (cins,couts) = test(sizes)
 
-    in.zip(out).zipWithIndex.foreach { x => {
-      Status("///////////////////////////////////////////// FFT N = " + n)
-      Status("Loading inputs for N = " + n + ", Frame " + x._2)
-      load(x._1._1)
-      calculate()
-      if (read(c.memMap("k").base)!= n-1) Error("K not expected -- should be " + (n-1))
-      Status("Verifying outputs for N = " + n + ", Frame " + x._2)
-      check(x._1._2)
-    }}
-  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ///////////////////////////////////////////// MACRO FUNCTIONS
 
-  val rocketBase = "0x48000000"
+  def test(sizes:List[Int]): Tuple2[List[List[BigInt]],List[List[BigInt]]] = {
+    val fracWidth = Params.getComplex.fracBits
+    val bigIntsIn = sizes.map{n => {
+      val idx = Params.getFFT.sizes.indexOf(n)
+      val in = TestVectors.getIn(idx)
+      in.map(x => x.toBigInt(fracWidth,32))
+    }}
+    val bigIntsOut = sizes.map { n => {
+      Tracker.reset(n)
+      setup(n = n, isFFT = true)
+      val idx = Params.getFFT.sizes.indexOf(n)
+      val in = TestVectors.getIn(idx).grouped(n).toList
+      val out = TestVectors.getOut(idx).grouped(n).toList
 
-  def check(x: List[ScalaComplex]): Unit = {
+      in.zip(out).zipWithIndex.map{ x => {
+        Status("///////////////////////////////////////////// FFT N = " + n)
+        Status("Loading inputs for N = " + n + ", Frame " + x._2)
+        load(x._1._1)
+        calculate()
+        if (read(c.memMap("k").base)!= n-1) Error("K not expected -- should be " + (n-1))
+        Status("Verifying outputs for N = " + n + ", Frame " + x._2)
+        check(x._1._2)
+      }}.flatten
+    }}
+    (bigIntsIn,bigIntsOut)
+  }
+
+  def check(x: List[ScalaComplex]): List[BigInt] = {
+    val fracWidth = Params.getComplex.fracBits
     val n = x.length
     val fromFFTAddr = c.memMap("fromFFT").base
-    val fracWidth = Params.getComplex.fracBits
-    for (i <- 0 until x.length){
+    val o = (0 until x.length).map{ i => {
       val outBigInt = read(fromFFTAddr + i)
       val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
       // TODO: Add in IFFT
       val normalized = x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
       checkError(normalized,out,orb,oib,"@ [Out] FFT = " + n + ", k = " + i)
-    }
+      outBigInt
+    }}
     Status("Successfully verified outputs for N = " + n)
+    o.toList
   }
 
   def calculate(): Unit = {
@@ -56,9 +90,9 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
   }
 
   def load(x: List[ScalaComplex]): Unit = {
+    val fracWidth = Params.getComplex.fracBits
     val n = x.length
     val toFFTAddr = c.memMap("toFFT").base
-    val fracWidth = Params.getComplex.fracBits
     for (i <- 0 until x.length){
       // real is MSB (out of 64)
       val in = x(i).toBigInt(fracWidth,32)
