@@ -1,20 +1,24 @@
-// Test Setup
+// Test Setup (num_tests ~ # of fft sizes in 1 config to test)
 #define NUM_TESTS 2
 #define TEST_MEM_SIZE 4101
 
+// Base of FFT-used interface memory
+// #define TEST_BASE 0x48000000UL
+#define TEST_BASE 0
+
 // Test Memory Locations
-#define toFFT_BASE 0
-#define fromFFT_BASE 2048
-#define fftIdx_BASE 4096
-#define isFFT_BASE 4097
-#define k_BASE 4098
-#define setupDone_BASE 4099
-#define calcDone_BASE 4100
+#define toFFT_OFFSET 0
+#define fromFFT_OFFSET 2048
+#define fftIdx_OFFSET 4096
+#define isFFT_OFFSET 4097
+#define k_OFFSET 4098
+#define setupDone_OFFSET 4099
+#define calcDone_OFFSET 4100
 
 // Useful Constants
-// CHANGE START TO 0
-#define DONE 1UL
+// #define START 0UL
 #define START 1UL
+#define DONE 1UL
 
 // All Frames of Inputs/Outputs for FFTN, (iN,oN)
 unsigned long i3[6] = {1,2,3,4,5,6};
@@ -40,6 +44,11 @@ unsigned long *outptr[NUM_TESTS]={o3,o4};
 
 // Used Functions
 int setup(unsigned long currFFTIdx, unsigned long currIsFFT);
+int load(int testNum, int idxStart, int currN);
+void calculate (void);
+// REMOVE
+int loadOutput(int testNum, int idxStart, int currN);
+int checkOut(int testNum, int idxStart, int currN);
 
 //////////// TEST MEMORY -- REMOVE
 unsigned long test[TEST_MEM_SIZE];

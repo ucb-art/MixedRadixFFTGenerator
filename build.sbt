@@ -20,14 +20,7 @@ val prjSettings = Project.defaultSettings ++ Seq(
   libraryDependencies <+= scalaVersion("org.scala-lang" % "scala-compiler" % _ ) 
 )
 
-// Local ChiselDSP (for experimentation)
-val ChiselDSPLocal = file("../ChiselDSP")
-// Official ChiselDSP version
-val ChiselDSPRepo = uri("git://github.com/ucb-art/ChiselDSP.git#master")
-lazy val ChiselDSP = {
-  if (ChiselDSPLocal.exists) ProjectRef(ChiselDSPLocal, "chisel-dsp")
-  else ProjectRef(ChiselDSPRepo, "chisel-dsp")
-}
+lazy val ChiselDSP = ProjectRef(file("ChiselDSP"), "chisel-dsp")
 
 // ARBOR for Matlab interfaces + Type classes
 /*
@@ -39,12 +32,11 @@ lazy val arbor = ProjectRef(
 */
 
 // Generator
-lazy val root = Project(
+lazy val fft = Project(
   id = "fft",
   base = file("."),
   settings = prjSettings
 ).dependsOn(ChiselDSP)
-//.dependsOn(ChiselDSP, arbor)
 
 // Define default sbt run main class
 // mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
