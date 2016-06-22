@@ -1,29 +1,3 @@
-finish checking fft_main.c
-
-keep running
-error
-push through rocket
-write rocket tester
-
-fix c,h
-fft, fftio tests
-
-decimal oto large for fpga tester need 64'd explicitly
-try x40 as define
-
-ifft
-
-
-// need scala tester out -- check for neg
-
-TODO
-
-try decreasing tolerance more
-
-see if synthesis runs -- check fft ports
-check fttgen synth, fpga sim
-
-
 From Rocket
 *io.smi.req.valid       --- Rocket wants to read or write
 *io.smi.req.bits.rw     --- Rocket wants to read (false) or write (true)

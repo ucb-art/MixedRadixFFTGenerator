@@ -88,7 +88,8 @@ class ChiselFFT() { // extends ArborSpec {
           isFixed: Option[Boolean] = None,
           fixedParams: Option[(Int,Int)] = None,
           normal: Option[Boolean] = None,
-          genOffset: Option[Boolean] = None
+          genOffset: Option[Boolean] = None,
+          debugMode: Boolean = false
          ): List[ScalaComplex] = {
 
     // TODO: Pull out as SBT run parameters
@@ -151,7 +152,9 @@ class ChiselFFT() { // extends ArborSpec {
 
     if (checkFixed) {
       Status("Starting DSPFixed testbench")
-      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPFixed(p.complex.getFixedParams)},p), nameExt)) {
+      Chisel.chiselMainTest(
+        runArgs, () => DSPModule(new FFT({DSPFixed(p.complex.getFixedParams)},p,debugMode), nameExt)
+      ) {
         c => new FFTTests(c,fftn,inVec,normalized,generateOffset)
       }
     }

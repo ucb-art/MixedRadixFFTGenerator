@@ -5,7 +5,7 @@ package FFT
 import ChiselDSP._
 import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, Counter => _, _}
 
-class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams) extends GenDSPModule (gen) {
+class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = false) extends GenDSPModule (gen) {
 
   CheckDelay.off()
 
