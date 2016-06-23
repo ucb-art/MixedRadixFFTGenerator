@@ -139,11 +139,11 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
       val ioCycle = (t-Tracker.initT)/Params.getIO.clkRatio
 
-      if (!Tracker.outPropagated && ioCycle > 4 * Tracker.FFTN)
+      if (!Tracker.outPropagated && ioCycle > 5 * Tracker.FFTN)
         Error("Data out never seems valid")
 
-      //val en = if (ioCycle == 3 * Tracker.FFTN + 1) false else true
-      val en = true
+      val en = if (ioCycle % 7 == 0 || ioCycle % 10 == 0) false else true
+      //val en = true
       stepTrack(Params.getIO.clkRatio,in,out, enable = en)
     }
 
@@ -223,7 +223,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
           val outVal = peek(c.io.dout)
           if (i == 0) Tracker.FFTOut = Tracker.FFTOut :+ outVal
           else {
-            if (outVal != Tracker.FFTOut.last) Error("Dout inconsistent across fast clk cycles within 1 IO cycle")
+            if ((outVal-Tracker.FFTOut.last).abs != 0.0) Error("Dout inconsistent across fast clk cycles within 1 IO cycle")
           }
         }
 
@@ -242,6 +242,33 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def calcDebug(): Unit = {
     val temp = traceOn
     traceOn = true
+
+    /*val firstCycle = (t - Tracker.initT) % Params.getIO.clkRatio == 0
+    if(firstCycle) Status("START CYCLE @ t = " + t)
+
+
+
+    if (Tracker.inStep < 12) {
+      Status("/// Input")
+      peek(c.io.din)
+      peek(c.ctrl.enable)
+      peek(c.ctrl.reset)
+    }
+    else if (Tracker.outPropagated) {
+      Status("/// Output")
+      peek(c.io.dout)
+      peek(c.ctrl.outValid)
+      peek(c.ctrl.k)
+      peek(c.MemBankInterface.topIO.dout)
+    }
+    else {
+      Status("/// Calc @ t = " + t)
+      c.MemBankInterface.butterfly.x.foreach{
+        x : Complex[_] => peek(x.real.asInstanceOf[DSPDbl])
+      }
+
+    }*/
+
     // if (!a.toList.sameElements(b.toList)) Error(":(")
     traceOn = temp
   }

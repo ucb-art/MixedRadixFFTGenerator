@@ -212,10 +212,7 @@ case class PipelineParams (
   var memArbiterTop: Int = 1,
 
   // Twiddle address generation address = count * mul delay
-  var twiddleAddrGen: Int = 4,
-
-  // Register the output
-  var topOut: Int = 1
+  var twiddleAddrGen: Int = 4
 
 ){
 
@@ -267,7 +264,18 @@ case class PipelineParams (
   }
 
   // Delay from undelayed IO ctrl signal to data out of FFT top
-  def outFlagDelay = ioCtrl + memArbiterTop + memReadAtoD + normalize + topOut
+  def outFlagDelay = ioCtrl + memArbiterTop + memReadAtoD + (if (Params.getFFT.normalized) normalize else 0) + topOut
+
+  // Delay between normalization out and output @ top level
+  // Total output delay needs to be a multiple of the IO clock ratio so that the output
+  // is valid on the correct fast clock cycle
+  def topOut = {
+    val dlyUpToOut = {
+      if (Params.getFFT.normalized) ioCtrl + memArbiterTop + memReadAtoD + normalize
+      else ioCtrl + memArbiterTop + memReadAtoD
+    }
+    Params.getIO.clkRatio - (dlyUpToOut % Params.getIO.clkRatio)
+  }
 
   // TODO: Support pipeDin @ PE, 3 muls
 
