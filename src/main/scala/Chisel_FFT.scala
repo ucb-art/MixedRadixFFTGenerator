@@ -12,17 +12,17 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   // Setup FFT with user-defined parameters
   Params(p)
 
-  // Data IO, setup IO, operating controls
+  // Data IO, setup IO, operating controls (top level)
   override val io = new FFTIO(gen)
   val setup = new SetupTopIO
   val ctrl = new IOCtrlIO
 
-  // Setup basic controls used throughput
+  // Setup basic controls used throughput -- i.e. resync control signals
   val GlobalInit = DSPModule(new GlobalInit)
   GlobalInit.setupI <> setup
   GlobalInit.ioCtrlI <> ctrl
 
-  // Configure options used throughout (setup
+  // Configure options used throughout
   val GeneralSetup =  DSPModule(new GeneralSetup)
   GeneralSetup.setupTop <> GlobalInit.setupO
 
@@ -38,6 +38,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   IOCtrl.generalSetup <> GeneralSetup.o
   IOCtrl.ioSetup <> IOSetup.o
   IOCtrl.calcCtrlI <> GlobalInit.calcCtrlO
+  IOCtrl.ioCtrlI.clkEn := GlobalInit.ioCtrlI.clkEn
 
   // IOCtrl generates output flags
   ctrl.k := IOCtrl.ctrl.k
@@ -76,72 +77,54 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   MemBankInterface.ioCtrlFlags <> IOCtrl.ioFlagsNoDelay
   MemBankInterface.ioCtrl <>IOCtrl.o
 
+  // Total delay from calc counters to data valid @ butterfly
   val bfCtrlDly = Params.getDelays.calcCtrl + Params.getDelays.memArbiterTop + Params.getDelays.memReadAtoD
 
   // Butterfly
   // TODO: Support more PEs, get rid of checkDelay
-  val butterfly = DSPModule(new PE(gen))
+  val Butterfly = DSPModule(new PE(gen))
 
   CheckDelay.off()
 
-  butterfly.io.currRad.get := Pipe(CalcCtrl.calcFlagsNoDelay.currRad,bfCtrlDly)
-  butterfly.io.calcDIT := CalcCtrl.calcFlagsNoDelay.isDIT.pipe(bfCtrlDly)
-
-  // Memory <-> Butterfly
-  MemBankInterface.butterfly.y := butterfly.io.y
-  butterfly.io.x := MemBankInterface.butterfly.x
+  Butterfly.io.currRad.get := Pipe(CalcCtrl.calcFlagsNoDelay.currRad,bfCtrlDly)
+  Butterfly.io.calcDIT := CalcCtrl.calcFlagsNoDelay.isDIT.pipe(bfCtrlDly)
 
   // Pass in twiddles
-  butterfly.io.twiddles := TwiddleGen.o.twiddles
+  Butterfly.io.twiddles := TwiddleGen.o.twiddles
 
+  // Memory <-> Butterfly
+  Butterfly.io.x := MemBankInterface.butterfly.x
 
+  if (!debugMode){
+    MemBankInterface.butterfly.y := Butterfly.io.y
+  } else {
+    MemBankInterface.butterfly.y.zipWithIndex.foreach{x => {
+      x._1 := Pipe(MemBankInterface.butterfly.x(x._2) ** (double2T(10.0),Real),Butterfly.delay)
+    }}
+  }
 
+  // Additional 1 IO clock cycle delay needed -- as an example,
+  // if reset goes high on IO clk 0, the counter is actually reset to 0 on IO clk 1
+  // and din to mem interface needs to line up with counter = 0
+  MemBankInterface.topIO.din := io.din.pipe(Params.getIO.clkRatio+Params.getDelays.ioCtrl)
 
+  val isFFT = GlobalInit.setupO.isFFT
+  val topOutDly = Params.getDelays.topOut
 
-
-
-// CHECK BELOW, add IFFT back in capitalize bf
-
-
-
-  // Input to memory bank interface, tf
-  MemBankInterface.topIO.din := io.din.pipe(2+Params.getDelays.ioCtrl)
-
-
-  val normalizedDelay = if (Params.getFFT.normalized) {
+  if (Params.getFFT.normalized) {
     val Normalize = DSPModule(new Normalize(gen), "normalize")
     Normalize.io.din := MemBankInterface.topIO.dout
     Normalize.setupTop <> GlobalInit.setupO
     val normalizedOut = Normalize.io.dout.cloneType()
     normalizedOut := Normalize.io.dout
-
-    io.dout.real := normalizedOut.real.pipe(1)
-    io.dout.imag := normalizedOut.imag.pipe(1)
-
-    //io.dout.real := Mux(DSPBool(setup.isFFT), normalizedOut.real, normalizedOut.imag).pipe(1)
-    //io.dout.imag := Mux(DSPBool(setup.isFFT), normalizedOut.imag, normalizedOut.real).pipe(1) // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
-    Normalize.delay
+    io.dout.real := Mux(isFFT, normalizedOut.real, normalizedOut.imag).pipe(topOutDly)
+    io.dout.imag := Mux(isFFT, normalizedOut.imag, normalizedOut.real).pipe(topOutDly)
   }
   else {
-    io.dout.real := Mux(DSPBool(setup.isFFT),MemBankInterface.topIO.dout.real,MemBankInterface.topIO.dout.imag).pipe(1)
-    io.dout.imag := Mux(DSPBool(setup.isFFT), MemBankInterface.topIO.dout.imag, MemBankInterface.topIO.dout.real).pipe(1)   // reg b/c delayed 1 cycle from memout reg, but delay another to get back to io cycle
-    0
+    io.dout.real := Mux(isFFT,MemBankInterface.topIO.dout.real,MemBankInterface.topIO.dout.imag).pipe(topOutDly)
+    io.dout.imag := Mux(isFFT, MemBankInterface.topIO.dout.imag, MemBankInterface.topIO.dout.real).pipe(topOutDly)
   }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  Status("Out count to output delay: " + Params.getDelays.outFlagDelay)
 
 }

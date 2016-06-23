@@ -44,6 +44,8 @@ class IOCtrl extends DSPModule {
 
   val calcCtrlI = new CalcCtrlI
 
+  val ioCtrlI = (new IOCtrlIO).flip
+
   val usedLoc = ioSetup.usedLoc
   val isUsed = ioSetup.isUsed
   val counterPrimeDigits = ioSetup.counterPrimeDigits
@@ -107,9 +109,11 @@ class IOCtrl extends DSPModule {
   val outValidNext = !ctrl.reset & (outValidTransitionCond | outValid)
   outValid := outValidNext
 
+  // TODO: Redundancy
   // Module outValid will go low if IO disabled
   val realOutValid = RegInit(DSPBool(false))
-  realOutValid := outValidNext ? calcCtrlI.enable
+  val realOutValidNext = outValidNext ? calcCtrlI.enable
+  realOutValid := Mux(ioCtrlI.clkEn, realOutValidNext, realOutValid)
 
   // TODO: kReset conditions redundant
   // K starts counting output # (mod FFT size) when output is valid

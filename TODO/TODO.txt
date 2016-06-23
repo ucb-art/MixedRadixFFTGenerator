@@ -5,10 +5,9 @@ error
 
 
 
-ifft
+ifft (in normalize)
 
-
-
+// enable should be synced
 
 check fft ports
 
@@ -30,7 +29,7 @@ start then disable until next enabling_start (while still valid)
 
 
 
-Load setup reg write to start setup reg. Prob for setup done (stay high) write to data in mem. Start frame = run for n clocks. Keep storing k , valid out, data out. After n clocks stop. Read out output. Input new data. Different input but without reset command (after original, pause). Read out again. Repeat. Check when valid. Increment frame after k = fft size-1. Repeat.
+ Start frame = run for n clocks. Keep storing k , valid out, data out. After n clocks stop. Read out output. Input new data. Different input but without reset command (after original, pause). Read out again. Repeat. Check when valid. Increment frame after k = fft size-1. Repeat.
 e9e5bb28ac230ab7c54aab9ca30fbe164bbb84be
 
 -- another mode where it's one at a time
@@ -46,7 +45,6 @@ e9e5bb28ac230ab7c54aab9ca30fbe164bbb84be
 *outvalid ---
 *calccounters
 
-out on correct cycle -- fynction of clkratio pipeline?
 
 // enable pass through for continuous cycle to avoid read/write conflict?
 
@@ -56,3 +54,7 @@ setup.en, reset --> resets chain of outvalid pipes
 k should eventually get reset?
 
 io en goes low --> needs to update valid
+
+
+
+check k transitions at right time -- even with enable delay

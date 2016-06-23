@@ -24,6 +24,7 @@ class SetupDone(setupDly: Int) extends DSPModule {
   val IOSetupCycles = baseIOSetupCycles + addIOSetupCycle
 
   // Additional 2 for going to reset + lastSetupDelta state
+  // maxCounts changes @ IO clock rate
   val maxCount = IOSetupCycles + 2
 
   val setupCounter = IncReset(maxCount, nameExt = "setupCounter")

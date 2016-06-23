@@ -197,6 +197,7 @@ class CalcCtrl extends DSPModule {
   // i.e. keep running if not maxed out. If finishing last stage, hold @ max = don't write to memory.
   stallCounter.iCtrl.reset := ioCtrl.reset
   stallCounter.io.max.get := DSPUInt(PEandMemOutRegDly)
+
   val keepStalling = !stallWrapCond & calcCtrlI.enable
   // Note: stageChangeCond includes enable (reset on all subsequent stages except for last stage)
   val resetStallCounter = stageChangeCond & !(calcDoneChangeCond | calcDoneFlag)

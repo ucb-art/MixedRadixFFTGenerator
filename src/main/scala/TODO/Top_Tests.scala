@@ -139,10 +139,10 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
       val ioCycle = (t-Tracker.initT)/Params.getIO.clkRatio
 
-      if (!Tracker.outPropagated && ioCycle > 4 * Tracker.FFTN)
+      if (!Tracker.outPropagated && ioCycle > 5 * Tracker.FFTN)
         Error("Data out never seems valid")
 
-      //val en = if (ioCycle == 3 * Tracker.FFTN + 1) false else true
+      //val en = if (ioCycle % 7 == 0) false else true
       val en = true
       stepTrack(Params.getIO.clkRatio,in,out, enable = en)
     }
@@ -242,6 +242,18 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def calcDebug(): Unit = {
     val temp = traceOn
     traceOn = true
+
+    val firstCycle = (t-Tracker.initT)%Params.getIO.clkRatio
+    if(firstCycle == 0) Status("START")
+    Status("///input")
+    peek(c.io.din)
+    peek(c.ctrl.enable)
+    peek(c.ctrl.reset)
+    Status("///output")
+    peek(c.io.dout)
+    peek(c.ctrl.outValid)
+    peek(c.ctrl.k)
+
     // if (!a.toList.sameElements(b.toList)) Error(":(")
     traceOn = temp
   }
