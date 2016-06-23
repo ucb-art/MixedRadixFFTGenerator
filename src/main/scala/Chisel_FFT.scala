@@ -99,7 +99,10 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
     MemBankInterface.butterfly.y := Butterfly.io.y
   } else {
     MemBankInterface.butterfly.y.zipWithIndex.foreach{x => {
-      x._1 := Pipe(MemBankInterface.butterfly.x(x._2) ** (double2T(10.0),Real),Butterfly.delay)
+      val currRadBF = Pipe(CalcCtrl.calcFlagsNoDelay.currRadNum,bfCtrlDly)
+      val inTemp = MemBankInterface.butterfly.x(x._2)
+      val in = Mux(DSPUInt(x._2) < currRadBF,inTemp,Complex(double2T(0.0),double2T(0.0)))
+      x._1 := in ** (double2T(10.0),Real,mPipe = Butterfly.delay)
     }}
   }
 
@@ -126,5 +129,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   }
 
   Status("Out count to output delay: " + Params.getDelays.outFlagDelay)
+
+  // Note: extra + 1 due to the fact that input must be registered first to align with counters zeroing out after reset
+  Status("Start of k = 0 (frame 0) " + (Params.getDelays.outFlagDelay/Params.getIO.clkRatio + 1) + " IO clocks" +
+    " after start of n = 0 (frame 2)")
 
 }

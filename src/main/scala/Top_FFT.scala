@@ -160,7 +160,7 @@ class ChiselFFT() { // extends ArborSpec {
     }
     else {
       Status("Starting DSPDbl testbench")
-      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPDbl()},p), nameExt)) {
+      Chisel.chiselMainTest(runArgs, () => DSPModule(new FFT({DSPDbl()},p,debugMode), nameExt)) {
         c => new FFTTests(c,fftn,inVec,normalized,generateOffset)
       }
     }

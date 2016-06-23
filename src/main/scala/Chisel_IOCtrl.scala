@@ -62,7 +62,12 @@ class IOCtrl extends DSPModule {
     c2.ctrl.en.get := ctrl.enable
     (c1, c2)
   }}.unzip
-  ioFlagsNoDelay.we := ctrl.enable
+
+  // Additional 1 IO clock cycle delay needed -- as an example,
+  // if reset goes high on IO clk 0, the counter is actually reset to 0 on IO clk 1
+  // and din to mem interface needs to line up with counter = 0 (therefore WE does too)
+  // This is the difference betwen combinational enable and seq.
+  ioFlagsNoDelay.we := ctrl.enable.pipe(Params.getIO.clkRatio)
 
   val ioIncCounterUsed = ioIncCounters.zip(isUsed)
   // TODO: Custom function, is this redundant logic somewhere? -- don't need to check used, just check max?

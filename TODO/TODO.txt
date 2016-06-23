@@ -1,60 +1,18 @@
-keep running
-error
-
-
-
-
-
-ifft (in normalize)
-
-// enable should be synced
-
-check fft ports
-
-
-
-  // 3 multiplies
-  // mem readen, test 100? 7*7 whats up with combo, 3780
-  // turn off valid -- check enable randomly turn off -- how affects? (maybe just bad output? but internally ok?) -- on all dspmodule pipes; check any regs in ctrl??? -- on reset, what happens w/ pipe? all pipe elems should be 0'ed?: does it affect din?
-
-print + save + compare w/ full list @ end dout
-
-loop
-
-4 kinds of start: 
-start and then keep going (disable until next start)
-start then stop
+4 kinds of start:
+start and then keep going (disable until next start interrupt) -- power
+start then stop -- 1 frame
 start then repeat (loop)
-start then disable until next enabling_start (while still valid)
+start then disable until next enabling_start (while still valid) -- multi frame
 
+Power mode: keep running with same inputs until interrupt
+Multi-frame mode: load I n clks -> send, load new I; pause after send through & while sending, store output on valid
+-- need to pull out valid and maybe k? -- no reset.
 
+3 multiplies
+IFFT (in normalize)
 
- Start frame = run for n clocks. Keep storing k , valid out, data out. After n clocks stop. Read out output. Input new data. Different input but without reset command (after original, pause). Read out again. Repeat. Check when valid. Increment frame after k = fft size-1. Repeat.
-e9e5bb28ac230ab7c54aab9ca30fbe164bbb84be
+Mem read enable -- add in?
 
--- another mode where it's one at a time
+Test 100? 7*7 whats up with combo, 3780
 
-** see recent email -- continue for power
-
------
-
-*calcdoneflag
-*twiddleCounter ---> usescalcreset
-*twiddleSubCounter --> calcreset
-*kcounter
-*outvalid ---
-*calccounters
-
-
-// enable pass through for continuous cycle to avoid read/write conflict?
-
-----
-
-setup.en, reset --> resets chain of outvalid pipes
-k should eventually get reset?
-
-io en goes low --> needs to update valid
-
-
-
-check k transitions at right time -- even with enable delay
+Print + save + compare w/ full list @ end dout
