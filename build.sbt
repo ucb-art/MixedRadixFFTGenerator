@@ -39,6 +39,6 @@ lazy val fft = Project(
 ).dependsOn(ChiselDSP)
 
 // Define default sbt run main class
-mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
-// mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
+// mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
+mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
 // mainClass in (Compile, run) := Some("FFT.DebugFFT")

@@ -32,6 +32,8 @@ class RocketToFFT extends Module {
 
 ///////////////////////////////////////////// SETUP MEMORIES
 
+  //val debugPow :: debug1Frame :: debugPause :: Nil = Enum(Int,3)
+
   val memSpecs:List[MemorySpecs[Data]] = List(
     MemorySpecs(
       key = "toFFT",

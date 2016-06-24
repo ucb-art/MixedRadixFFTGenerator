@@ -10,6 +10,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
                                         extends DSPTester(c) {
 
   traceOn = false
+  val randomDisabling = true
 
   // Default is run all tests
   if (fftn == None) runAll()
@@ -139,12 +140,20 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
       val ioCycle = (t-Tracker.initT)/Params.getIO.clkRatio
 
-      if (!Tracker.outPropagated && ioCycle > 5 * Tracker.FFTN)
+      if (!Tracker.outPropagated && ioCycle > 100 * Tracker.FFTN)
         Error("Data out never seems valid")
 
-      val en = if (ioCycle % 7 == 0 || ioCycle % 10 == 0) false else true
-      //val en = true
-      stepTrack(Params.getIO.clkRatio,in,out, enable = en)
+      // Random disabling
+      val quarter = Tracker.FFTN/4
+      if (ioCycle % quarter == 0 && randomDisabling){
+        val disableTime = scala.util.Random.nextInt(Tracker.FFTN)
+        var offCount = 0
+        while (offCount < disableTime && Tracker.outStep < in.length){
+          stepTrack(Params.getIO.clkRatio,in,out, enable = false)
+          offCount = offCount +1
+        }
+      }
+      if (Tracker.outStep < in.length) stepTrack(Params.getIO.clkRatio,in,out, enable = true)
     }
 
   }
@@ -243,12 +252,12 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     val temp = traceOn
     traceOn = true
 
-    /*val firstCycle = (t - Tracker.initT) % Params.getIO.clkRatio == 0
-    if(firstCycle) Status("START CYCLE @ t = " + t)
+    /*
 
+    val firstCycle = (t - Tracker.initT) % Params.getIO.clkRatio == 0
+    if(firstCycle) Status("START IO CYCLE @ t = " + t)
 
-
-    if (Tracker.inStep < 12) {
+    if (Tracker.inStep < Tracker.FFTN) {
       Status("/// Input")
       peek(c.io.din)
       peek(c.ctrl.enable)
@@ -259,7 +268,6 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       peek(c.io.dout)
       peek(c.ctrl.outValid)
       peek(c.ctrl.k)
-      peek(c.MemBankInterface.topIO.dout)
     }
     else {
       Status("/// Calc @ t = " + t)

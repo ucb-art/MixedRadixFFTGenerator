@@ -111,9 +111,9 @@ class ChiselFFT() { // extends ArborSpec {
       complex = ComplexParams(
         intBits       = intBitsD,
         fracBits      = fracBitsD,
-        use4Muls      = true,
+        use4Muls      = false,
         mulPipe       = 2,
-        addPipe       = 0.333,
+        addPipe       = 0.33,
         trimType      = Truncate,
         overflowType  = Grow,
         mulFracGrowth = 1

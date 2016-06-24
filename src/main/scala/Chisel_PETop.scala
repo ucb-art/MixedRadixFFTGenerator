@@ -60,7 +60,10 @@ class PE[T <: DSPQnm[T]](gen : => T, num: Int = 0) extends GenDSPModule (gen) {
   val twiddleMulOut = Vec(twiddleMulIn.zipWithIndex.map{case (e,i) => {
     val temp = {
       if (i == 0) e.pipe(twiddleDelay)
-      else e * (io.twiddles(i-1),aPipe = math.floor(Params.getDelays.addPipe).toInt, mPipe = Params.getDelays.mulPipe)
+      else e * (io.twiddles(i-1),
+        aPipe = math.floor(Params.getDelays.addPipe).toInt,
+        mPipe = Params.getDelays.mulPipe,
+        use4 = Params.getComplex.use4Muls)
     }
     temp.trim(gen.getFracWidth)
   }})
