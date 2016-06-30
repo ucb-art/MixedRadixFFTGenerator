@@ -32,7 +32,15 @@ class RocketToFFT extends Module {
 
 ///////////////////////////////////////////// SETUP MEMORIES
 
-  //val debugPow :: debug1Frame :: debugPause :: Nil = Enum(Int,3)
+  // DEBUG MODES
+  // debugUntil1FrameOut --> Reset and run until k = N-1
+  // debugPow --> Reset and run until calcStartType register written to again
+  // debugUntil1FrameInStart --> Reset and run until n = N-1 (stop when n -- input counter -- wraps)
+  // debugUntil1FrameInContinue --> (No reset), run until n = N-1 (store valid)
+
+  val debugUntil1FrameOut :: debugPow :: debugUntil1FrameInStart :: debugUntil1FrameInContinue :: Nil = Enum(UInt(),4)
+  // need to add 1 bit valid
+
 
   val memSpecs:List[MemorySpecs[Data]] = List(
     MemorySpecs(
@@ -61,16 +69,19 @@ class RocketToFFT extends Module {
       dataType = DSPUInt(0,inputMemLength-1)
     ),
     MemorySpecs(
-      key = "setupDone",
+      key = "setupStartDone",
       // Value not actually written to this, but will read true when done
       isCtrl = true,
       dataType = DSPBool(false)
     ),
     MemorySpecs(
-      key = "calcDone",
-      // Value not actually written to this, but will read true when done
+      key = "calcStartDone",
       isCtrl = true,
       dataType = DSPBool(false)
+    ),
+    MemorySpecs(
+      key = "calcType",
+      dataType = debugUntil1FrameOut
     )
   )
 
@@ -204,7 +215,7 @@ class RocketToFFT extends Module {
 
   // Flag indicating setup is done
   when(fft.setup.done){
-    regs("setupDone") := DSPBool(true)
+    regs("setupStartDone") := DSPBool(true)
   }
 
   // Set control registers
@@ -248,7 +259,7 @@ class RocketToFFT extends Module {
   // Note that FFT only cares about the last IO cycle in which it saw
   // setupEn high (you should already have all the configuration registers set)
   val setupEn = RegInit(DSPBool(false))
-  when(rocketWEs("setupDone")){
+  when(rocketWEs("setupStartDone")){
     setupEn := DSPBool(true)
   }.elsewhen(fft.ctrl.clkEn & setupEn){
     setupEn := DSPBool(false)
