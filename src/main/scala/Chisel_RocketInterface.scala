@@ -32,15 +32,25 @@ class RocketToFFT extends Module {
 
 ///////////////////////////////////////////// SETUP MEMORIES
 
-  // DEBUG MODES
+  // DEBUG MODES (calcType)
   // debugUntil1FrameOut --> Reset and run until k = N-1
-  // debugPow --> Reset and run until calcStartType register written to again
+  // debugPow --> Reset and run until calcType register written to again
   // debugUntil1FrameInStart --> Reset and run until n = N-1 (stop when n -- input counter -- wraps)
-  // debugUntil1FrameInContinue --> (No reset), run until n = N-1 (store valid)
+  // debugUntil1FrameInContinue --> (No reset), run until n = N-1
 
-  val debugUntil1FrameOut :: debugPow :: debugUntil1FrameInStart :: debugUntil1FrameInContinue :: Nil = Enum(UInt(),4)
-  // need to add 1 bit valid
+  val calcT = Enum(UInt(), List(
+    'debugUntil1FrameOut,
+    'debugPow,
+    'debugUntil1FrameInStart,
+    'debugUntil1FrameInContinue
+  ))
 
+  // TODO: Function
+  calcT.foreach{ x =>
+    Status("Calculation type: " + x._1.toString.substring(1) + " = State : \t" + x._2.litValue() +
+      ", Width = " + x._2.getWidth
+    )
+  }
 
   val memSpecs:List[MemorySpecs[Data]] = List(
     MemorySpecs(
@@ -81,7 +91,7 @@ class RocketToFFT extends Module {
     ),
     MemorySpecs(
       key = "calcType",
-      dataType = debugUntil1FrameOut
+      dataType = calcT('debugUntil1FrameOut)
     )
   )
 
@@ -203,8 +213,9 @@ class RocketToFFT extends Module {
       }
       when(rocketWEs(key)) {
         x._2 match {
-          case u: DSPUInt => x._2 := DSPUInt(writeBits,u.getRange.max)
+          case u1: DSPUInt => x._2 := DSPUInt(writeBits,u1.getRange.max)
           case b: DSPBool => x._2 := DSPBool(writeBits(0))
+          case u2: UInt => x._2 := UInt(writeBits,width=u2.getWidth)
           case _ => Error("Interface type not supported yet.")
         }
       }
@@ -274,9 +285,10 @@ class RocketToFFT extends Module {
   val kmax = KmaxLUT.io.dout.cloneType
   kmax := KmaxLUT.io.dout
 
-  // Idle --> rocketFire & Rocket writing to calcDone register
+  // Idle --> rocketFire & Rocket writing to calcStartDone register
   // Synchronizing to io clk --> slow clk enable
   // Calculating --> (k = max & output valid & slowEn) = captured 1 frame
+  // OR n = max (depending on calcT) OR new write to calcT when in power measuring mode
   // Idle
   val calcIdle :: calcSync :: calc :: Nil = Enum(UInt(),3)
   val calcState = RegInit(calcIdle)
@@ -285,13 +297,28 @@ class RocketToFFT extends Module {
   val isCalcSync = calcState === calcSync
   val isCalc = calcState === calc
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // change to calcdone
   // One valid output frame has been collected
   val frameOutValid = fft.ctrl.outValid & fft.ctrl.clkEn & (fft.ctrl.k === kmax.head)
   when (frameOutValid){
-    regs("calcDone") := DSPBool(true)
+    regs("calcStartDone") := DSPBool(true)
   }
 
-  val startCalc = isCalcIdle & rocketWEs("calcDone").toBool
+  val startCalc = isCalcIdle & rocketWEs("calcStartDone").toBool
   val doneCalcSync = isCalcSync & fft.ctrl.clkEn.toBool
   val doneCalc = isCalc & frameOutValid.toBool
   val calcClkEn = isCalc & fft.ctrl.clkEn.toBool
@@ -306,6 +333,7 @@ class RocketToFFT extends Module {
     calcState := calcIdle
   }
 
+  // get out change
   // Keeps track of read address for inputting to FFT (wraps)
   // Note: reset has precendence
   val calcInCounter = DSPModule(new CalcInCounter(inputMemLength-1),"calcInAddr")

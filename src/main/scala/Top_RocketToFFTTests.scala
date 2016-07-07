@@ -104,7 +104,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
   }
 
   def calculate(): Unit = {
-    val calcAddr = c.memMap("calcDone").base
+    val calcAddr = c.memMap("calcStartDone").base
     write(calcAddr,0)
     var calcDone = read(calcAddr)
     while (calcDone != BigInt(1)){
@@ -132,7 +132,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     val idx = Params.getFFT.sizes.indexOf(n)
     val fftIdxAddr = c.memMap("fftIdx").base
     val isFFTAddr = c.memMap("isFFT").base
-    val setupAddr = c.memMap("setupDone").base
+    val setupAddr = c.memMap("setupStartDone").base
     val isFFTInt = if (isFFT) 1 else 0
     write(fftIdxAddr,idx)
     write(isFFTAddr,isFFTInt)
