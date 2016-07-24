@@ -1,14 +1,3 @@
-4 kinds of start:
-start and then keep going (disable until next start interrupt) -- power
-start then stop -- 1 frame
-start then repeat (loop)
-start then disable until next enabling_start (while still valid) -- multi frame
-
-Power mode: keep running with same inputs until interrupt
-Multi-frame mode: load I n clks -> send, load new I; pause after send through & while sending, store output on valid
--- need to pull out valid and maybe k? -- no reset.
-
-3 multiplies
 IFFT (in normalize)
 
 Mem read enable -- add in?
@@ -16,3 +5,14 @@ Mem read enable -- add in?
 Test 100? 7*7 whats up with combo, 3780
 
 Print + save + compare w/ full list @ end dout
+
+>>> find other todos (outline.txt)
+
+clean tests
+
+-------
+
+banking
+block floating point
+optimize twiddle
+fix broken generator outputs

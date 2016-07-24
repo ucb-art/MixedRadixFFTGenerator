@@ -258,7 +258,10 @@ case class PipelineParams (
 
   // Twiddle multiply delay
   def twiddle = {
-    val dly = math.floor(addPipe).toInt + mulPipe
+    val dly = {
+      if (Params.getComplex.use4Muls) math.floor(addPipe).toInt + mulPipe
+      else 2*math.floor(addPipe).toInt + mulPipe
+    }
     if (dly < 1) Error("Twiddle multiplication must be pipelined at least once!")
     dly
   }

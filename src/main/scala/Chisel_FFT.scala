@@ -110,6 +110,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   // if reset goes high on IO clk 0, the counter is actually reset to 0 on IO clk 1
   // and din to mem interface needs to line up with counter = 0
   MemBankInterface.topIO.din := io.din.pipe(Params.getIO.clkRatio+Params.getDelays.ioCtrl)
+  // TODO: Swap for IFFT (don't rely on processor)
 
   val isFFT = GlobalInit.setupO.isFFT
   val topOutDly = Params.getDelays.topOut

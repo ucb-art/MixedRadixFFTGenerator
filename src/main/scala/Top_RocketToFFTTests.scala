@@ -6,8 +6,10 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
   // TODO: Support IFFT
 
+  val calcOption = "debugUntil1FrameOut"
+
   traceOn = false
-  val sizes = Params.getFFT.sizes.slice(1,4)
+  val sizes = Params.getFFT.sizes //.slice(1,4)
   val (cins,couts) = test(sizes)
 
 ///////////////////////////////////////////// C HEADER
@@ -24,8 +26,9 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
   ch write "int setup(unsigned long currFFTIdx, unsigned long currIsFFT); \n"
   ch write "int load(int testNum, int idxStart, int currN); \n"
-  ch write "void calculate(void); \n"
+  ch write "int calculate(unsigned long option); \n"
   ch write "int checkOut(int testNum, int idxStart, int currN); \n\n"
+  ch write "#define CALC_OPTION %dUL \n".format(c.calcOptions(calcOption))
   ch write "#define START 0UL \n"
   ch write "#define DONE 1UL \n\n"
   ch write "#define TEST_MEM_SIZE %d \n".format(testMemSize)
@@ -78,7 +81,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
         Status("///////////////////////////////////////////// FFT N = " + n)
         Status("Loading inputs for N = " + n + ", Frame " + x._2)
         load(x._1._1)
-        calculate()
+        calculate(c.calcOptions(calcOption))
         if (read(c.memMap("k").base)!= n-1) Error("K not expected -- should be " + (n-1))
         Status("Verifying outputs for N = " + n + ", Frame " + x._2)
         check(x._1._2)
@@ -103,8 +106,17 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     o.toList
   }
 
-  def calculate(): Unit = {
-    val calcAddr = c.memMap("calcDone").base
+  // DEBUG MODES (calcType)
+  // OK debugUntil1FrameOut --> Reset and run until k = N-1
+  // OK debugPow --> Reset and run until calcType register written to again
+  // debugUntil1FrameInStart --> Reset and run until n = N-1 (stop when n -- input counter -- wraps)
+  // debugUntil1FrameInContinue --> (No reset), run until n = N-1
+
+  def calculate(option:BigInt): Unit = {
+    val calcTypeAddr = c.memMap("calcType").base
+    write(calcTypeAddr,option)
+    if (read(calcTypeAddr) != option) Error("Calc. option doesn't match " + option)
+    val calcAddr = c.memMap("calcStartDone").base
     write(calcAddr,0)
     var calcDone = read(calcAddr)
     while (calcDone != BigInt(1)){
@@ -132,7 +144,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     val idx = Params.getFFT.sizes.indexOf(n)
     val fftIdxAddr = c.memMap("fftIdx").base
     val isFFTAddr = c.memMap("isFFT").base
-    val setupAddr = c.memMap("setupDone").base
+    val setupAddr = c.memMap("setupStartDone").base
     val isFFTInt = if (isFFT) 1 else 0
     write(fftIdxAddr,idx)
     write(isFFTAddr,isFFTInt)

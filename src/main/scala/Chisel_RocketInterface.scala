@@ -11,6 +11,7 @@ class RocketToFFTWrapper extends DSPModule {
   io <> rocketToFFT.io
 
   val memMap = rocketToFFT.memMap
+  val calcOptions = rocketToFFT.calcOptions
 }
 
 // Module for Rocket support
@@ -31,6 +32,29 @@ class RocketToFFT extends Module {
   val inputMemLength = p.fft.sizes.max
 
 ///////////////////////////////////////////// SETUP MEMORIES
+
+  // DEBUG MODES (calcType)
+  // debugUntil1FrameOut --> Reset and run until k = N-1
+  // debugPow --> Reset and run until calcType register written to again
+  // debugUntil1FrameInStart --> Reset and run until n = N-1 (stop when n -- input counter -- wraps)
+  // debugUntil1FrameInContinue --> (No reset), run until n = N-1
+
+  val calcT = Enum(UInt(), List(
+    'debugUntil1FrameOut,
+    'debugPow,
+    'debugUntil1FrameInStart,
+    'debugUntil1FrameInContinue
+  ))
+
+  // TODO: Function
+  val calcOptions = calcT.map{ x => {
+    val s = x._1.toString.substring(1)
+    val v = x._2.litValue()
+    Status("Calculation type: " + s + " = State : \t" + v +
+      ", Width = " + x._2.getWidth
+    )
+    s -> v
+  }}.toMap
 
   val memSpecs:List[MemorySpecs[Data]] = List(
     MemorySpecs(
@@ -59,16 +83,19 @@ class RocketToFFT extends Module {
       dataType = DSPUInt(0,inputMemLength-1)
     ),
     MemorySpecs(
-      key = "setupDone",
+      key = "setupStartDone",
       // Value not actually written to this, but will read true when done
       isCtrl = true,
       dataType = DSPBool(false)
     ),
     MemorySpecs(
-      key = "calcDone",
-      // Value not actually written to this, but will read true when done
+      key = "calcStartDone",
       isCtrl = true,
       dataType = DSPBool(false)
+    ),
+    MemorySpecs(
+      key = "calcType",
+      dataType = calcT('debugUntil1FrameOut)
     )
   )
 
@@ -190,8 +217,9 @@ class RocketToFFT extends Module {
       }
       when(rocketWEs(key)) {
         x._2 match {
-          case u: DSPUInt => x._2 := DSPUInt(writeBits,u.getRange.max)
+          case u1: DSPUInt => x._2 := DSPUInt(writeBits,u1.getRange.max)
           case b: DSPBool => x._2 := DSPBool(writeBits(0))
+          case u2: UInt => x._2 := UInt(writeBits,width=u2.getWidth)
           case _ => Error("Interface type not supported yet.")
         }
       }
@@ -202,7 +230,7 @@ class RocketToFFT extends Module {
 
   // Flag indicating setup is done
   when(fft.setup.done){
-    regs("setupDone") := DSPBool(true)
+    regs("setupStartDone") := DSPBool(true)
   }
 
   // Set control registers
@@ -246,7 +274,7 @@ class RocketToFFT extends Module {
   // Note that FFT only cares about the last IO cycle in which it saw
   // setupEn high (you should already have all the configuration registers set)
   val setupEn = RegInit(DSPBool(false))
-  when(rocketWEs("setupDone")){
+  when(rocketWEs("setupStartDone")){
     setupEn := DSPBool(true)
   }.elsewhen(fft.ctrl.clkEn & setupEn){
     setupEn := DSPBool(false)
@@ -261,9 +289,10 @@ class RocketToFFT extends Module {
   val kmax = KmaxLUT.io.dout.cloneType
   kmax := KmaxLUT.io.dout
 
-  // Idle --> rocketFire & Rocket writing to calcDone register
+  // Idle --> rocketFire & Rocket writing to calcStartDone register
   // Synchronizing to io clk --> slow clk enable
   // Calculating --> (k = max & output valid & slowEn) = captured 1 frame
+  // OR n = max (depending on calcT) OR new write to calcT when in power measuring mode
   // Idle
   val calcIdle :: calcSync :: calc :: Nil = Enum(UInt(),3)
   val calcState = RegInit(calcIdle)
@@ -272,26 +301,9 @@ class RocketToFFT extends Module {
   val isCalcSync = calcState === calcSync
   val isCalc = calcState === calc
 
-  // One valid output frame has been collected
-  val frameOutValid = fft.ctrl.outValid & fft.ctrl.clkEn & (fft.ctrl.k === kmax.head)
-  when (frameOutValid){
-    regs("calcDone") := DSPBool(true)
-  }
-
-  val startCalc = isCalcIdle & rocketWEs("calcDone").toBool
+  val startCalc = isCalcIdle & rocketWEs("calcStartDone").toBool
   val doneCalcSync = isCalcSync & fft.ctrl.clkEn.toBool
-  val doneCalc = isCalc & frameOutValid.toBool
   val calcClkEn = isCalc & fft.ctrl.clkEn.toBool
-
-  // Detected start of calculation
-  when(startCalc){
-    calcState := calcSync
-  // Sync to IO clk
-  }.elsewhen(doneCalcSync){
-    calcState := calc
-  }.elsewhen(doneCalc){
-    calcState := calcIdle
-  }
 
   // Keeps track of read address for inputting to FFT (wraps)
   // Note: reset has precendence
@@ -320,7 +332,40 @@ class RocketToFFT extends Module {
   }.elsewhen(fftReset.toBool & calcClkEn){
     fftReset := DSPBool(false)
   }
-  fft.ctrl.reset := fftReset
+  // TODO: What's going on with Chisel UInts and =/=?!
+  // Don't reset if continuing, otherwise, always reset at the start of calculation
+  fft.ctrl.reset := fftReset & DSPBool(regs("calcType").toBits =/= calcT('debugUntil1FrameInContinue).toBits)
+
+  // For certain calculation types, you want to pause calculation after a full set of inputs are loaded
+  // (rather than having a full set of outputs read) -- i.e. keep loading
+  // Note: It takes memReadAtoD clk cycles to propagate last input address --> last input being fed to FFT
+  val frameInLoaded = calcInCounter.oCtrl.change.get.pipe(Params.getDelays.memReadAtoD)
+  val isFrameInStart = regs("calcType") === calcT('debugUntil1FrameInStart)
+  val isFrameInCont = regs("calcType") === calcT('debugUntil1FrameInContinue)
+  val frameInCalcDone = frameInLoaded & DSPBool(isFrameInStart | isFrameInCont)
+
+  // One valid output frame has been collected
+  val frameOutValid = fft.ctrl.outValid & fft.ctrl.clkEn & (fft.ctrl.k === kmax.head)
+  val frameOutCalcDone = frameOutValid & DSPBool(regs("calcType") === calcT('debugUntil1FrameOut))
+
+  // Exit calculation state when finished
+  val doneTransition = frameOutCalcDone | frameInCalcDone | rocketWEs("calcType")
+  when (doneTransition){
+    regs("calcStartDone") := DSPBool(true)
+  }
+
+  // TODO: Redundant?
+  val doneCalc = isCalc & doneTransition
+
+  // Detected start of calculation
+  when(startCalc){
+    calcState := calcSync
+  // Sync to IO clk
+  }.elsewhen(doneCalcSync){
+    calcState := calc
+  }.elsewhen(doneCalc){
+    calcState := calcIdle
+  }
 
   // TODO: Remove redundant conditions
   // Enable FFT (aligned with first data into FFT)
