@@ -16,6 +16,19 @@ int main( int argc, char* argv[] ){
     unsigned long currIsFFT, currFFTIdx, k;
     volatile unsigned long o;
 
+    // Test calc option
+    for (testNum = 0; testNum < 4; testNum ++){
+        test[calcType_OFFSET] = testNum;
+        o = test[calcType_OFFSET];
+        if (o != testNum){
+            printf(
+                ">> * Calculation type not correct. Expected = %ld \t Out = %ld \n",
+                testNum,o
+            );
+            return 0;
+        }
+    }
+
     for (testNum = 0; testNum < NUM_TESTS; testNum++){
 
         currN = fftn[testNum];
@@ -44,7 +57,8 @@ int main( int argc, char* argv[] ){
             success = load(testNum,idxStart,currN);
             if (success == 0) return -2;
 
-            calculate();
+            success = calculate(CALC_OPTION);
+            if (success == 0) return -10;
 
             // REMOVE
             // test[k_OFFSET] = currN-1;
@@ -75,11 +89,11 @@ int setup(unsigned long currFFTIdx, unsigned long currIsFFT)
     volatile unsigned long o;
     test[fftIdx_OFFSET] = currFFTIdx;
     test[isFFT_OFFSET] = currIsFFT;
-    test[setupDone_OFFSET] = START;
-    o = test[setupDone_OFFSET];
+    test[setupStartDone_OFFSET] = START;
+    o = test[setupStartDone_OFFSET];
     while(o != DONE) {
         printf("Setup not done, \t o = %ld \n",o);
-        o = test[setupDone_OFFSET];
+        o = test[setupStartDone_OFFSET];
     }
     printf("Setup done! \t o = %ld \n",o);
     o = test[fftIdx_OFFSET];
@@ -128,15 +142,25 @@ int load(int testNum, int idxStart, int currN)
     return 1;
 }
 
-void calculate (void) {
+int calculate (unsigned long option) {
     volatile unsigned long o;
-    test[calcDone_OFFSET] = START;
-    o = test[calcDone_OFFSET];
+    test[calcType_OFFSET] = option;
+    o = test[calcType_OFFSET];
+    if (o != option){
+        printf(
+            ">> Calculation type not correct. Expected = %ld \t Out = %ld \n",
+            option,o
+        );
+        return 0;
+    }
+    test[calcStartDone_OFFSET] = START;
+    o = test[calcStartDone_OFFSET];
     while(o != DONE) {
         printf("Calculation not done, \t o = %ld \n",o);
-        o = test[calcDone_OFFSET];
+        o = test[calcStartDone_OFFSET];
     }
     printf("Calculation done! \t o = %ld \n",o);
+    return 1;
 }
 
 // REMOVE
