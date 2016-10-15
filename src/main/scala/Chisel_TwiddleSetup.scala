@@ -8,7 +8,12 @@ class TwiddleSetupO extends IOBundle {
   // Main twiddle count max for each calculation stage (CTA decomposition -- within a coprime)
   val twiddleCounts = IntLUT2DHelper.getOutputType(Params.getTw.countMax)
   // Counts to hold twiddle (for PFA, based off of subsequent coprimes)
-  val subCountMax = IntLUT2DHelper.getOutputType(Params.getTw.subcountMax).map(x => x.getRange.max).max
+  // TODO: Don't use counter if max = 0
+  val subCountMax = {
+    val temp = IntLUT2DHelper.getOutputType(Params.getTw.subcountMax)
+    if (temp.isEmpty) BigInt(0) 
+    else temp.map(x => x.getRange.max).max
+  }
   val twiddleSubCounts = Vec(Params.getCalc.maxStages,DSPUInt(OUTPUT,subCountMax))
   // Twiddle address renormalization factor at each stage
   val twiddleMuls = Vec(Params.getCalc.maxStages,DSPUInt(OUTPUT,Params.getTw.vals.map(x => x.length).max))
@@ -30,11 +35,16 @@ class TwiddleSetup extends DSPModule{
 
   // Counts to hold twiddle (for PFA, based off of subsequent coprimes)
   // Note: last "subCount" is always 0 since there aren't any subsequent coprimes
-  val twiddleSubCountsLUT = DSPModule(new IntLUT2D(Params.getTw.subcountMax),"subTwiddleCounts")
-  twiddleSubCountsLUT.io.addr := setupTop.fftIdx
-  val twiddleSubCountsInit = twiddleSubCountsLUT.io.dout.cloneType
-  twiddleSubCountsInit := RegNext(Mux(setupTop.enable,twiddleSubCountsLUT.io.dout,twiddleSubCountsInit))
-  val twiddleSubCountsShort = Vec(twiddleSubCountsInit :+ DSPUInt(0))
+  val twiddleSubCountsShort = {
+    if (Params.getTw.subcountMax.flatten.isEmpty) Vec(DSPUInt(0))
+    else {
+      val twiddleSubCountsLUT = DSPModule(new IntLUT2D(Params.getTw.subcountMax),"subTwiddleCounts")
+      twiddleSubCountsLUT.io.addr := setupTop.fftIdx
+      val twiddleSubCountsInit = twiddleSubCountsLUT.io.dout.cloneType
+      twiddleSubCountsInit := RegNext(Mux(setupTop.enable,twiddleSubCountsLUT.io.dout,twiddleSubCountsInit))
+      Vec(twiddleSubCountsInit :+ DSPUInt(0))
+    }
+  }
 
   // Base multiply amount to scale range of twiddle counts to full twiddle LUT size (associated w/ coprime)
   val baseTwiddleRenormLUT = DSPModule(new IntLUT2D(Params.getTw.LUTScale),"baseTwiddleRenorms")
