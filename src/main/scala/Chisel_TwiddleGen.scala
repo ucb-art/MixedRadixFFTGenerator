@@ -40,16 +40,25 @@ class TwiddleGen[T <: DSPQnm[T]](gen : => T) extends GenDSPModule(gen) {
   val twiddleCounter = DSPModule (new TwiddleCounter(twiddleSetup.twiddleCounts.map(x => x.getRange.max.intValue).max),
     "twiddleCounter"
   )
-  val twiddleSubCounter = DSPModule (
-    new TwiddleSubCounter(twiddleSetup.twiddleSubCounts.map(x => x.getRange.max.intValue).max),
-    "twiddleSubCounter"
-  )
+
   twiddleCounter.io.max.get := twiddleCountUsed
-  twiddleSubCounter.io.max.get := twiddleSubCountUsed
   twiddleCounter.iCtrl.reset := calcCtrlFlag.reset
-  twiddleSubCounter.iCtrl.reset := calcCtrlFlag.reset
-  twiddleSubCounter.iCtrl.change.get := calcCtrlFlag.we
-  twiddleCounter.iCtrl.change.get := twiddleSubCounter.oCtrl.change.get
+
+  val twiddleSubCounterMax = twiddleSetup.twiddleSubCounts.map(x => x.getRange.max.intValue).max
+  if (twiddleSubCounterMax != 0) {
+    val twiddleSubCounter = DSPModule (
+      new TwiddleSubCounter(twiddleSubCounterMax),
+      "twiddleSubCounter"
+    )
+    twiddleSubCounter.io.max.get := twiddleSubCountUsed
+    twiddleSubCounter.iCtrl.reset := calcCtrlFlag.reset
+    twiddleSubCounter.iCtrl.change.get := calcCtrlFlag.we
+    twiddleCounter.iCtrl.change.get := twiddleSubCounter.oCtrl.change.get
+  }
+  else {
+    // if only 1 coprime, you don't need a sub counter
+    twiddleCounter.iCtrl.change.get := calcCtrlFlag.we
+  }
 
   // Complete twiddle address
   val twiddleAddr = (twiddleCounter.io.out * twiddleMulUsed).shorten(Params.getTw.addrMax).pipe(

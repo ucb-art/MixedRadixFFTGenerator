@@ -36,7 +36,19 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   IOCtrl.ctrl.enable := GlobalInit.ioCtrlO.enable
   IOCtrl.ctrl.reset := GlobalInit.ioCtrlO.reset
   IOCtrl.generalSetup <> GeneralSetup.o
-  IOCtrl.ioSetup <> IOSetup.o
+  
+  // TODO: Figure out when only 1 radix needed why isUsed cannot be properly bulk assigned
+  // IOCtrl.ioSetup <> IOSetup.o
+  IOCtrl.ioSetup.usedLoc <> IOSetup.o.usedLoc
+  IOCtrl.ioSetup.isUsed := IOSetup.o.isUsed
+  IOCtrl.ioSetup.counterPrimeDigits <> IOSetup.o.counterPrimeDigits
+  IOCtrl.ioSetup.counterQDIFs <> IOSetup.o.counterQDIFs
+  IOCtrl.ioSetup.counterQDITs <> IOSetup.o.counterQDITs
+  IOCtrl.ioSetup.stagePrimeIdx <> IOSetup.o.stagePrimeIdx
+  IOCtrl.ioSetup.stageIsActive <> IOSetup.o.stageIsActive
+  IOCtrl.ioSetup.digitIdxDIF <> IOSetup.o.digitIdxDIF
+  IOCtrl.ioSetup.digitIdxDIT <> IOSetup.o.digitIdxDIT
+  
   IOCtrl.calcCtrlI <> GlobalInit.calcCtrlO
   IOCtrl.ioCtrlI.clkEn := GlobalInit.ioCtrlI.clkEn
 
@@ -86,7 +98,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
 
   CheckDelay.off()
 
-  Butterfly.io.currRad.get := Pipe(CalcCtrl.calcFlagsNoDelay.currRad,bfCtrlDly)
+  // Only assign if radix needs to be configurable
+  if (Butterfly.io.currRad != None)
+    Butterfly.io.currRad.get := Pipe(CalcCtrl.calcFlagsNoDelay.currRad,bfCtrlDly)
   Butterfly.io.calcDIT := CalcCtrl.calcFlagsNoDelay.isDIT.pipe(bfCtrlDly)
 
   // Pass in twiddles
