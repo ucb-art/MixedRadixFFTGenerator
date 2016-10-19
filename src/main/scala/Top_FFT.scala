@@ -8,6 +8,8 @@ import java.io._
 
 object MainWithMatlab { // extends arbor.matlab.MATLABRepl {
 
+  Warn.suppress = true
+
   // How to refer to objects in Matlab
   val imports = Seq(
     Map(
@@ -31,7 +33,7 @@ object MainWithMatlab { // extends arbor.matlab.MATLABRepl {
     val fft = new ChiselFFT
 
     // fft.run(args)
-    fft.run(args,normal=Some(true),genOffset=Some(true))
+    fft.run(args,normal=Some(false),genOffset=Some(true))
 
   }
 
@@ -112,8 +114,9 @@ class ChiselFFT() { // extends ArborSpec {
         intBits       = intBitsD,
         fracBits      = fracBitsD,
         use4Muls      = false,
-        mulPipe       = 2,
-        addPipe       = 0.33,
+        // TODO: Evaluate pipeline propagation for a smaller BF (say non-reconfigurable radix-4 needed)
+        mulPipe       = 1,
+        addPipe       = 0.0,
         trimType      = Truncate,
         overflowType  = Grow,
         mulFracGrowth = 1
@@ -126,7 +129,7 @@ class ChiselFFT() { // extends ArborSpec {
           // LTE + Wifi
           List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
             60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted ++
-          List(64,128,256,512,1024,2048,1536),    
+          List(64,128,256,512,1024,2048,1536),  
         normalized = normalized,
         generateOffset = generateOffset
       ),
