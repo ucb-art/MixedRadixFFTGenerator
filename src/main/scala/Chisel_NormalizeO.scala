@@ -18,6 +18,7 @@ class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
 
   // Set index to default if not reconfigurable
   val fftIdx = setupTop.fftIdx.getOrElse(DSPUInt(0))
+  val isFFT = setupTop.isFFT.getOrElse(DSPBool(Params.getFFT.isFFTDefault))
 
   // TODO: Add in support for IFFT (!)
 
@@ -36,13 +37,13 @@ class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   fftNormalizeFactor := fftNormalizeLUT.io.dout
   //val ifftNormalizeFactor = ifftNormalizeLUT.io.dout.cloneType()
   //ifftNormalizeFactor := ifftNormalizeLUT.io.dout
-  //val normalizeFactor = Mux(setupTop.isFFT,fftNormalizeFactor,ifftNormalizeFactor)
+  //val normalizeFactor = Mux(isFFT,fftNormalizeFactor,ifftNormalizeFactor)
   val normalizeFactor = fftNormalizeFactor
 
   // TODO: Don't depend on trim defaults in complex!
   // TODO: Normalize IFFT
   val fftOut = (io.din ** (normalizeFactor,Real, mPipe = Params.getDelays.mulPipe)).trim(gen.getFracWidth)
-  io.dout := Mux(setupTop.isFFT.pipe(Params.getDelays.mulPipe),fftOut,io.din.pipe(Params.getDelays.mulPipe))
+  io.dout := Mux(isFFT.pipe(Params.getDelays.mulPipe),fftOut,io.din.pipe(Params.getDelays.mulPipe))
 
   // Delay through this block
   val delay = io.dout.getDelay-io.din.getDelay

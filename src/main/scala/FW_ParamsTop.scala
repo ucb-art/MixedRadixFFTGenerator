@@ -96,6 +96,12 @@ case class GeneratorParams(
   test: TestParams = TestParams()
 ) extends JSONParams(complex,clock)
 
+/** Function options */
+abstract class FunctionType
+case object FFTType extends FunctionType
+case object IFFTType extends FunctionType
+case object FFTIFFTType extends FunctionType
+
 /** Tuning knobs for the FFT generator */
 case class FFTParams (
   // FFT sizes supported
@@ -103,9 +109,21 @@ case class FFTParams (
   // To normalize FFT/IFFT output (/,* by sqrt(n)) for Parseval's
   normalized: Boolean = false,
   // Report k as data is streaming out (symbol # in current frame)
-  generateOffset: Boolean = false
+  generateOffset: Boolean = false,
+  // FFT, IFFT, or runtime-configurable FFT/IFFT
+  functionType: FunctionType = FFTType
 ){
   def nCount = sizes.length
+  def isFFTDefault = functionType match { 
+    case FFTType => true
+    case IFFTType => false
+    case _ => {
+      Error("Invalid isFFT Default")
+      true
+    }
+  }
+  // Setup signals required if the design is supposed to be runtime reconfigurable
+  def setupRequired = (nCount > 1) || (functionType == FFTIFFTType)
 }
 
 /** Parameters for test */

@@ -62,7 +62,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     poke(c.setup.enable,true)
     if (c.setup.fftIdx != None)
       poke(c.setup.fftIdx.get,fftIndex)
-    poke(c.setup.isFFT,fftTF)
+    if (c.setup.isFFT != None)  
+      poke(c.setup.isFFT.get,fftTF)
 
     step(Params.getIO.clkRatio)
 
@@ -74,7 +75,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     poke(c.setup.enable,false)
     if (c.setup.fftIdx != None)
       poke(c.setup.fftIdx.get,(fftIndex+1)%Params.getFFT.nCount)
-    poke(c.setup.isFFT,!fftTF)
+    if (c.setup.isFFT != None)  
+      poke(c.setup.isFFT.get,!fftTF)
 
     // Wait until done setting up
     var setupDone = peek(c.setup.done)
@@ -116,7 +118,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     poke(c.setup.enable,false)
     if (c.setup.fftIdx != None)
       poke(c.setup.fftIdx.get,(fftIndex+1)%Params.getFFT.nCount)
-    poke(c.setup.isFFT,!fftTF)
+    if (c.setup.isFFT != None)  
+      poke(c.setup.isFFT.get,!fftTF)
 
     poke(c.ctrl.enable,false)
     // Means not starting yet

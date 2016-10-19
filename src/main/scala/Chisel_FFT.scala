@@ -128,7 +128,7 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   MemBankInterface.topIO.din := io.din.pipe(Params.getIO.clkRatio+Params.getDelays.ioCtrl)
   // TODO: Swap for IFFT (don't rely on processor)
 
-  val isFFT = GlobalInit.setupO.isFFT
+  val isFFT = GlobalInit.setupO.isFFT.getOrElse(DSPBool(Params.getFFT.isFFTDefault))
   val topOutDly = Params.getDelays.topOut
 
   if (Params.getFFT.normalized) {

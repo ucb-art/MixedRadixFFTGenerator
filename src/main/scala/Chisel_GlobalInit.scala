@@ -51,9 +51,11 @@ class GlobalInit extends DSPModule {
     fftIdxCapture := Mux(captureIn,setupI.fftIdx.get.pipe(2*clkRatio),fftIdxCapture)
     setupO.fftIdx.get := fftIdxCapture
   }
-  val isFFTCapture = RegInit(DSPBool(true))
-  isFFTCapture := Mux(captureIn,setupI.isFFT.pipe(2*clkRatio),isFFTCapture)
-  setupO.isFFT := isFFTCapture
+  if (setupO.isFFT != None) {
+    val isFFTCapture = RegInit(DSPBool(true))
+    isFFTCapture := Mux(captureIn,setupI.isFFT.get.pipe(2*clkRatio),isFFTCapture)
+    setupO.isFFT.get := isFFTCapture
+  }
 
   // TODO: Add delay more appropriately? (don't rely on direct IO to trigger counter -- register first?)
   // Once setup enable is detected, disable all counters
