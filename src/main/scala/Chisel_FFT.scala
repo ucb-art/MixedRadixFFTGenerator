@@ -50,7 +50,9 @@ class FFT[T <: DSPQnm[T]](gen : => T, p: GeneratorParams, debugMode: Boolean = f
   IOCtrl.ioSetup.digitIdxDIT <> IOSetup.o.digitIdxDIT
   
   IOCtrl.calcCtrlI <> GlobalInit.calcCtrlO
-  IOCtrl.ioCtrlI.clkEn := GlobalInit.ioCtrlI.clkEn
+  // Don't need clkEn if clkRatio = 1
+  if (Params.getIO.clkRatio > 1)
+    IOCtrl.ioCtrlI.clkEn.get := GlobalInit.ioCtrlI.clkEn.get
 
   // IOCtrl generates output flags
   ctrl.k := IOCtrl.ctrl.k
