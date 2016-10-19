@@ -274,9 +274,10 @@ class RocketToFFT extends Module {
   // Note that FFT only cares about the last IO cycle in which it saw
   // setupEn high (you should already have all the configuration registers set)
   val setupEn = RegInit(DSPBool(false))
+  val fftCtrlClkEn = fft.ctrl.clkEn.getOrElse(DSPBool(true))
   when(rocketWEs("setupStartDone")){
     setupEn := DSPBool(true)
-  }.elsewhen(fft.ctrl.clkEn & setupEn){
+  }.elsewhen(fftCtrlClkEn & setupEn){
     setupEn := DSPBool(false)
   }
   // TODO: setupEn condition extraneous ^
@@ -302,8 +303,8 @@ class RocketToFFT extends Module {
   val isCalc = calcState === calc
 
   val startCalc = isCalcIdle & rocketWEs("calcStartDone").toBool
-  val doneCalcSync = isCalcSync & fft.ctrl.clkEn.toBool
-  val calcClkEn = isCalc & fft.ctrl.clkEn.toBool
+  val doneCalcSync = isCalcSync & fftCtrlClkEn.toBool
+  val calcClkEn = isCalc & fftCtrlClkEn.toBool
 
   // Keeps track of read address for inputting to FFT (wraps)
   // Note: reset has precendence
@@ -345,7 +346,7 @@ class RocketToFFT extends Module {
   val frameInCalcDone = frameInLoaded & DSPBool(isFrameInStart | isFrameInCont)
 
   // One valid output frame has been collected
-  val frameOutValid = fft.ctrl.outValid & fft.ctrl.clkEn & (fft.ctrl.k === kmax.head)
+  val frameOutValid = fft.ctrl.outValid & fftCtrlClkEn & (fft.ctrl.k === kmax.head)
   val frameOutCalcDone = frameOutValid & DSPBool(regs("calcType") === calcT('debugUntil1FrameOut))
 
   // Exit calculation state when finished

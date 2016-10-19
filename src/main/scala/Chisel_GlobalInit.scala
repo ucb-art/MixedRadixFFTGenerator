@@ -23,7 +23,8 @@ class GlobalInit extends DSPModule {
   val slowEn = clkDiv.io.slowEn
 
   // Slow clock to the outside world
-  ioCtrlI.clkEn := slowEn
+  if (Params.getIO.clkRatio > 1)
+    ioCtrlI.clkEn.get := slowEn
 
   // Flags used
   val initSetup = slowEn & setupI.enable

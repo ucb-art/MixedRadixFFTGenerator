@@ -14,7 +14,7 @@ class IOCtrlIO extends IOBundle {
   // Output k value
   val k = DSPUInt(OUTPUT,Params.getFFT.sizes.max-1)
   // Slow enable (associated with clock)
-  val clkEn = DSPBool(OUTPUT)
+  val clkEn = if (Params.getIO.clkRatio > 1) Option(DSPBool(OUTPUT)) else None
 }
 
 class IOFlagsO extends IOBundle{
@@ -118,7 +118,7 @@ class IOCtrl extends DSPModule {
   // Module outValid will go low if IO disabled
   val realOutValid = RegInit(DSPBool(false))
   val realOutValidNext = outValidNext ? calcCtrlI.enable
-  realOutValid := Mux(ioCtrlI.clkEn, realOutValidNext, realOutValid)
+  realOutValid := Mux(ioCtrlI.clkEn.getOrElse(DSPBool(true)), realOutValidNext, realOutValid)
 
   // TODO: kReset conditions redundant
   // K starts counting output # (mod FFT size) when output is valid
