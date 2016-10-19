@@ -57,7 +57,10 @@ object Params {
 
     Status("Used butterfly radices: " + rad.mkString(","))
 
-    ScheduleCalc(calc.radPow,calc.radOrder,calc.maxStages)
+    // Optimize clkRatio to be less than default if input FFT sizes don't require default
+    // Note that ideal = 1
+    io.clkRatio = ScheduleCalc(calc.radPow,calc.radOrder,calc.maxStages)
+    Status("Used calculation to IO clock ratio: " + io.clkRatio)
 
     val (qDIF,qDIT) = IOQ(fft.nCount,io.coprimes,io.global)
     io.qDIF = qDIF
@@ -132,6 +135,7 @@ case class IOParams (
   // [coprime,prime,numDigits]
   var coprimes:List[List[Tuple3[Int,Int,Int]]] = List.fill(10)(List((1,1,1))),
   // ? Ratio of fast clock (Calculation) to slow clock (IO) frequencies
+  // TODO: Check why clks become misaligned for clkRatio > 2 (setup done error)
   var clkRatio: Int = 2,
   // DIF Q with corresponding base
   var qDIF: List[List[Tuple2[Int,Int]]] = List(List((1,1))),
