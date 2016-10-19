@@ -60,7 +60,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     Tracker.initT = t
 
     poke(c.setup.enable,true)
-    poke(c.setup.fftIdx,fftIndex)
+    if (c.setup.fftIdx != None)
+      poke(c.setup.fftIdx.get,fftIndex)
     poke(c.setup.isFFT,fftTF)
 
     step(Params.getIO.clkRatio)
@@ -71,7 +72,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
     // Invalidate setup parameters to make sure engine doesn't pick up the wrong ones
     poke(c.setup.enable,false)
-    poke(c.setup.fftIdx,(fftIndex+1)%Params.getFFT.nCount)
+    if (c.setup.fftIdx != None)
+      poke(c.setup.fftIdx.get,(fftIndex+1)%Params.getFFT.nCount)
     poke(c.setup.isFFT,!fftTF)
 
     // Wait until done setting up
@@ -112,7 +114,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     reset(Params.getIO.clkRatio)
 
     poke(c.setup.enable,false)
-    poke(c.setup.fftIdx,(fftIndex+1)%Params.getFFT.nCount)
+    if (c.setup.fftIdx != None)
+      poke(c.setup.fftIdx.get,(fftIndex+1)%Params.getFFT.nCount)
     poke(c.setup.isFFT,!fftTF)
 
     poke(c.ctrl.enable,false)

@@ -6,7 +6,7 @@ import Chisel.{Pipe =>_,Complex => _,Mux => _, RegInit => _, RegNext => _, _}
 
 class SetupTopIO extends IOBundle {
   // Index of current FFT N
-  val fftIdx = DSPUInt(INPUT,Params.getFFT.nCount - 1)
+  val fftIdx = if (Params.getFFT.nCount > 1) Option(DSPUInt(INPUT,Params.getFFT.nCount - 1)) else None
   // Enable setup
   val enable = DSPBool(INPUT)
   // Is FFT? (otherwise IFFT)
@@ -56,9 +56,12 @@ class GeneralSetup extends DSPModule {
   // Per-FFT constants output
   val o = new GeneralSetupO
 
+  // Set default if not runtime reconfigurable
+  val fftIdx = setupTop.fftIdx.getOrElse(DSPUInt(0))
+
   // i.e. for N = 4^a1*2^a2*3^b*5^c (base order determined by radOrder), list contains [a1,a2,b,c]
   val radPowLUT = DSPModule(new IntLUT2D(Params.getCalc.radPow), "radPow")
-  radPowLUT.io.addr := setupTop.fftIdx
+  radPowLUT.io.addr := fftIdx
   val radPow = radPowLUT.io.dout.cloneType
   radPow := RegNext(Mux(setupTop.enable,radPowLUT.io.dout,radPow))
 
@@ -67,7 +70,7 @@ class GeneralSetup extends DSPModule {
   val possibleRad = Params.getBF.possibleRad
   val radIdxOrderS = Params.getCalc.radOrder.map(x => x.map(y => possibleRad.indexOf(y) ))
   val radIdxOrderLUT = DSPModule(new IntLUT2D(radIdxOrderS), "radIdxOrder")
-  radIdxOrderLUT.io.addr := setupTop.fftIdx
+  radIdxOrderLUT.io.addr := fftIdx
   val radIdxOrder = radIdxOrderLUT.io.dout.cloneType
   val radIdxOrderNext = RegNext(Mux(setupTop.enable,radIdxOrderLUT.io.dout,radIdxOrder))
   radIdxOrder := radIdxOrderNext
@@ -192,7 +195,7 @@ class GeneralSetup extends DSPModule {
 
   // Memory n to address constants
   val addrConstantLUT = DSPModule(new IntLUT2D(Params.getMem.addrC))
-  addrConstantLUT.io.addr := setupTop.fftIdx
+  addrConstantLUT.io.addr := fftIdx
   o.addrConstants := RegNext(Mux(setupTop.enable,addrConstantLUT.io.dout,o.addrConstants))
 
   // Keep track of how long setup should take (+1 for RegNext on LUT out -- should be consistent throughout)

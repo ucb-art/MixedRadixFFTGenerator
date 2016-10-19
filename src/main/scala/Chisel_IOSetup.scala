@@ -47,11 +47,13 @@ class IOSetup extends DSPModule{
   val generalSetup = (new GeneralSetupO).flip
   val o = new IOSetupO
 
+  val fftIdx = setupTop.fftIdx.getOrElse(DSPUInt(0))
+
   // Used for masking to get coprime mod (when operating in Base N and not binary)
   // i.e. mod 4 is equivalent to a 000...00011 bit mask, except this is a digit mask
   // coprimes -> [coprime, corresponding prime, digit mask]
   val primeDigitsLUT = DSPModule(new IntLUT2D(Params.getIO.numDigits), "primeDigits")
-  primeDigitsLUT.io.addr := setupTop.fftIdx
+  primeDigitsLUT.io.addr := fftIdx
   val primeDigits = primeDigitsLUT.io.dout.cloneType
   primeDigits := RegNext(Mux(setupTop.enable,primeDigitsLUT.io.dout,primeDigits))
 
@@ -65,7 +67,7 @@ class IOSetup extends DSPModule{
   val globalRads = Params.getIO.globalRads
   val primeIndices = Params.getIO.primes.map(_.map( x=> globalPrimes.indexOf(x)))
   val primeIdxLUT = DSPModule(new IntLUT2D(primeIndices), "primeIdx")
-  primeIdxLUT.io.addr := setupTop.fftIdx
+  primeIdxLUT.io.addr := fftIdx
   val primeIdx = primeIdxLUT.io.dout.cloneType
   primeIdx := RegNext(Mux(setupTop.enable,primeIdxLUT.io.dout,primeIdx))
 
@@ -78,13 +80,13 @@ class IOSetup extends DSPModule{
     case (x,i) => DSPModule(new MixedBaseLUT(x), "qDIT_" + i.toString)
   }
   val qDIF = Vec(qDIFLUT.map{ x => {
-    x.io.addr := setupTop.fftIdx
+    x.io.addr := fftIdx
     val out = x.io.dout.cloneType
     out := RegNext(Mux(setupTop.enable,x.io.dout,out))
     out
   }})
   val qDIT = Vec(qDITLUT.map{ x => {
-    x.io.addr := setupTop.fftIdx
+    x.io.addr := fftIdx
     val out = x.io.dout.cloneType
     out := RegNext(Mux(setupTop.enable,x.io.dout,out))
     out

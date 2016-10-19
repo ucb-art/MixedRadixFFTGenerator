@@ -16,6 +16,9 @@ class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   override val io = new FFTIO(gen)
   val setupTop = new SetupTopIO
 
+  // Set index to default if not reconfigurable
+  val fftIdx = setupTop.fftIdx.getOrElse(DSPUInt(0))
+
   // TODO: Add in support for IFFT (!)
 
   // Create LUT for FFT: To normalize, scale by * (1/sqrt(n))
@@ -25,8 +28,8 @@ class Normalize[T <: DSPQnm[T]](gen : => T) extends GenDSPModule (gen) {
   val fftNormalizeLUT = DSPModule(new DblLUT(fftNormalizeVals,gen),"fftNormalizeFactor")
   // val ifftNormalizeLUT = DSPModule(new DblLUT(ifftNormalizeVals,gen),"ifftNormalizeFactor")
 
-  fftNormalizeLUT.io.addr := setupTop.fftIdx
-  //ifftNormalizeLUT.io.addr := setupTop.fftIdx
+  fftNormalizeLUT.io.addr := fftIdx
+  //ifftNormalizeLUT.io.addr := fftIdx
 
   // TODO: Do I actually need to cloneType?
   val fftNormalizeFactor = fftNormalizeLUT.io.dout.cloneType()

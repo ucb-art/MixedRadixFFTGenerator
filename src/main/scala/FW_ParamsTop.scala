@@ -105,7 +105,7 @@ case class FFTParams (
   // Report k as data is streaming out (symbol # in current frame)
   generateOffset: Boolean = false
 ){
-  val nCount = sizes.length
+  def nCount = sizes.length
 }
 
 /** Parameters for test */

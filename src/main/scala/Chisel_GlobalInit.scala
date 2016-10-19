@@ -45,10 +45,12 @@ class GlobalInit extends DSPModule {
 
   // Only update setup parameters when setup is enabled (last setup IO clock)
   val captureIn = slowEn & validSetup
-  val fftIdxCapture = RegInit(DSPUInt(0,Params.getFFT.nCount-1))
-  // 2 IO clks to align with captureIn
-  fftIdxCapture := Mux(captureIn,setupI.fftIdx.pipe(2*clkRatio),fftIdxCapture)
-  setupO.fftIdx := fftIdxCapture
+  if (setupO.fftIdx != None) {
+    val fftIdxCapture = RegInit(DSPUInt(0,Params.getFFT.nCount-1))
+    // 2 IO clks to align with captureIn
+    fftIdxCapture := Mux(captureIn,setupI.fftIdx.get.pipe(2*clkRatio),fftIdxCapture)
+    setupO.fftIdx.get := fftIdxCapture
+  }
   val isFFTCapture = RegInit(DSPBool(true))
   isFFTCapture := Mux(captureIn,setupI.isFFT.pipe(2*clkRatio),isFFTCapture)
   setupO.isFFT := isFFTCapture

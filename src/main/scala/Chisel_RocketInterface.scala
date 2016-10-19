@@ -234,7 +234,8 @@ class RocketToFFT extends Module {
   }
 
   // Set control registers
-  fft.setup.fftIdx := regs("fftIdx")
+  if (fft.setup.fftIdx != None)
+    fft.setup.fftIdx.get := regs("fftIdx")
   fft.setup.isFFT := regs("isFFT")
 
   // TODO: Automate
