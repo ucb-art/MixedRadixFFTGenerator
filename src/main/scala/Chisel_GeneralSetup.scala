@@ -10,7 +10,7 @@ class SetupTopIO extends IOBundle {
   // Enable setup
   val enable = DSPBool(INPUT)
   // Is FFT? (otherwise IFFT)
-  val isFFT = DSPBool(INPUT)
+  val isFFT = if (Params.getFFT.functionType == FFTIFFTType) Option(DSPBool(INPUT)) else None
   // Done with setup
   val done = DSPBool(OUTPUT)
 }

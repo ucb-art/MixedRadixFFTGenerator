@@ -131,7 +131,8 @@ class ChiselFFT() { // extends ArborSpec {
             60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted ++
           List(64,128,256,512,1024,2048,1536), 
         normalized = normalized,
-        generateOffset = generateOffset
+        generateOffset = generateOffset,
+        functionType = FFTType
       ),
       test = TestParams(
         frames  = 5
