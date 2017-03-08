@@ -10,7 +10,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
                                         extends DSPTester(c) {
 
   traceOn = false
-  val randomDisabling = true
+  val randomDisabling = false//true
 
   // Default is run all tests
   if (fftn == None) runAll()
@@ -257,6 +257,11 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def calcDebug(): Unit = {
     val temp = traceOn
     traceOn = true
+    if (t % 2 == 0) {
+      /*peek(c.IOCtrl.o.bank)
+      peek(c.IOCtrl.o.addr)
+      peek(c.ctrl.k)*/
+    }
 
     /*
 
