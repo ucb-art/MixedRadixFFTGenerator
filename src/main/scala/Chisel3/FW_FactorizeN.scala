@@ -3,38 +3,82 @@ import dsptools.numbers.BaseN
 
 // Note: Google "Scala varargs"
 case class FFTNs(private val sizes: Int*) {
-  def get = sizes.toSeq
+  // Make sure it's immutable
+  def get = sizes.toList.toSeq
+  def num = get.length
+  def max = get.max
+  require(num > 0, "Must have at least one N")
+  get foreach { n => require(n > 1, "N must be > 1") }
 }
 // Index associated with WFTA.getRadIdx(maxRad)
-case class MaxRadixInfo(maxRad: Int, maxRadIdx: Int)
+case class MaxRadixInfo(maxRad: Int, maxRadIdx: Int) {
+  require(WFTA.getValidRad.contains(maxRad), "Must use valid radix!")
+  require(maxRadIdx >= 0, "Radix index must be non-negative")
+}
 
 // Ex: Coprime = 2^n, associatedPrime = 2, numDigits = # of Base 'prime' digits needed to represent 
 // 0 to (coprime - 1)
 case class CoprimeInfo(coprime: Int, associatedPrime: Int, numDigits: Int) {
-  require(coprime % associatedPrime == 0, "Coprime must be divisible by associated prime")
+  require(coprime % associatedPrime == 0 && coprime >= 0, "Coprime must be divisible by associated prime and >= 0")
+  require(WFTA.getValidRad.contains(associatedPrime) || associatedPrime == 1, 
+    s"Prime $associatedPrime must be in WFTA.groupedValidRad or equal to 1")
+  require(numDigits >= 0, "Number of digits should be >= 0")
 }
 // For a globally used prime, keep track of the associated max radix and max coprime
 // associated with it
 case class GlobalPrimeInfo(prime: Int, maxRadix: Int, maxCoprime: Int) {
-  require(maxCoprime % prime == 0, "Max Coprime must be divisible by associated prime")
+  require(maxCoprime % prime == 0 && maxCoprime >= 0, "Max Coprime must be divisible by associated prime")
   require(maxRadix % prime == 0, "Max Radix must be divisible by associated prime")
+  require(WFTA.getValidRad.contains(prime) || prime == 1, s"Prime $prime must be in WFTA.groupedValidRad or equal to 1")
+  require(WFTA.getValidRad.contains(maxRadix) || maxRadix == 1, 
+    s"Max radix $maxRadix must be in WFTA.groupedValidRad or equal to 1")
 }
-
-case class ButterflyParams(rad: Seq[Int])
+case class ButterflyParams(rad: Seq[Int]) {
+  rad foreach { r => 
+    require(WFTA.getValidRad.contains(r), "Butterfly radix must be in WFTA.groupedValidRad")
+  }
+  def maxRad = rad.max
+}
 case class CalcParams(
     radPow: Seq[Seq[Int]],
     radOrder: Seq[Seq[Int]],
     maxRad: Seq[MaxRadixInfo],
-    maxStages: Int)
+    maxStages: Int) {
+  radPow.flatten foreach { pow => require(pow >= 0, "Power must be non-negative") }
+  radOrder.flatten foreach {r => 
+    require(WFTA.getValidRad.contains(r) || r == 1, s"Radix $r must be in WFTA.groupedValidRad or equal to 1")
+  }
+  require(maxStages > 0, "Number of stages should be > 0")
+  def radPowCols = radPow.transpose
+  def radPowColMax = radPowCols.map(_.max)
+  def radOrderCols = radOrder.transpose
+  def radOrderColMax = radOrderCols.map(_.max)
+  def getMaxRad = maxRad.map(_.maxRad)
+  def getMaxRadIdx = maxRad.map(_.maxRadIdx)
+}
+
 case class IOParams(
     coprimes: Seq[Seq[CoprimeInfo]],
-    global: Seq[GlobalPrimeInfo])
+    global: Seq[GlobalPrimeInfo],
+    // Not populated until you get to IOQ
+    qDIF: Seq[Seq[IOQ]] = Seq(Seq()),
+    qDIT: Seq[Seq[IOQ]] = Seq(Seq())) {
+  def coprimeCols = coprimes.transpose
+  def qDIFCols = qDIF.transpose
+  def qDITCols = qDIT.transpose
+  def globalPrime = global.map(_.prime)
+  def globalMaxRadix = global.map(_.maxRadix)
+  def globalMaxCoprime = global.map(_.maxCoprime)
+}
 case class FactorizationParams(
     butterfly: ButterflyParams,
     calc: CalcParams,
-    io: IOParams)
+    io: IOParams) {
+}
 
 object FactorizationParams {
+  // Input: List of FFT N's
+  // Output: See above
   def apply(fftns: FFTNs): FactorizationParams = {
     // Get exponents associated with radices (for each n = row)
     val radPow = fftns.get.map(n => apply(n))

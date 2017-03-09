@@ -1,4 +1,5 @@
 package FFT
+import dspblocks.fft._
 
 object MemoryAccess{
   /** @param radPow powers (exponent) for each used radix
@@ -12,35 +13,12 @@ object MemoryAccess{
     */
   def apply(radPow:List[List[Int]],radOrder:List[List[Int]],maxStages:Int,maxRadIn:List[(Int,Int)],fftSizes:List[Int]):
       Tuple3[List[List[Int]],Int,List[Int]] = {
-    val maxRad = maxRadIn.unzip._1
-    val stages = Stages_PrevStages(radPow,radOrder,maxStages).map(_.unzip._1)
-    // Calculates address constants (after evenly dividing out # of banks, the
-    // length of each bank is smaller i.e. N/#banks)
-    // TODO: Bank != max radix
-    val ac = stages.zip(maxRad).map{case (stages,maxRad) => {
-      // Set the first occurrence of an FFT's max radix in the list of stage radices to 1
-      // (essentially tell it to skip over the max radix stage)
-      // Ax = A(x+1) * r(x+1)
-      val idxMaxRad = stages.indexOf(maxRad)
-      val stagesMod = stages.updated(idxMaxRad,1)
-      // Determines # of used stages, and trims list
-      val numStagesTemp = stages.indexOf(0)
-      val numStages = if(numStagesTemp == -1) maxStages else numStagesTemp
-      val usedStagesMod = stagesMod.dropRight(stagesMod.length-numStages)
-      val addressConstantTemp = usedStagesMod.tail.scanRight(1)((b,a) => b * a)
-      // Zero out AC associated w/ max radix stage
-      val addressConstantShort = addressConstantTemp.updated(idxMaxRad,0)
-      // Pad back to max # of stages
-      addressConstantShort ++ List.fill(maxStages-addressConstantShort.length)(0)
-    }}
-    // TODO: Correct numBanks for multi BFs
-    val numBanks = maxRad.max
-    val memLengths = fftSizes.zip(maxRad).map{case (n,r) => {
-      val pad = numBanks-r
-      List.fill(r)(n/r) ++ List.fill(pad)(0)
-    }}.transpose.map(_.max)
-    (ac,numBanks,memLengths)
-
+    val radPowNew = radPow.map(_.toSeq).toSeq
+    val radOrderNew = radOrder.map(_.toSeq).toSeq
+    val maxRadNew = maxRadIn.map(x => MaxRadixInfo(x._1, x._2)).toSeq
+    val in = dspblocks.fft.CalcParams(radPow = radPowNew, radOrder = radOrderNew, maxRad = maxRadNew, maxStages = maxStages)
+    val out = MemoryAccessParams(in, FFTNs(fftSizes.toSeq: _*))
+    (out.addressConstants.map(_.toList).toList, out.maxNumBanks, out.bankLengths.toList)
   }
 
   /** @param radPow powers (exponent) for each used radix
