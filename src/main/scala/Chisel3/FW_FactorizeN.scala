@@ -121,9 +121,12 @@ case class IOParams(
     require(qDIFCols.length == coprimeCols.length - 1, "Q's should have one fewer column than Coprimes")
 }
 case class FactorizationParams(
+    fftns: FFTNs,
     butterfly: ButterflyParams,
     calc: CalcParams,
-    io: IOParams) {
+    io: IOParams,
+    // Populated later in "firmware" steps
+    mem: MemoryAccessParams = MemoryAccessParams()) {
 }
 
 object FactorizationParams {
@@ -209,6 +212,7 @@ object FactorizationParams {
     }
 
     FactorizationParams(
+      fftns = fftns
       butterfly = ButterflyParams(rad = globalUsedRad),
       calc = CalcParams(radPow = nUsedPows, radOrder = nUsedRads, maxRad = maxRadices, maxStages = globalMaxStages),
       io = IOParams(coprimes = coprimeInfo, global = globalPrimeInfo))

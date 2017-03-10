@@ -3,11 +3,11 @@ package dspblocks.fft
 case class MemoryAccessParams(
   // Address constants for going from nx to memory bank addresses
   // Row associated with a particular FFTN
-  addressConstants: Seq[Seq[Int]],
+  addressConstants: Seq[Seq[Int]] = Seq(Seq(0)),
   // Max number of memory banks needed
-  maxNumBanks: Int,
+  maxNumBanks: Int = WFTA.getValidRad.min,
   // Max length of each bank
-  bankLengths: Seq[Int]
+  bankLengths: Seq[Int] = Seq(1)
 ) {
   addressConstants.flatten foreach { case ac => require(ac >= 0, "Address constants must be >= 0") }
   require(maxNumBanks >= WFTA.getValidRad.min, "# banks must be >= min radix supported by butterfly")

@@ -5,8 +5,13 @@ import scala.collection.immutable.ListMap
 abstract class FFTType
 object DIT extends FFTType
 object DIF extends FFTType
+object UnknownFFTType extende FFTType
 
-case class BinToBankAddr(fftType: FFTType, n: Int, bank: Int, addr: Int) {
+case class BinToBankAddr(
+    fftType: FFTType = UnknownFFTType, 
+    n: Int = 0, 
+    bank: Int, 
+    addr: Int) {
   require(n >= 0, "Bin must be >= 0")
   require(bank >= 0, "Bank must be >= 0")
   require(addr >= 0, "Address must be >= 0")
