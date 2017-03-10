@@ -9,6 +9,12 @@ case class IOQ(value: Int, base: Int) {
 }
 
 object IOQ {
+
+  def apply(fftParams: FactorizationParams): FactorizationParams = {
+    val updatedIOParams = apply(fftParams.fftns.num, fftParams.io)
+    fftParams.copy(io = updatedIOParams)
+  }
+
   /** Calculates the Q needed for PFA + CTA DIT/DIF IO (in-place)
     * Outputs: DIF Q with base, DIT Q with base
     */

@@ -19,6 +19,11 @@ case class BinToBankAddr(
 }
 
 object BinToBankAddrMap {
+  
+  def apply(fftType: FFTType, fftParams: FactorizationParams): Seq[BinToBankAddr] = {
+    apply(fftType, fftParams.io, fftParams.calc, fftParams.mem)
+  }
+
   def apply(fftType: FFTType, ioParams: IOParams, calcParams: CalcParams, memAccessParams: MemoryAccessParams): Seq[BinToBankAddr] = {
     require(ioParams.numFFTs == 1, 
       "Should only be using bin to bank, address map when you don't require runtime configuration")

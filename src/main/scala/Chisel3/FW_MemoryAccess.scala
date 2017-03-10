@@ -17,6 +17,11 @@ case class MemoryAccessParams(
 
 object MemoryAccessParams {
 
+  def apply(fftParams: FactorizationParams): FactorizationParams = {
+    val memAccessParams = apply(fftParams.calc, fftParams.fftns)
+    fftParams.copy(mem = memAccessParams)
+  }
+
   def apply(calcParams: CalcParams, fftns: FFTNs): MemoryAccessParams = {
     val maxRads = calcParams.getMaxRad
     val fftnStages = calcParams.getStages.map(_.stages)

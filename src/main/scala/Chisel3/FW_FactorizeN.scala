@@ -129,6 +129,7 @@ case class FactorizationParams(
     mem: MemoryAccessParams = MemoryAccessParams()) {
 }
 
+// TODO: Rename to FFTParams
 object FactorizationParams {
   // Input: List of FFT N's
   // Output: See above
