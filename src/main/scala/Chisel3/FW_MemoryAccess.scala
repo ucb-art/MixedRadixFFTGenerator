@@ -17,34 +17,9 @@ case class MemoryAccessParams(
 
 object MemoryAccessParams {
 
-  // For individual FFT, what stages are required
-  case class FFTNStageInfo(stages: Seq[Int]) {
-    // Records the radix of the stage that came before (1 for first stage)
-    def prevStages = Seq(1) ++ stages.init
-    stages foreach { s => require(s >= 0, "Stage must be non-negative") }
-  }
-
-  /** Gets the radix associated with each calculation stage,
-    * also 
-    */
-  def getStages(calcParams: CalcParams): Seq[FFTNStageInfo] = {
-    calcParams.radPow.zip(calcParams.radOrder) map { case (rowPow, rowRad) => 
-      val stageGen = rowPow.zip(rowRad)
-      // Ex: 2^3 * 3^2
-      // stages -> 2, 2, 2, 3, 3 i.e. fill 2 3x and then fill 3 2x
-      val stagesTemp = stageGen.tail.foldLeft(
-        Seq.fill(stageGen.head._1)(stageGen.head._2)
-      )((prev, curr) => prev ++ Seq.fill(curr._1)(curr._2))
-      // Max # of stages is fixed -- if current FFT n doesn't require that many stages,
-      // you need to pad with 0's
-      val stages = stagesTemp ++  Seq.fill(calcParams.maxStages - stagesTemp.length)(0)
-      FFTNStageInfo(stages = stages)
-    }
-  }
-
   def apply(calcParams: CalcParams, fftns: FFTNs): MemoryAccessParams = {
     val maxRads = calcParams.getMaxRad
-    val fftnStages = getStages(calcParams).map(_.stages)
+    val fftnStages = calcParams.getStages.map(_.stages)
     // Calculates address constants (after evenly dividing out # of banks, the
     // length of each bank is smaller i.e. N/#banks)
     // TODO: Bank != max radix

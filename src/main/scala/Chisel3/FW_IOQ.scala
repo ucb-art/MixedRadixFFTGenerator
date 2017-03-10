@@ -1,5 +1,8 @@
 package dspblocks.fft
 
+
+// TODO: Rethink base (= prime? instead of max radix and then convert to Mixed Radix elsewhere?)
+// TODO: In general, rethink BaseN.whatever implementation
 case class IOQ(value: Int, base: Int) {
   require(value >= 0, "Q value should be >= 0")
   require(WFTA.getValidRad.contains(base) || base == 1, s"Base $base must be in WFTA.groupedValidRad or equal to 1")

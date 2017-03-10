@@ -127,16 +127,16 @@ class ChiselFFT() { // extends ArborSpec {
       fft = FFTParams(
         sizes   = 
           // LTE + Wifi
-          List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
+          /*List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
             60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted ++
-          List(64,128,256,512,1024,2048,1536),
-          //List(24), 
+          List(64,128,256,512,1024,2048,1536),*/
+          List(24), 
         normalized = normalized,
         generateOffset = generateOffset,
         functionType = FFTType
       ),
       test = TestParams(
-        frames  = 2 //5
+        frames  = 1 //5
       )
     )
 

@@ -162,6 +162,8 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       if (Tracker.outStep < in.length) stepTrack(Params.getIO.clkRatio,in,out, enable = true)
     }
 
+    checkAtEnd()
+
   }
 
   /** Peek+poke and then step */
@@ -252,15 +254,48 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     if (Tracker.outValid) Tracker.outStep = Tracker.outStep + 1
 
   }
+  
+  def checkAtEnd(): Unit = {
+    /*
+    println("TB Inc Counts")
+    Tracker.incCountsT foreach { x => println(x.mkString(",")) }
+    println("Theory")
+    dspblocks.fft.BinToBankAddrMap.incCounts.toSeq.flatten foreach { x => println(x.mkString(",")) }
+    println("TB Q Counts")
+    Tracker.qCountsT foreach { x => println(x.mkString(",")) }
+    println("Theory")
+    dspblocks.fft.BinToBankAddrMap.qCounts.toSeq.flatten foreach { x => println(x.mkString(",")) }
+    println("TB Coprime Counts")
+    Tracker.cpCountsT foreach { x => println(x.mkString(",")) }
+    */
+    println("Theory n Counts")
+    val nCountExpected = dspblocks.fft.BinToBankAddrMap.cpCounts.toSeq.flatten
+    nCountExpected foreach { x => println(x.mkString(",")) }
+    println("TB n Counts")
+    val peekedNCounts = Tracker.nCountsT.take(nCountExpected.length)
+    peekedNCounts foreach { x => println(x.mkString(",")) }
+    expect(peekedNCounts == nCountExpected, "N Counts must be right")
+  }
 
   /** Placeholder for debugging signals */
   def calcDebug(): Unit = {
     val temp = traceOn
     traceOn = true
     if (t % 2 == 0) {
-      /*peek(c.IOCtrl.o.bank)
-      peek(c.IOCtrl.o.addr)
-      peek(c.ctrl.k)*/
+      //peek(c.IOCtrl.o.bank)
+      //peek(c.IOCtrl.o.addr)
+      //peek(c.ctrl.k)
+      traceOn = false
+      /*
+      Tracker.incCountsT += peek(c.IOCtrl.ioIncCounts).map(x => x.intValue).toList.toSeq
+      Tracker.qCountsT += peek(c.IOCtrl.ioQCounts).map(x => x.intValue).toList.toSeq
+      Tracker.cpCountsT += peek(c.IOCtrl.coprimeCounts).map(x => x.intValue).toList.toSeq
+      */
+      val peekedNCounts = peek(c.IOCtrl.nIO).map(x => x.intValue).toList.toSeq
+      val nCountsZero = Seq.fill(c.IOCtrl.nIO.length)(0) 
+      val isNCountsZero = peekedNCounts == nCountsZero
+      if (Tracker.nCountsT.isEmpty || !isNCountsZero || (isNCountsZero && Tracker.nCountsT.last != nCountsZero))
+        Tracker.nCountsT += peekedNCounts
     }
 
     /*
@@ -303,6 +338,11 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 
 object Tracker {
 
+  val incCountsT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
+  val qCountsT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
+  val cpCountsT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
+  val nCountsT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
+
   // Variables to track tester progress
   // Output currently valid
   var outValid = false
@@ -323,6 +363,10 @@ object Tracker {
 
   // Reset variables on new test
   def reset(n: Int) : Unit = {
+
+    incCountsT.clear()
+    qCountsT.clear()
+    cpCountsT.clear()
 
     val idx = Params.getFFT.sizes.indexOf(n)
     val dblTol = TestVectors.outAbsMin(idx)

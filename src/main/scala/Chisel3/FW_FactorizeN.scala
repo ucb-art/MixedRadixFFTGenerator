@@ -33,12 +33,14 @@ case class GlobalPrimeInfo(prime: Int, maxRadix: Int, maxCoprime: Int) {
   require(WFTA.getValidRad.contains(maxRadix) || maxRadix == 1, 
     s"Max radix $maxRadix must be in WFTA.groupedValidRad or equal to 1")
 }
+
 case class ButterflyParams(rad: Seq[Int]) {
   rad foreach { r => 
     require(WFTA.getValidRad.contains(r), "Butterfly radix must be in WFTA.groupedValidRad")
   }
   def maxRad = rad.max
 }
+
 case class CalcParams(
     radPow: Seq[Seq[Int]],
     radOrder: Seq[Seq[Int]],
@@ -49,12 +51,48 @@ case class CalcParams(
     require(WFTA.getValidRad.contains(r) || r == 1, s"Radix $r must be in WFTA.groupedValidRad or equal to 1")
   }
   require(maxStages > 0, "Number of stages should be > 0")
+  def numFFTs = {
+    require(radPow.length == radOrder.length, "# rows must be the same!")
+    radPow.length
+  }
+  require(radPowCols.length == radOrderCols.length, "# columns must be the same!")
   def radPowCols = radPow.transpose
   def radPowColMax = radPowCols.map(_.max)
   def radOrderCols = radOrder.transpose
   def radOrderColMax = radOrderCols.map(_.max)
   def getMaxRad = maxRad.map(_.maxRad)
   def getMaxRadIdx = maxRad.map(_.maxRadIdx)
+
+  /** Gets the radix associated with each calculation stage,
+    * also 
+    */
+  def getStages: Seq[FFTNStageInfo] = {
+    radPow.zip(radOrder) map { case (rowPow, rowRad) => 
+      val stageGen = rowPow.zip(rowRad)
+      // Ex: 2^3 * 3^2
+      // stages -> 2, 2, 2, 3, 3 i.e. fill 2 3x and then fill 3 2x
+      val stagesTemp = stageGen.tail.foldLeft(
+        Seq.fill(stageGen.head._1)(stageGen.head._2)
+      )((prev, curr) => prev ++ Seq.fill(curr._1)(curr._2))
+      // Max # of stages is fixed -- if current FFT n doesn't require that many stages,
+      // you need to pad with 0's
+      val stages = stagesTemp ++  Seq.fill(maxStages - stagesTemp.length)(0)
+      FFTNStageInfo(stages = stages)
+    }
+  }
+}
+
+// For individual FFT, what stages are required
+case class FFTNStageInfo(stages: Seq[Int]) {
+  // Records the radix of the stage that came before (1 for first stage)
+  def prevStages = Seq(1) ++ stages.init
+  stages foreach { s => require(s >= 0, "Stage must be non-negative") }
+  def getStagesCorrespondingTo(prime: Int): Seq[Int] = {
+    require(WFTA.getValidRad.contains(prime), "Prime must be valid!")
+    val out = stages.filter(_ % prime == 0)
+    require(out.sorted.reverse == out, "Left to right must be in descending value")
+    out
+  }
 }
 
 case class IOParams(
@@ -63,12 +101,23 @@ case class IOParams(
     // Not populated until you get to IOQ
     qDIF: Seq[Seq[IOQ]] = Seq(Seq()),
     qDIT: Seq[Seq[IOQ]] = Seq(Seq())) {
+  def getPrimes = coprimes.map(_.map(_.associatedPrime))
+  def getCoprimes = coprimes.map(_.map(_.coprime))
+  def getQDIF = qDIF.map(_.map(_.value))
+  def getQDIT = qDIT.map(_.map(_.value))
   def coprimeCols = coprimes.transpose
   def qDIFCols = qDIF.transpose
   def qDITCols = qDIT.transpose
   def globalPrime = global.map(_.prime)
   def globalMaxRadix = global.map(_.maxRadix)
   def globalMaxCoprime = global.map(_.maxCoprime)
+  def numFFTs = {
+    require(coprimes.length == qDIF.length && qDIF.length == qDIT.length, "# rows must be the same!")
+    coprimes.length
+  }
+    require(qDIFCols.length == qDITCols.length, "# columns must be the same!")
+  if (qDIFCols.nonEmpty)
+    require(qDIFCols.length == coprimeCols.length - 1, "Q's should have one fewer column than Coprimes")
 }
 case class FactorizationParams(
     butterfly: ButterflyParams,

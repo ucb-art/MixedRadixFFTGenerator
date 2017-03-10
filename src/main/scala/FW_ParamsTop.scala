@@ -3,6 +3,7 @@
 
 package FFT
 import ChiselDSP._
+import dspblocks.fft._
 
 // TODO: Be less lazy with initial values
 
@@ -83,6 +84,13 @@ object Params {
     twiddle.LUTScale = twiddleLUTScale
     twiddle.vals = twiddles
     twiddle.subcountMax = twiddleSubcountMax
+
+    val factorizeNOut = dspblocks.fft.FactorizationParams(FFTNs(getFFT.sizes: _*))
+    val ioqOut = dspblocks.fft.IOQ(getFFT.nCount, factorizeNOut.io)
+    if (getFFT.nCount == 1) {
+      BinToBankAddrMap(DIF, ioqOut, factorizeNOut.calc)
+      BinToBankAddrMap(DIT, ioqOut, factorizeNOut.calc)
+    }
 
   }
 
