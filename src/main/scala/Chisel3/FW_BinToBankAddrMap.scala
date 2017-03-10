@@ -1,5 +1,6 @@
 package dspblocks.fft
 import dsptools.numbers.MixedRadix
+import scala.collection.immutable.ListMap
 
 abstract class FFTType
 object DIT extends FFTType
@@ -9,10 +10,11 @@ case class BinToBankAddr(fftType: FFTType, n: Int, bank: Int, addr: Int) {
   require(n >= 0, "Bin must be >= 0")
   require(bank >= 0, "Bank must be >= 0")
   require(addr >= 0, "Address must be >= 0")
+  def getBankAddr = Seq(bank, addr)
 }
 
 object BinToBankAddrMap {
-  def apply(fftType: FFTType, ioParams: IOParams, calcParams: CalcParams): Unit = { // Map[Int, BinToBankAddr] = {
+  def apply(fftType: FFTType, ioParams: IOParams, calcParams: CalcParams, memAccessParams: MemoryAccessParams): Seq[BinToBankAddr] = {
     require(ioParams.numFFTs == 1, 
       "Should only be using bin to bank, address map when you don't require runtime configuration")
     val coprimesTemp = ioParams.getCoprimes.head
@@ -110,13 +112,30 @@ object BinToBankAddrMap {
       }
     }
 
-    // This should already correspond to n1, n2, n3, ...
+    // This should already correspond to n1, n2, n3, ... (mixed radix)
     val coprimeCounts = convertCountsToMixedRadix(coprimeCountsBase10)
+
+    require(memAccessParams.addressConstants.length == 1, "Should only have one FFT size")
+    val addressConstants = memAccessParams.addressConstants.head
+
+    // TODO: # banks doesn't need to = max radix
+    val numBanks = calcParams.maxRad.head.maxRad
+
+    // Address = AC0*n0 + AC1*n1 + AC2*n2 + AC3*n3 + ...
+    // Bank = (n0 + n1 + n2 + n3 + ...) mod maxRadix
+    val out = coprimeCounts.zipWithIndex.map { case (row, idx) =>
+      val addr = row.zip(addressConstants).map { case (n, ac) => n * ac }.sum
+      val bank = row.sum % numBanks
+      BinToBankAddr(fftType = fftType, n = idx, bank = bank, addr = addr)
+    }
 
     // DEBUG
     incCounts += convertCountsToMixedRadix(ioIncCountsNPrime)
     qCounts += convertCountsToMixedRadix(ioQCountsR)
     cpCounts += coprimeCounts
+    bankAddr += out
+
+    out
     
   }
 
@@ -125,8 +144,9 @@ object BinToBankAddrMap {
   // Chisel2 version will not match unless DIF uses reverse and DIT doesn't (for coprime ordering)
   // Also, for incCounts, qCounts, cpCounts, Chisel2 doesn't use outTemp.reverse for DIT 
   // (swapped later for actually generating final n i.e. TB n (but not coprimeCounts) will match cpCounts)
-  var incCounts = scala.collection.mutable.ArrayBuffer[Seq[Seq[Int]]]()
-  var qCounts = scala.collection.mutable.ArrayBuffer[Seq[Seq[Int]]]()
-  var cpCounts = scala.collection.mutable.ArrayBuffer[Seq[Seq[Int]]]()
+  val incCounts = scala.collection.mutable.ArrayBuffer[Seq[Seq[Int]]]()
+  val qCounts = scala.collection.mutable.ArrayBuffer[Seq[Seq[Int]]]()
+  val cpCounts = scala.collection.mutable.ArrayBuffer[Seq[Seq[Int]]]()
+  val bankAddr = scala.collection.mutable.ArrayBuffer[Seq[BinToBankAddr]]()
   
 }

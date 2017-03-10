@@ -275,6 +275,16 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     val peekedNCounts = Tracker.nCountsT.take(nCountExpected.length)
     peekedNCounts foreach { x => println(x.mkString(",")) }
     expect(peekedNCounts == nCountExpected, "N Counts must be right")
+
+    val ioBankAddrExpected = dspblocks.fft.BinToBankAddrMap.bankAddr.toSeq.flatten.map(x => 
+      x.getBankAddr
+    )
+    val peekedIOBankAddr = Tracker.ioBankAddrT.take(ioBankAddrExpected.length)
+    println("Theory IO Bank Addr")
+    ioBankAddrExpected foreach { x => println(x.mkString(",")) }
+    println("TB IO Bank Addr")
+    peekedIOBankAddr foreach { x => println(x.mkString(",")) }
+    expect(peekedIOBankAddr == ioBankAddrExpected, "IO Bank, Address must be right")
   }
 
   /** Placeholder for debugging signals */
@@ -296,6 +306,14 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       val isNCountsZero = peekedNCounts == nCountsZero
       if (Tracker.nCountsT.isEmpty || !isNCountsZero || (isNCountsZero && Tracker.nCountsT.last != nCountsZero))
         Tracker.nCountsT += peekedNCounts
+
+      val peekedIOBank = peek(c.IOCtrl.o.bank).intValue
+      val peekedIOAddr = peek(c.IOCtrl.o.addr).intValue
+      val peekedIOBankAddr = Seq(peekedIOBank, peekedIOAddr)
+      val bankAddrZero = Seq.fill(2)(0) 
+      val isBankAddrZero = peekedIOBankAddr == bankAddrZero
+      if (Tracker.ioBankAddrT.isEmpty || !isBankAddrZero || (isBankAddrZero && Tracker.ioBankAddrT.last != bankAddrZero))
+        Tracker.ioBankAddrT += peekedIOBankAddr
     }
 
     /*
@@ -342,6 +360,7 @@ object Tracker {
   val qCountsT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
   val cpCountsT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
   val nCountsT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
+  val ioBankAddrT = scala.collection.mutable.ArrayBuffer[Seq[Int]]()
 
   // Variables to track tester progress
   // Output currently valid

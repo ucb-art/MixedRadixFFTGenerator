@@ -46,6 +46,7 @@ case class CalcParams(
     radOrder: Seq[Seq[Int]],
     maxRad: Seq[MaxRadixInfo],
     maxStages: Int) {
+  require(maxRad.length == radPow.length, "radPow & maxRad lengths should match!")
   radPow.flatten foreach { pow => require(pow >= 0, "Power must be non-negative") }
   radOrder.flatten foreach {r => 
     require(WFTA.getValidRad.contains(r) || r == 1, s"Radix $r must be in WFTA.groupedValidRad or equal to 1")
