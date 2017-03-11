@@ -213,7 +213,7 @@ object FactorizationParams {
     }
 
     FactorizationParams(
-      fftns = fftns
+      fftns = fftns,
       butterfly = ButterflyParams(rad = globalUsedRad),
       calc = CalcParams(radPow = nUsedPows, radOrder = nUsedRads, maxRad = maxRadices, maxStages = globalMaxStages),
       io = IOParams(coprimes = coprimeInfo, global = globalPrimeInfo))

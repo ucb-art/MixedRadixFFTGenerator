@@ -7,7 +7,7 @@ case class MemoryAccessParams(
   // Max number of memory banks needed
   maxNumBanks: Int = WFTA.getValidRad.min,
   // Max length of each bank
-  bankLengths: Seq[Int] = Seq(1)
+  bankLengths: Seq[Int] = Seq.fill(WFTA.getValidRad.min)(1)
 ) {
   addressConstants.flatten foreach { case ac => require(ac >= 0, "Address constants must be >= 0") }
   require(maxNumBanks >= WFTA.getValidRad.min, "# banks must be >= min radix supported by butterfly")

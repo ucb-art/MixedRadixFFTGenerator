@@ -5,7 +5,7 @@ import scala.collection.immutable.ListMap
 abstract class FFTType
 object DIT extends FFTType
 object DIF extends FFTType
-object UnknownFFTType extende FFTType
+object UnknownFFTType extends FFTType
 
 case class BinToBankAddr(
     fftType: FFTType = UnknownFFTType, 
