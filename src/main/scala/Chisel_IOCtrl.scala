@@ -1,4 +1,5 @@
 // TODO: Go through pipes; check delays are accounted for for all modules
+// WARNING: 64 BY ITSELF HAS A BUG!!! (not runtime configurable version)
 
 package FFT
 import ChiselDSP._

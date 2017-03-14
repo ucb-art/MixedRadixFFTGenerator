@@ -79,7 +79,10 @@ object BinToBankAddrMap {
       ).flatten
     }
     // Match lengths!
-    val ioQCountsR = ioQCountsRTemp.transpose map (row => row :+ 0)
+    val ioQCountsR = {
+      if (ioQCountsRTemp.isEmpty) Seq.fill(fftn)(Seq(0)) 
+      else ioQCountsRTemp.transpose map (row => row :+ 0)
+    }
     val coprimeCountsBase10 = ioIncCountsNPrime.zip(ioQCountsR) map { case (rowNprime, rowRcount) => 
       rowNprime.zip(rowRcount).zipWithIndex map { case ((nprime, rcount), idx) =>
         (nprime + rcount) % coprimes(idx)

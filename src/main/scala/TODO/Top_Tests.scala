@@ -269,22 +269,32 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     Tracker.cpCountsT foreach { x => println(x.mkString(",")) }
     */
     //println("Theory n Counts")
+    // Flatten is to merge DIF, DIT
+    val testLength = 2 * Tracker.FFTN
     val nCountExpected = dspblocks.fft.BinToBankAddrMap.cpCounts.toSeq.flatten
     //nCountExpected foreach { x => println(x.mkString(",")) }
     //println("TB n Counts")
-    val peekedNCounts = Tracker.nCountsT.take(nCountExpected.length)
+    require(testLength == nCountExpected.length, s"Test vectors should be 2 * ${Tracker.FFTN}, instead there are ${nCountExpected.length}")
+    val peekedNCounts = Tracker.nCountsT.take(testLength)
     //peekedNCounts foreach { x => println(x.mkString(",")) }
-    expect(peekedNCounts == nCountExpected, "N Counts must be right")
+    //expect(peekedNCounts == nCountExpected, "N Counts must be right")
+    peekedNCounts.zip(nCountExpected) foreach { case (peeked, expected) =>
+      val numCols = peeked.length
+      // Reconfigurable likely requires more stages than fixed
+      val fillExpected = expected ++ Seq.fill(numCols - expected.length)(0)
+      require(expect(peeked == fillExpected, "N Counts must be right"), s"IO N's wrong for ${Tracker.FFTN}")
+    }
 
     val ioBankAddrExpected = dspblocks.fft.BinToBankAddrMap.bankAddr.toSeq.flatten.map(x => 
       x.getBankAddr
     )
-    val peekedIOBankAddr = Tracker.ioBankAddrT.take(ioBankAddrExpected.length)
+    require(testLength == ioBankAddrExpected.length, s"Test vectors should be 2 * ${Tracker.FFTN}")
+    val peekedIOBankAddr = Tracker.ioBankAddrT.take(testLength)
     //println("Theory IO Bank Addr")
     //ioBankAddrExpected foreach { x => println(x.mkString(",")) }
     //println("TB IO Bank Addr")
     //peekedIOBankAddr foreach { x => println(x.mkString(",")) }
-    expect(peekedIOBankAddr == ioBankAddrExpected, "IO Bank, Address must be right")
+    require(expect(peekedIOBankAddr == ioBankAddrExpected, "IO Bank, Address must be right"), s"IO Bank/Address wrong for ${Tracker.FFTN}")
   }
 
   /** Placeholder for debugging signals */
@@ -295,6 +305,7 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
       //peek(c.IOCtrl.o.bank)
       //peek(c.IOCtrl.o.addr)
       //peek(c.ctrl.k)
+      //c.IOCtrl.ioIncCountsX foreach { x => peek(x) }
       traceOn = false
       /*
       Tracker.incCountsT += peek(c.IOCtrl.ioIncCounts).map(x => x.intValue).toList.toSeq
@@ -383,11 +394,15 @@ object Tracker {
   // Reset variables on new test
   def reset(n: Int) : Unit = {
 
+    // Clear TB
     incCountsT.clear()
     qCountsT.clear()
     cpCountsT.clear()
+    nCountsT.clear()
+    ioBankAddrT.clear()
 
     val params = dspblocks.fft.PeelingScheduling.getFFTParams(n)
+    // Clear expected
     dspblocks.fft.BinToBankAddrMap.incCounts.clear()
     dspblocks.fft.BinToBankAddrMap.qCounts.clear()
     dspblocks.fft.BinToBankAddrMap.cpCounts.clear()

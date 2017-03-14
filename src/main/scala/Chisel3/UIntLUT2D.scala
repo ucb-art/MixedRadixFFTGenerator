@@ -8,6 +8,8 @@ import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
 import dsptools.DspTester
 
+// TODO: Try 675, 800, 864 LUTs (bin to bank, addr); then check if the mod thing works
+
 class UIntLUT2DSpec extends FlatSpec with Matchers {
   behavior of "2D UInt LUT"
   it should "store the right Lit values and output them in the correct order" in {
