@@ -84,15 +84,6 @@ object Params {
     twiddle.LUTScale = twiddleLUTScale
     twiddle.vals = twiddles
     twiddle.subcountMax = twiddleSubcountMax
-
-    val factorizeNOut = dspblocks.fft.FactorizationParams(FFTNs(getFFT.sizes: _*))
-    val ioqOut = dspblocks.fft.IOQ(getFFT.nCount, factorizeNOut.io)
-    val memAccess = dspblocks.fft.MemoryAccessParams(factorizeNOut.calc, FFTNs(getFFT.sizes: _*))
-    if (getFFT.nCount == 1) {
-      BinToBankAddrMap(DIF, ioqOut, factorizeNOut.calc, memAccess)
-      BinToBankAddrMap(DIT, ioqOut, factorizeNOut.calc, memAccess)
-    }
-
   }
 
 }

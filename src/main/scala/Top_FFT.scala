@@ -5,6 +5,17 @@ import ChiselDSP._
 import Chisel.{Complex => _, _}
 //import arbor.{Math => _, _}
 import java.io._
+import org.scalatest.{FlatSpec, Matchers}
+
+class FFTChisel2Spec extends FlatSpec with Matchers {
+  behavior of "Chisel FFT"
+  it should "be runtime-configurable and produce right (approximately) results" in {
+    // Double, no Verilog TB
+    // Equivalent of no option "make debug"
+    val args = "-params_false_false --test --debugMem --genHarness --compile --debug --targetDir ./build/test --W0W --compileInitializationUnoptimized".split(" ")
+    MainWithMatlab.main(args)
+  }
+}
 
 object MainWithMatlab { // extends arbor.matlab.MATLABRepl {
 
@@ -130,13 +141,12 @@ class ChiselFFT() { // extends ArborSpec {
           List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
             60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted ++
           List(64,128,256,512,1024,2048,1536),
-          //List(24), 
         normalized = normalized,
         generateOffset = generateOffset,
         functionType = FFTType
       ),
       test = TestParams(
-        frames  = 1 //5
+        frames  = 5
       )
     )
 

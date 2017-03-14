@@ -387,6 +387,16 @@ object Tracker {
     qCountsT.clear()
     cpCountsT.clear()
 
+    val params = dspblocks.fft.PeelingScheduling.getFFTParams(n)
+    dspblocks.fft.BinToBankAddrMap.incCounts.clear()
+    dspblocks.fft.BinToBankAddrMap.qCounts.clear()
+    dspblocks.fft.BinToBankAddrMap.cpCounts.clear()
+    dspblocks.fft.BinToBankAddrMap.bankAddr.clear()
+
+    // Sims always start DIF before DIT
+    dspblocks.fft.BinToBankAddrMap(dspblocks.fft.DIF, params.io, params.calc, params.mem)
+    dspblocks.fft.BinToBankAddrMap(dspblocks.fft.DIT, params.io, params.calc, params.mem)
+    
     val idx = Params.getFFT.sizes.indexOf(n)
     val dblTol = TestVectors.outAbsMin(idx)
     // Set tolerance for comparing expected values

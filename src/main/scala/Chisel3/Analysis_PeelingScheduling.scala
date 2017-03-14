@@ -7,6 +7,7 @@ case class FFASTParams(fftn: Int, subFFTns: Seq[Int])
 
 object PeelingScheduling {
 
+  // TODO: Remove
   def main(args: Array[String]): Unit = {
     val ffastParams = FFASTParams(fftn = 21600, subFFTns = Seq(675, 800, 864))
     //analyzeConflicts(ffastParams, DIT) 
@@ -18,7 +19,7 @@ object PeelingScheduling {
   // Can you find different addresses using the same bank that don't have conflicts?
   // There's probably some pattern, just like for the normal FFT
   def analyzeConflicts(ffastParams: FFASTParams, fftType: FFTType) = {
-    val subFFTToBanksMap = getSubFFTBankLengths(ffastParams, fftType)
+    val subFFTToBanksMap = getSubFFTBankLengths(ffastParams)
     ffastParams.subFFTns foreach { case subFFT => 
       val otherSubFFTs = ffastParams.subFFTns.filter(_ != subFFT)
       // For each sub FFT, figure out how many banks are needed and how long they must be
@@ -50,9 +51,9 @@ object PeelingScheduling {
   }
 
   // Get # of banks required and bank lengths for each sub FFT
-  def getSubFFTBankLengths(ffastParams: FFASTParams, fftType: FFTType): Map[Int, Seq[Int]] = {  
+  def getSubFFTBankLengths(ffastParams: FFASTParams): Map[Int, Seq[Int]] = {  
     ffastParams.subFFTns.map { case subFFT =>
-      val bankLengths = getFFTParams(subFFT, fftType).mem.bankLengths
+      val bankLengths = getFFTParams(subFFT).mem.bankLengths
       val numBanks = bankLengths.length
       require(bankLengths.distinct.length == 1, 
         "Since only doing 1 FFT at a time, all banks should be the same length")
@@ -116,7 +117,7 @@ object PeelingScheduling {
     map(bin).getBankAddr
   }
 
-  def getFFTParams(fftn: Int, fftType: FFTType): FactorizationParams = {
+  def getFFTParams(fftn: Int): FactorizationParams = {
     val fftns = FFTNs(fftn)
     // Parameters sequentially calculated/updated
     // TODO: Rename to UpdateFFTParamsWithMemoryAccessParams, etc.
@@ -125,7 +126,7 @@ object PeelingScheduling {
 
   // Can convert to LUT for IO (single FFT) since you map bin to memory bank + address
   def getIOMemBankAddr(fftn: Int, fftType: FFTType): Seq[BinToBankAddr] = {
-    BinToBankAddrMap(fftType, getFFTParams(fftn, fftType))
+    BinToBankAddrMap(fftType, getFFTParams(fftn))
   }
 
 
