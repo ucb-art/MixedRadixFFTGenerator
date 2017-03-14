@@ -1,4 +1,26 @@
 package dsptools.numbers
+import org.scalatest.{FlatSpec, Matchers}
+
+class BaseNSpec extends FlatSpec with Matchers {
+  behavior of "BaseN"
+  it should "properly convert a decimal into BaseN" in {
+
+    case class BaseNTest(n: Int, rad: Int, res: Seq[Int])
+
+    // Most significant digit first (matched against WolframAlpha)
+    val tests = Seq(
+      BaseNTest(27, 4, Seq(1, 2, 3)),
+      BaseNTest(17, 3, Seq(1, 2, 2)),
+      BaseNTest(37, 5, Seq(1, 2, 2))
+    )
+    tests foreach { case BaseNTest(n, rad, res) =>
+      require(BaseN.toDigitSeqMSDFirst(n, rad) == res, s"Base $rad conversion should work!")
+      val paddedBaseN = BaseN.toDigitSeqMSDFirst(n, rad, 500)
+      require(paddedBaseN == (Seq.fill(paddedBaseN.length - res.length)(0) ++ res), 
+        s"Padded base $rad conversion should work!")
+    }
+  }
+}
 
 object BaseN {
   // Support a finite # of bases to make prime check, etc. easier
@@ -35,11 +57,35 @@ object BaseN {
   def numDigits(n: Int, r: Int): Int = toDigitSeqInternal(n, r).length
 }
 
+class MixedRadixSpec extends FlatSpec with Matchers {
+  behavior of "MixedRadix"
+  it should "properly convert a decimal into MixedRadix" in {
+
+    case class MixedRadixTest(n: Int, rad: Seq[Int], res: Seq[Int])
+
+    // Most significant digit first (matched against WolframAlpha)
+    val tests = Seq(
+      MixedRadixTest(6, Seq(4, 4, 2), Seq(3, 0)),
+      MixedRadixTest(6, Seq(4, 4, 2, 4), Seq(1, 2))
+    )
+    tests foreach { case MixedRadixTest(n, rad, res) =>
+      require(MixedRadix.toDigitSeqMSDFirst(n, rad) == res, s"$rad conversion should work!")
+      val paddedMixedRadix = MixedRadix.toDigitSeqMSDFirst(n, rad, 16)
+      require(paddedMixedRadix == Seq.fill(paddedMixedRadix.length - res.length)(0) ++ res, 
+        s"Padded $rad conversion should work!")
+    }
+  }
+}
+
 object MixedRadix {
   // Least significant digit is highest indexed (right-most)
   private def toDigitSeqInternal(n: Int, radicesLowFirst: Seq[Int]): Seq[Int] = {
     require(n >= 0, "n must be >= 0")
     radicesLowFirst foreach { r => require(r > 0, "r vals must be > 0") }
+
+    if (n != 0 && radicesLowFirst.isEmpty) 
+      throw new Exception("N is out of range for the given set of radices!")
+
     // Start dividing from LSD (resolves LSDs first)
     if (n == 0) Nil 
     else toDigitSeqInternal(n / radicesLowFirst.head, radicesLowFirst.tail) :+ (n % radicesLowFirst.head)
