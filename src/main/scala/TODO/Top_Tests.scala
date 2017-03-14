@@ -268,22 +268,22 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     println("TB Coprime Counts")
     Tracker.cpCountsT foreach { x => println(x.mkString(",")) }
     */
-    println("Theory n Counts")
+    //println("Theory n Counts")
     val nCountExpected = dspblocks.fft.BinToBankAddrMap.cpCounts.toSeq.flatten
-    nCountExpected foreach { x => println(x.mkString(",")) }
-    println("TB n Counts")
+    //nCountExpected foreach { x => println(x.mkString(",")) }
+    //println("TB n Counts")
     val peekedNCounts = Tracker.nCountsT.take(nCountExpected.length)
-    peekedNCounts foreach { x => println(x.mkString(",")) }
+    //peekedNCounts foreach { x => println(x.mkString(",")) }
     expect(peekedNCounts == nCountExpected, "N Counts must be right")
 
     val ioBankAddrExpected = dspblocks.fft.BinToBankAddrMap.bankAddr.toSeq.flatten.map(x => 
       x.getBankAddr
     )
     val peekedIOBankAddr = Tracker.ioBankAddrT.take(ioBankAddrExpected.length)
-    println("Theory IO Bank Addr")
-    ioBankAddrExpected foreach { x => println(x.mkString(",")) }
-    println("TB IO Bank Addr")
-    peekedIOBankAddr foreach { x => println(x.mkString(",")) }
+    //println("Theory IO Bank Addr")
+    //ioBankAddrExpected foreach { x => println(x.mkString(",")) }
+    //println("TB IO Bank Addr")
+    //peekedIOBankAddr foreach { x => println(x.mkString(",")) }
     expect(peekedIOBankAddr == ioBankAddrExpected, "IO Bank, Address must be right")
   }
 

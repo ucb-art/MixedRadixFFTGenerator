@@ -1,0 +1,21 @@
+package barstools.tapeout
+import dsptools.{DspTesterOptionsManager, DspTesterOptions}
+import chisel3.iotesters.TesterOptions
+
+object TestParams {
+
+  val testerOptionsGlobal = TesterOptions(
+      isVerbose = false,
+      displayBase = 16,
+      backendName = "verilator",
+      isGenVerilog = true)
+
+  val options0Tol = new DspTesterOptionsManager {
+    dspTesterOptions = DspTesterOptions(
+        fixTolLSBs = 0,
+        genVerilogTb = false,
+        isVerbose = true)
+    testerOptions = testerOptionsGlobal
+  }
+
+}
