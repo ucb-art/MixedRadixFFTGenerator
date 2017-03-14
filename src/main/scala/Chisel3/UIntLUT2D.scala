@@ -6,9 +6,7 @@ import barstools.tapeout.transforms._
 import chisel3.util.HasBlackBoxInline
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
-import dsptools.DspTester
-
-// TODO: Try 675, 800, 864 LUTs (bin to bank, addr); then check if the mod thing works
+import dsptools.{DspTester, DspTesterOptionsManager}
 
 class UIntLUT2DSpec extends FlatSpec with Matchers {
   behavior of "2D UInt LUT"
@@ -22,12 +20,29 @@ class UIntLUT2DSpec extends FlatSpec with Matchers {
       new UIntLUT2DTester(c)
     } should be (true)
   }
+  it should "get bank, address for FFT bins" in {
+    val fftns = Seq(675, 800, 864)
+    fftns foreach { n => 
+      val lutName = s"DITBankAddr$n"
+      val opt = new DspTesterOptionsManager {
+        dspTesterOptions = TestParams.options0Tol.dspTesterOptions
+        testerOptions = TestParams.options0Tol.testerOptions
+        commonOptions = TestParams.options0Tol.commonOptions.copy(targetDirName = s"test_run_dir/$lutName")
+      }
+      val lut = dspblocks.fft.PeelingScheduling.getIOMemBankAddr(n, dspblocks.fft.DIT).map(x => x.getBankAddr)
+      dsptools.Driver.execute(() => new UIntLUT2D(lutName, lut), opt) { c =>
+        new UIntLUT2DTester(c)
+      } should be (true)
+    }
+  }
 }
 
 class UIntLUT2DTester(c: UIntLUT2D) extends DspTester(c) {
-  poke(c.io.addr, 0)
-  val out = peek(c.io.dout).map(x => x.intValue).toSeq
-  println(out.mkString(","))
+  c.tableIn.zipWithIndex foreach { case (row, idx) =>
+    poke(c.io.addr, idx)
+    val peekedVals = c.io.dout.elements.map { case (key, value) => peek(value) }
+    expect(peekedVals == row, s"Peeked LUT value must match for ${c.blackBoxName}")
+  }
 }
 
 class UIntLUT2DIO(depth: Int, colMax: Seq[Int], colNames: Seq[String]) extends Bundle {
@@ -46,7 +61,7 @@ class UIntLUT2DIO(depth: Int, colMax: Seq[Int], colNames: Seq[String]) extends B
   override def cloneType = (new UIntLUT2DIO(depth, colMax, colNames)).asInstanceOf[this.type]
 }
 
-class UIntLUT2D(blackBoxName: String, tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
+class UIntLUT2D(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
     extends Module {
 
   // Handle edge case where LUT is empty (just attach to 0)    
@@ -58,7 +73,7 @@ class UIntLUT2D(blackBoxName: String, tableIn: Seq[Seq[Int]], colNames: Seq[Stri
   // At least want 1 bit, even for 0
   val colBits = colMax.map(x => BigInt(x).bitLength.max(1))
   val rowWidth = colBits.sum
-  val colStart = colBits.reverse.scanLeft(0)((accum, width) => accum + width).reverse
+  val colStart = colBits.scanRight(0)((width, accum) => accum + width)
   val colBitShift = colStart.tail
   // Inclusive bit extraction (highest, lowest)
   val colRange = colStart.init.map(x => x - 1).zip(colBitShift)
@@ -94,8 +109,8 @@ class LUTBlackBox(blackBoxName: String, table: Seq[Int]) extends HasBlackBoxInli
 
   require(blackBoxName != "", "LUT name must be provided!")
 
-  val dataWidth = BigInt(table.head).bitLength
-  val addrWidth = BigInt(table.length).bitLength
+  val dataWidth = BigInt(table.max).bitLength
+  val addrWidth = BigInt(table.length - 1).bitLength
 
   // WARNING: No uniqueness check (user has to guarantee!!)
   override def desiredName = blackBoxName
@@ -104,7 +119,7 @@ class LUTBlackBox(blackBoxName: String, table: Seq[Int]) extends HasBlackBoxInli
 
   // Dumps in hex
   val tableString = table.zipWithIndex.map { 
-    case (data,idx) => s"    $idx: dout = $dataWidth'h${BigInt(data).toString(16)};" }.mkString("\n")
+    case (data, idx) => s"    $idx: dout = $dataWidth'h${BigInt(data).toString(16)};" }.mkString("\n")
 
   val verilog = s"""
     |module $blackBoxName(
