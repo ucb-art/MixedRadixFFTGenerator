@@ -3,7 +3,18 @@ package dspblocks.fft
 // TODO: Clean up code -- a lot of ops being run multiple times for no reason
 // = takes an eternity to run analysis :(
 
-case class FFASTParams(fftn: Int, subFFTns: Seq[Int])
+case class FFASTParams(
+    fftn: Int, 
+    subFFTns: Seq[Int],
+    delays: Seq[Seq[Int]] = Seq(Seq(0, 1))
+) {
+  require(delays.flatten.length == delays.flatten.distinct.length, "Delays should be unique!")
+  // Note: The following requirement just makes the design easier -- otherwise, you have to shift order of FFT inputs
+  // == starting index
+  // For ease of design, assume delays are the same across subFFTn stages
+  require(delays.flatten.max < subSamplingFactors.map(_._2).min, "Delay amounts should be less than the subsampling factor!")
+  def subSamplingFactors = subFFTns.map(n => n -> fftn / n).toMap
+}
 
 object PeelingScheduling {
 
