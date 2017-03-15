@@ -7,6 +7,7 @@ import chisel3.util.HasBlackBoxInline
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
 import dsptools.{DspTester, DspTesterOptionsManager}
+import dspblocks.fft._
 
 class UIntLUT2DSpec extends FlatSpec with Matchers {
   behavior of "2D UInt LUT"
@@ -62,7 +63,9 @@ class UIntLUT2DIO(depth: Int, colMax: Seq[Int], colNames: Seq[String]) extends B
 }
 
 class UIntLUT2D(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
-    extends Module {
+    extends Module with DelayTracking {
+
+  def moduleDelay = if (outputReg) 1 else 0
 
   // Handle edge case where LUT is empty (just attach to 0)    
   val table = if (tableIn.isEmpty) Seq(Seq.fill(colNames.length.max(1))(0)) else tableIn
@@ -95,7 +98,7 @@ class UIntLUT2D(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: 
 
   keys.zipWithIndex foreach { case (key, idx) =>
     val (high, low) = colRange(idx)
-    io.dout(key) := ShiftRegister(bb.io.dout(high, low), if (outputReg) 1 else 0)
+    io.dout(key) := ShiftRegister(bb.io.dout(high, low), moduleDelay)
   }
 
 }

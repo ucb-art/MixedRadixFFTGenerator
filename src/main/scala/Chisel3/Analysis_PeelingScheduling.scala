@@ -129,7 +129,6 @@ object PeelingScheduling {
     BinToBankAddrMap(fftType, getFFTParams(fftn))
   }
 
-
   def getSubFFTToIOBankAddrMap(ffastParams: FFASTParams, fftType: FFTType): Map[Int, Seq[BinToBankAddr]] = {
     ffastParams.subFFTns.map(subFFT => subFFT -> getIOMemBankAddr(subFFT, fftType)).toMap
   }

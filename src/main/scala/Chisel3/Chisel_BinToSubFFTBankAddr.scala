@@ -10,95 +10,26 @@ import barstools.tapeout.transforms._
 import org.scalatest.{FlatSpec, Matchers}
 import dsptools.{DspTester, DspTesterOptionsManager}
 import barstools.tapeout.TestParams
+import barstools.modules.{UIntLUT2D}
 
-trait DelayTracking {
-  def moduleDelay: Int
-}
+class BinToSubFFTIdx(val ffastParams: FFASTParams) extends Module with DelayTracking {
 
-// Barrett reduction (See Wiki)
-// // x % n where n is constant and x can be really big
-class BarrettReduction(xType: UInt, n: Int, xmax: Option[Int] = None) extends Module with hasContext with DelayTracking {
-
-  def moduleDelay = 2 * context.numMulPipes
-  
-  // TODO: Change to range?
-  val bitWidthMax = (1 << xType.getWidth) - 1
-  val xmaxFinal = xmax match {
-    case Some(max) => 
-      require(max <= bitWidthMax, "Supplied max should be within UInt range")
-      max
-    case None => bitWidthMax
-  }
-  require(xmaxFinal < n * n, "Barrett Reduction only guaranteed if x < n^2")
-
-  // Approximate 1/n with m/2^k where m = floor(2^k/n)
-  def getRequiredK(xmax: Int): Int = {
-    def getRequiredK(xmax: Int, kStart: Int): Int = {
-      // Error = 1/n - m/2^k
-      val twok = 1 << kStart
-      val error = 1 / n - math.floor(twok / n) / twok
-      // Max value of x must be smaller than 1/e
-      if (xmax < 1 / error) kStart
-      // Otherwise, need larger 2^k
-      else getRequiredK(xmax, kStart + 1)
-    }
-    getRequiredK(xmax, 0)
-  }
-
-  val k = getRequiredK(xmaxFinal)
-  // Probably didn't need math.floor since I didn't cast to Double
-  val m = math.floor((1 << k) / n).toInt
-
-  // Actual hardware starting here
+  val fftBinMax = ffastParams.fftn - 1
 
   val io = IO(new Bundle {
-    val x = Input(xType.cloneType)
-    val out = Output(UInt(range"[0, $n)"))
-  })
-
-  // In case more info is known, can only use relevant bits
-  val x = Wire(UInt(range"[0, $xmaxFinal]"))
-  x := io.x
-
-  // q = FLOOR((x * m) / 2^k) -- note FLOOR b/c of >> on UInt so q is an integer
-  // r = x - q * n
-  // if n <= r, mod is r - n
-  // else mod is r
-  val q = (x context_* m.U) >> k
-  // r Should never overflow since r will never be negative and is always less than x
-  // TODO: Check if this optimization buys you anything (i.e. tools smart enough to figure out)
-  val twon = 2 * n
-  val chiselN = n.U
-  val r = Wire(UInt(range"[0, $twon)")) 
-  r := ShiftRegister(x, moduleDelay) -% (q context_* chiselN)
-  // TODO: Maybe only use one reg after second mul?
-  // r only guaranteed to be < 2n, since m/2^k <= 1/n
-  io.out := Mux(r < chiselN, r, r -% chiselN)
-
-}
-
-object ConstantMod {
-  def apply(x: UInt, n: Int, xmax: Int): UInt = apply(x, n, Some(xmax))
-  def apply(x: UInt, n: Int, xmax: Option[Int] = None): UInt = {
-    val mod = Module(new BarrettReduction(x, n, xmax))
-    mod.io.x := x
-    mod.io.out
-  }
-}
-
-class BinToSubFFTIdx(val ffastParams: FFASTParams) extends Module {
-  val io = IO(new Bundle {
-    val fftBinMax = ffastParams.fftn - 1
     val fftBin = Input(UInt(range"[0, $fftBinMax]"))
     val subFFTIdx = Output(new CustomIndexedBundle(
       ffastParams.subFFTns.map(subFFT => subFFT -> UInt(range"[0, $subFFT)")): _*
     ))
   })
 
-  val modOuts = ffastParams.subFFTns.map(n => ConstantMod(io.fftBin, n))
-  io.subFFTIdx.elements.zip(modOuts) foreach { case ((key, o), res) =>
+  val modOuts = ffastParams.subFFTns.map(n => ConstantMod(io.fftBin, n, xmax = fftBinMax))
+  io.subFFTIdx.elements.zip(modOuts) foreach { case ((key, o), (res, mod)) =>
     o := res
   }
+
+  val moduleDelay = modOuts.head._2.moduleDelay 
+
 }
 
 class BinToSubFFTIdxSpec extends FlatSpec with Matchers {
@@ -116,9 +47,69 @@ class BinToSubFFTIdxTester(c: BinToSubFFTIdx) extends DspTester(c) {
   map.zipWithIndex foreach { case (row, idx) =>
     poke(c.io.fftBin, idx)
     row foreach { case (subFFT, expectedIdx) =>
-      require(expect(c.io.subFFTIdx(subFFT), expectedIdx), "help")
+      require(expect(c.io.subFFTIdx(subFFT), expectedIdx), s"BinToSubFFTIdx failed for bin $idx")
     }
   }
 }
 
-// TODO: Check bin to sub FFT bank, addr
+class BankAddressBundle(colMax: Seq[Int]) extends Bundle {
+  // NOTE: NEEDS TO BE IN THIS ORDER
+  val bankMax = colMax.head
+  val addrMax = colMax.last
+  val bank = Output(UInt(range"[0, $bankMax]"))
+  val addr = Output(UInt(range"[0, $addrMax]"))
+  override def cloneType = (new BankAddressBundle(colMax)).asInstanceOf[this.type]
+}
+
+class BinToSubFFTBankAddr(val ffastParams: FFASTParams, val fftType: FFTType) extends Module with DelayTracking {
+
+  val binToSubFFTIdx = Module(new BinToSubFFTIdx(ffastParams))
+  val subFFTIdxToBankAddrLUTMods = ffastParams.subFFTns.map { n => 
+    val lut = dspblocks.fft.PeelingScheduling.getIOMemBankAddr(n, fftType).map(x => x.getBankAddr)
+    val lutMod = Module(new UIntLUT2D(s"subFFTIdxToBankAddrLUT$n", lut, Seq("bank", "addr")))
+    lutMod.io.addr := binToSubFFTIdx.io.subFFTIdx(n)
+    n -> lutMod
+  }.toMap
+
+  val io = IO(new Bundle {
+    val fftBin = Input(binToSubFFTIdx.io.fftBin.cloneType)
+    val bankAddrs = Output(new CustomIndexedBundle(
+      ffastParams.subFFTns.map(
+        subFFT => subFFT -> new BankAddressBundle(subFFTIdxToBankAddrLUTMods(subFFT).colMax)
+      ): _*
+    ))
+  })
+
+  binToSubFFTIdx.io.fftBin := io.fftBin
+  io.bankAddrs.elements foreach { case (subFFT, bankAddrOutput) =>
+    bankAddrOutput.bank := subFFTIdxToBankAddrLUTMods(subFFT.toInt).io.dout("bank")
+    bankAddrOutput.addr := subFFTIdxToBankAddrLUTMods(subFFT.toInt).io.dout("addr")
+  }
+
+  def moduleDelay = binToSubFFTIdx.moduleDelay + subFFTIdxToBankAddrLUTMods(ffastParams.subFFTns.head).moduleDelay
+
+}
+
+class BinToSubFFTBankAddrSpec extends FlatSpec with Matchers {
+  behavior of "BinToSubFFTBankAddr"
+  it should "map an FFT bin to all sub FFT bin bank, addresses" in {
+    val ffastParams = FFASTParams(fftn = 21600, subFFTns = Seq(675, 800, 864))
+    dsptools.Driver.execute(() => new BinToSubFFTBankAddr(ffastParams, DIT), TestParams.options0Tol) { c =>
+      new BinToSubFFTBankAddrTester(c)
+    } should be (true)
+  }
+}
+
+class BinToSubFFTBankAddrTester(c: BinToSubFFTBankAddr) extends DspTester(c) {
+  val binToSubFFTIdxMap = PeelingScheduling.getBinToSubFFTIdxMap(c.ffastParams)
+  val subFFTIOToBankAddrMap = PeelingScheduling.getSubFFTToIOBankAddrMap(c.ffastParams, c.fftType)
+  binToSubFFTIdxMap.zipWithIndex foreach { case (row, idx) =>
+    poke(c.io.fftBin, idx)
+    row foreach { case (subFFT, subFFTIdx) =>
+      val binToBankAddrMapCurrentSubFFT = subFFTIOToBankAddrMap(subFFT)
+      val expectedBankAddr = binToBankAddrMapCurrentSubFFT(subFFTIdx)
+      expect(c.io.bankAddrs(subFFT).bank, expectedBankAddr.bank)
+      expect(c.io.bankAddrs(subFFT).addr, expectedBankAddr.addr)
+    }
+  }
+}
