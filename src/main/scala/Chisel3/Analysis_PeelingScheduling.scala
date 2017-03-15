@@ -12,8 +12,30 @@ case class FFASTParams(
   // Note: The following requirement just makes the design easier -- otherwise, you have to shift order of FFT inputs
   // == starting index
   // For ease of design, assume delays are the same across subFFTn stages
-  require(delays.flatten.max < subSamplingFactors.map(_._2).min, "Delay amounts should be less than the subsampling factor!")
+  require(delays.flatten.max < subSamplingFactors.map(_._2).min, 
+    "Delay amounts should be less than the subsampling factor!")
   def subSamplingFactors = subFFTns.map(n => n -> fftn / n).toMap
+
+  // WARNING: Might not use
+  // To transition control logic states, the smallest subFFT should have an extra delay 
+  // at the end that enables clkMux to change before peeling starts + lets
+  // you transition to a different state after other ops report that things are finished
+  // (i.e. check on last count of this latest delayed clk)
+  val clkDelays = subFFTns.map { case n =>
+    val flattenedDelays = delays.flatten
+    val newDlys = 
+      if (n == subFFTns.min) {
+        val origDelays = delays.flatten
+        // Don't use last possible phase so that things can settle before ph 0 for clkMux
+        val stateMachineDelay = n - 2
+        require(origDelays.max < stateMachineDelay, 
+          "Last 2 phases associated with the smallest sub FFT must be reserved for state machine use!")
+        flattenedDelays ++ Seq(stateMachineDelay)
+      }
+      else flattenedDelays
+    n -> newDlys
+  }.toMap
+
 }
 
 object PeelingScheduling {
