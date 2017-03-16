@@ -3,6 +3,7 @@ import chisel3._
 import chisel3.util.Mux1H
 import dsptools.numbers._
 import dsptools.numbers.implicits._
+import chisel3.experimental._
 
 // Crossbar + Membanks
 
@@ -35,36 +36,36 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
   val moduleDelay = 1
   val io = IO(new MemBankInterfaceIO(dataType, maxNumBanks = bankLengths.length, maxDepth = bankLengths.max))
   val memBanks = Module(new MemBanks(dataType, bankLengths))
+  withClock(io.clk) {
+    val writeBankSel = memBanks.io.bank.zipWithIndex map { case (_, bankIdx) =>
+      io.i.map { case lane => lane.loc.bank === bankIdx.U }
+    }
 
-  val writeBankSel = memBanks.io.bank.zipWithIndex map { case (_, bankIdx) =>
-    io.i.map { case lane => lane.loc.bank === bankIdx.U }
+    val readBankSel = memBanks.io.bank.zipWithIndex map { case (_, bankIdx) =>
+      io.o.map { case lane => lane.loc.bank === bankIdx.U }
+    }
+
+    memBanks.io.bank.zipWithIndex foreach { case (bankIo, bankIdx) =>
+      bankIo.din := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
+        (writeBankSel(bankIdx)(laneIdx), lane.din)
+      })
+      bankIo.we := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
+        (writeBankSel(bankIdx)(laneIdx), lane.we)
+      })
+      bankIo.waddr := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
+        (writeBankSel(bankIdx)(laneIdx), lane.loc.addr)
+      })
+      bankIo.raddr := Mux1H(io.o.zipWithIndex.map { case (lane, laneIdx) => 
+        (readBankSel(bankIdx)(laneIdx), lane.loc.addr)
+      })
+      bankIo.clk := io.clk
+    }
+
+    io.o.zipWithIndex foreach { case (lane, laneIdx) =>
+      lane.dout := Mux1H(memBanks.io.bank.zipWithIndex.map { case (bankIo, bankIdx) => 
+        // Read delay happens one cycle after address valid -- need to delay match
+        (RegNext(readBankSel(bankIdx)(laneIdx)), bankIo.dout)
+      })
+    }
   }
-
-  val readBankSel = memBanks.io.bank.zipWithIndex map { case (_, bankIdx) =>
-    io.o.map { case lane => lane.loc.bank === bankIdx.U }
-  }
-
-  memBanks.io.bank.zipWithIndex foreach { case (bankIo, bankIdx) =>
-    bankIo.din := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
-      (writeBankSel(bankIdx)(laneIdx), lane.din)
-    })
-    bankIo.we := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
-      (writeBankSel(bankIdx)(laneIdx), lane.we)
-    })
-    bankIo.waddr := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
-      (writeBankSel(bankIdx)(laneIdx), lane.loc.addr)
-    })
-    bankIo.raddr := Mux1H(io.o.zipWithIndex.map { case (lane, laneIdx) => 
-      (readBankSel(bankIdx)(laneIdx), lane.loc.addr)
-    })
-    bankIo.clk := io.clk
-  }
-
-  io.o.zipWithIndex foreach { case (lane, laneIdx) =>
-    lane.dout := Mux1H(memBanks.io.bank.zipWithIndex.map { case (bankIo, bankIdx) => 
-      // Read delay happens one cycle after address valid -- need to delay match
-      (RegNext(readBankSel(bankIdx)(laneIdx)), bankIo.dout)
-    })
-  }
-
 }
