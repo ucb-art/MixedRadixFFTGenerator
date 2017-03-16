@@ -90,6 +90,7 @@ class WriteBeforeReadMemComplexTester(c: WriteBeforeReadMemWrapper[DspComplex[Fi
     if (t > 1) expect(c.io.dout.asInstanceOf[DspComplex[FixedPoint]], readData(t))
     step(1)
   }
+  // Should keep old value
   poke(c.io.we, false.B)
   for (t <- writeAddr) {
     poke(c.io.waddr, writeAddr(t))
