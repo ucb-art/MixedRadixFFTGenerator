@@ -33,7 +33,8 @@ val ops = Seq("-unchecked", "-deprecation", "-feature", "-language:reflectiveCal
 val fftPrjSettings = Project.defaultSettings ++ Seq(
   scalacOptions ++= ops,
   libraryDependencies <+= scalaVersion("org.scala-lang" % "scala-compiler" % _ ),
-  libraryDependencies ++= dependencies
+  libraryDependencies ++= dependencies,
+  addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)
 )  
 
 lazy val ChiselDSP = ProjectRef(file("ChiselDSP"), "chisel-dsp")
