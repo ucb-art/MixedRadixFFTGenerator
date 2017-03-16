@@ -8,34 +8,35 @@ import dsptools.{DspTester, DspTesterOptionsManager}
 import barstools.tapeout.TestParams
 
 class FFASTClkDivWrapper(val ffastParams: FFASTParams) extends Module {
-  val delays = ffastParams.delays.flatten
-  // Silly that tester doesn't let you peek/poke clk signals
+
+  val mod = Module(new FFASTClkDiv(ffastParams))
   val io = IO(new Bundle {
     // Each subFFT chain requires a different clk division factor
     // All subFFT stages use the same set of delays
-    val outClks = CustomIndexedBundle(CustomIndexedBundle(Bool(), delays), ffastParams.subFFTns)
+    val outClks = CustomIndexedBundle(CustomIndexedBundle(Bool(), mod.delays), ffastParams.subFFTns)
   })
-
-  val mod = Module(new FFASTClkDiv(ffastParams))
   mod.io.reset := reset
   mod.io.inClk := clock
-  for (subFFT <- ffastParams.subFFTns; ph <- delays) {
+  for (subFFT <- ffastParams.subFFTns; ph <- mod.delays) {
     io.outClks(subFFT)(ph) := mod.io.outClks(subFFT)(ph).asUInt
   }
 
+}
+
+class FFASTClkDivIO(delays: Seq[Int], subFFTns: Seq[Int]) extends Bundle {
+  val reset = Input(Bool())
+  val inClk = Input(Clock())
+  // Each subFFT chain requires a different clk division factor
+  // All subFFT stages use the same set of delays
+  val outClks = CustomIndexedBundle(CustomIndexedBundle(Clock(), delays), subFFTns)
+  override def cloneType = (new FFASTClkDivIO(delays, subFFTns)).asInstanceOf[this.type]
 }
 
 class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
 
   val delays = ffastParams.delays.flatten
 
-  val io = IO(new Bundle {
-    val reset = Input(Bool())
-    val inClk = Input(Clock())
-    // Each subFFT chain requires a different clk division factor
-    // All subFFT stages use the same set of delays
-    val outClks = CustomIndexedBundle(CustomIndexedBundle(Clock(), delays), ffastParams.subFFTns)
-  })
+  val io = IO(new FFASTClkDivIO(delays, ffastParams.subFFTns))
 
   val clkDivMods = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
     val mod = Module(new SEClkDivider(divBy = divBy, phases = delays))
