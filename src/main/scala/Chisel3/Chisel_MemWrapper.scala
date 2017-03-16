@@ -5,6 +5,8 @@ import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
 import dsptools.{DspTester, DspTesterOptionsManager}
 
+/*
+
 class WriteBeforeReadMemWrapper[T <: Data](dataType: => T, val depth: Int) extends Module {
   // TODO: Save power by using write mask, read enable
   val io = IO(new Bundle {
@@ -66,6 +68,7 @@ class WriteBeforeReadMemNoConflictTester(c: WriteBeforeReadMem) extends DspTeste
 
 
 
+
 // we???
 
 
@@ -87,3 +90,5 @@ class UIntLUT2DTester(c: UIntLUT2D) extends DspTester(c) {
     expect(peekedVals == row, s"Peeked LUT value must match for ${c.blackBoxName}")
   }
 }
+
+*/

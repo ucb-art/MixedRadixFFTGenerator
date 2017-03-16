@@ -17,7 +17,7 @@ class UIntLUT2DSpec extends FlatSpec with Matchers {
       Seq(34, 768, 2033),
       Seq(155, 680, 9)
     )
-    dsptools.Driver.execute(() => new UIntLUT2D("TestLUT", testLUT), TestParams.options0Tol) { c =>
+    dsptools.Driver.execute(() => new UIntLUT2DWrapper("TestLUT", testLUT), TestParams.options0Tol) { c =>
       new UIntLUT2DTester(c)
     } should be (true)
   }
@@ -31,14 +31,14 @@ class UIntLUT2DSpec extends FlatSpec with Matchers {
         commonOptions = TestParams.options0Tol.commonOptions.copy(targetDirName = s"test_run_dir/$lutName")
       }
       val lut = dspblocks.fft.PeelingScheduling.getIOMemBankAddr(n, dspblocks.fft.DIT).map(x => x.getBankAddr)
-      dsptools.Driver.execute(() => new UIntLUT2D(lutName, lut), opt) { c =>
+      dsptools.Driver.execute(() => new UIntLUT2DWrapper(lutName, lut), opt) { c =>
         new UIntLUT2DTester(c)
       } should be (true)
     }
   }
 }
 
-class UIntLUT2DTester(c: UIntLUT2D) extends DspTester(c) {
+class UIntLUT2DTester(c: UIntLUT2DWrapper) extends DspTester(c) {
   c.tableIn.zipWithIndex foreach { case (row, idx) =>
     poke(c.io.addr, idx)
     val peekedVals = c.io.dout.elements.map { case (key, value) => peek(value) }
@@ -51,6 +51,7 @@ class UIntLUT2DIO(depth: Int, colMax: Seq[Int], colNames: Seq[String]) extends B
     "Column names should either all be specified or none specified")
   val doutDataTypes = colMax map (n => UInt(range"[0, $n]")) 
 
+  val clk = Input(Clock())
   val addr = Input(UInt(range"[0, $depth)"))
   val dout = Output(
     if (colNames.isEmpty) 
@@ -60,6 +61,15 @@ class UIntLUT2DIO(depth: Int, colMax: Seq[Int], colNames: Seq[String]) extends B
   )
 
   override def cloneType = (new UIntLUT2DIO(depth, colMax, colNames)).asInstanceOf[this.type]
+}
+
+class UIntLUT2DWrapper(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
+    extends Module {
+  val mod = Module(new UIntLUT2D(blackBoxName, tableIn, colNames, outputReg))
+  val io = IO(new UIntLUT2DIO(mod.depth, mod.colMax, colNames))
+  mod.io.clk := clock
+  mod.io.addr := io.addr
+  io.dout := mod.io.dout
 }
 
 class UIntLUT2D(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
@@ -83,22 +93,26 @@ class UIntLUT2D(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: 
 
   val io = IO(new UIntLUT2DIO(depth, colMax, colNames))
 
-  // Concatenate data
-  val lutRows = table map { case row => 
-    val rowWithColBitShift = row.zip(colBitShift)
-    rowWithColBitShift.foldRight(0) { case ((append, shift), result) => 
-      result + (append << shift)
+  withClock(io.clk) {
+
+    // Concatenate data
+    val lutRows = table map { case row => 
+      val rowWithColBitShift = row.zip(colBitShift)
+      rowWithColBitShift.foldRight(0) { case ((append, shift), result) => 
+        result + (append << shift)
+      }
     }
-  }
 
-  val bb = Module(new LUTBlackBox(blackBoxName, lutRows))
-  bb.io.addr := io.addr
+    val bb = Module(new LUTBlackBox(blackBoxName, lutRows))
+    bb.io.addr := io.addr
 
-  val keys = if (colNames.nonEmpty) colNames else (0 until colMax.length).map(_.toString)
+    val keys = if (colNames.nonEmpty) colNames else (0 until colMax.length).map(_.toString)
 
-  keys.zipWithIndex foreach { case (key, idx) =>
-    val (high, low) = colRange(idx)
-    io.dout(key) := ShiftRegister(bb.io.dout(high, low), moduleDelay)
+    keys.zipWithIndex foreach { case (key, idx) =>
+      val (high, low) = colRange(idx)
+      io.dout(key) := ShiftRegister(bb.io.dout(high, low), moduleDelay)
+    }
+
   }
 
 }
