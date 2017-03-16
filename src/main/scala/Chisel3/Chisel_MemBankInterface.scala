@@ -1,5 +1,6 @@
 package dspblocks.fft
 import chisel3._
+import chisel3.util.Mux1H
 import dsptools.numbers._
 import dsptools.numbers.implicits._
 
@@ -61,7 +62,8 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
 
   io.o.zipWithIndex foreach { case (lane, laneIdx) =>
     lane.dout := Mux1H(memBanks.io.bank.zipWithIndex.map { case (bankIo, bankIdx) => 
-      (readBankSel(bankIdx)(laneIdx), bankIo.dout)
+      // Read delay happens one cycle after address valid -- need to delay match
+      (RegNext(readBankSel(bankIdx)(laneIdx)), bankIo.dout)
     })
   }
 
