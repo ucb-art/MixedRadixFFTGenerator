@@ -8,6 +8,12 @@ case class FFASTParams(
     subFFTns: Seq[Int],
     delays: Seq[Seq[Int]] = Seq(Seq(0, 1))
 ) {
+
+  // TODO: Switch over to using this everywhere!
+  def getSubFFTDelayKeys = for (n <- subFFTns; ph <- delays.flatten) yield { (n, ph) }
+
+  require(delays.flatten.contains(0), "Delay of 0 should always be used!")
+
   require(delays.flatten.length == delays.flatten.distinct.length, "Delays should be unique!")
   // Note: The following requirement just makes the design easier -- otherwise, you have to shift order of FFT inputs
   // == starting index
