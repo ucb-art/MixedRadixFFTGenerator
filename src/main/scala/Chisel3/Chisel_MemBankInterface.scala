@@ -18,6 +18,7 @@ class MemInputLane[T <: Data:Ring](dataType: => T, maxNumBanks: Int, maxDepth: I
 
 class MemOutputLane[T <: Data:Ring](dataType: => T, maxNumBanks: Int, maxDepth: Int) extends Bundle {
   val dout = Output(dataType)
+  val re = Input(Bool())
   // Closed range: bank followed by addr
   val loc = Input(new BankAddressBundle(Seq(maxNumBanks - 1, maxDepth - 1)))
   override def cloneType = (new MemOutputLane(dataType, maxNumBanks, maxDepth)).asInstanceOf[this.type] 
@@ -57,6 +58,9 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
       })
       bankIo.raddr := Mux1H(io.o.zipWithIndex.map { case (lane, laneIdx) => 
         (readBankSel(bankIdx)(laneIdx), lane.loc.addr)
+      })
+      bankIo.re := Mux1H(io.o.zipWithIndex.map { case (lane, laneIdx) => 
+        (readBankSel(bankIdx)(laneIdx), lane.re)
       })
       bankIo.clk := io.clk
     }

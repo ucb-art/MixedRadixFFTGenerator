@@ -18,6 +18,7 @@ class WriteBeforeReadMemWrapper[T <: Data](dataType: => T, val depth: Int) exten
   mod.io.din := io.din
   io.dout := mod.io.dout
   mod.io.clk := clock
+  mod.io.re := io.re
 }
 
 class WriteBeforeReadMemIO[T <: Data](dataType: => T, depth: Int) extends Bundle {
@@ -25,6 +26,7 @@ class WriteBeforeReadMemIO[T <: Data](dataType: => T, depth: Int) extends Bundle
   val waddr = Input(UInt(range"[0, $depth)"))
   val raddr = Input(UInt(range"[0, $depth)"))
   val we = Input(Bool())
+  val re = Input(Bool())
   val din = Input(dataType)
   val dout = Output(dataType)
   override def cloneType = (new WriteBeforeReadMemIO(dataType, depth)).asInstanceOf[this.type]
@@ -44,7 +46,7 @@ class WriteBeforeReadMem[T <: Data](dataType: => T, val depth: Int) extends Modu
     io.dout := Mux(
       RegNext(io.waddr === io.raddr && io.we), 
       RegNext(io.din), 
-      mem.read(io.raddr, true.B))
+      mem.read(io.raddr, io.re))
     when (io.we) { mem.write(io.waddr, io.din) }
   }
 }
@@ -82,6 +84,7 @@ class WriteBeforeReadMemComplexTester(c: WriteBeforeReadMemWrapper[DspComplex[Fi
   val readData = Seq.fill(2)(Complex(0, 0)) ++ writeData.dropRight(2)
 
   reset(10)
+  poke(c.io.re, true.B)
   poke(c.io.we, true.B)
   for (t <- writeAddr) {
     poke(c.io.waddr, writeAddr(t))
@@ -109,6 +112,7 @@ class WriteBeforeReadMemConflictTester[T <: Data](c: WriteBeforeReadMemWrapper[T
   val readData = Seq.fill(1)(0) ++ (0 until c.depth)
 
   reset(10)
+  poke(c.io.re, true.B)
   poke(c.io.we, true.B)
   for (t <- writeData) {
     poke(c.io.waddr, writeAddr(t))

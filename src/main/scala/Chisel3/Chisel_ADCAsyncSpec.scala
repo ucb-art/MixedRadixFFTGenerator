@@ -44,6 +44,8 @@ class CollectADCSamplesIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
   // Only 1 input at a time for each memory
   val dataToMemory = Flipped(FFASTMemInputLanes(adcDataType, ffastParams))
+  // Never used
+  val dataFromMemory = Flipped(FFASTMemOutputLanes(adcDataType, ffastParams))
 
   override def cloneType = (new CollectADCSamplesIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
@@ -59,6 +61,24 @@ object FFASTMemInputLanes {
         val bundle = CustomIndexedBundle(
           // # lanes = # of needed banks
           Vec(banklengths.length, new MemInputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max)), 
+          ffastParams.adcDelays
+        )
+        fftn -> bundle
+      }.toSeq: _*
+    )
+  }
+}
+
+object FFASTMemOutputLanes {
+  // SubFFT groups of memories
+  // Each SubFFT has adcDelays # of independent memories
+  // Each banked "memory" takes in # of banks worth of parallel lanes
+  def apply[T <: Data:RealBits](gen: => T, ffastParams:FFASTParams) = {
+    new CustomIndexedBundle(
+      ffastParams.subFFTBankLengths.map { case (fftn, banklengths) => 
+        val bundle = CustomIndexedBundle(
+          // # lanes = # of needed banks
+          Vec(banklengths.length, new MemOutputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max)), 
           ffastParams.adcDelays
         )
         fftn -> bundle
@@ -200,6 +220,21 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
     }
   }
 
+  // TODO: Don't copy-paste
+  // Never read in this state
+  ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) =>
+    for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
+      io.dataFromMemory(n)(ph)(idx).loc.addr := 0.U
+      io.dataFromMemory(n)(ph)(idx).loc.bank := 0.U 
+      io.dataFromMemory(n)(ph)(idx).re := false.B 
+    }
+  }
+
+
+
+
+  // twiddle factor gen
+  // external done signal, state signal
   // debug: read from 1 at a time
   // escape from debug: done high
   // enter debug: lower done
