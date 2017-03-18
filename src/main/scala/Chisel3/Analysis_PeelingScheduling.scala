@@ -31,6 +31,12 @@ case class FFASTParams(
     adcDelays ++ Seq(maxAllowedDelay)
   }
 
+  // TODO: Switch over to using this everywhere!
+  val subFFTBankLengths = subFFTns.map { case subfft => 
+    val fftParams = PeelingScheduling.getFFTParams(subfft)
+    subfft -> fftParams.mem.bankLengths
+  }.toMap
+
 }
 
 object PeelingScheduling {
