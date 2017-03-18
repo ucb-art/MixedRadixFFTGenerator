@@ -12,9 +12,6 @@ class FakeADCIO[T <: Data:RealBits](gen: => T) extends Bundle {
   val clk = Input(Clock())
   val analogIn = Input(DspReal())
   val digitalOut = Output(gen)
-  // TODO: Switch to valid IO? Async reset!
-  val valid = Output(Bool())
-  val reset = Input(Bool())
   override def cloneType = (new FakeADCIO(gen)).asInstanceOf[this.type]
 }
 
@@ -30,9 +27,6 @@ class FakeADC[T <: Data:RealBits](gen: => T) extends Module {
       case _ => throw new Exception("Invalid gen for ADC!")
     }
   }
-  // Takes 1 clk cycle after reset to be legal, then always streaming
-  // (technigally shouldn't matter)
-  io.valid := AsyncResetReg(true.B, clk = io.clk, rst = io.reset) 
 }
 
 class FakeADCWrapper[T <: Data:RealBits](gen: => T) extends Module {

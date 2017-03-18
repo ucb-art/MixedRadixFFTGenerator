@@ -3,7 +3,7 @@ import rocketchiselutil._
 import chisel3._
 import dsptools.numbers._
 import dsptools.numbers.implicits._
-import rocketchiselutil._
+
 
 // ADC: clk, analogIn, digitalOut, reset, valid (registered)
 // AsyncQueue: enq_clock, enq_reset, enq (Decoupled), deq_clock, deq_reset, deq (Decoupled)
@@ -41,6 +41,21 @@ class ADCAsyncTestModule[T <: Data:RealBits](ffastParams: FFASTParams, dataType:
 
 
 
+
+
+
+  // Takes 1 clk cycle after reset to be legal, then always streaming
+  // (technigally shouldn't matter)
+  //io.valid := AsyncResetReg(true.B, clk = io.clk, rst = io.reset) 
+
+
+
+
+
+
+
+
+
 // push in from mux of all addresses
 // current address max -- reg -- prev address -- reg -- prev, prev address
 // allows 1 LUT across all channels
@@ -51,7 +66,7 @@ class ADCAsyncTestModule[T <: Data:RealBits](ffastParams: FFASTParams, dataType:
 
 
 
-reset -- synch??? == this & io.restart
+//reset -- synch??? == this & io.restart
   // Counters disabled @ start of ADC collection state -- re-enabled once clks are aligned
   // Assumes that after alignment, outputs come in proper order
   // For counter, reset has precedence over everything -- reset synchronous!

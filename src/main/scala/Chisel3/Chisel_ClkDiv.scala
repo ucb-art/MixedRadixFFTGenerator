@@ -45,7 +45,7 @@ class FFASTClkDivIO(delays: Seq[Int], subFFTns: Seq[Int]) extends Bundle {
 
 class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
 
-  val delays = ffastParams.delays.flatten
+  val delays = ffastParams.clkDelays
 
   val io = IO(new FFASTClkDivIO(delays, ffastParams.subFFTns))
 
@@ -66,7 +66,7 @@ class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
 
 class FFASTClkDivTester(c: FFASTClkDivWrapper) extends DspTester(c) {
   val clkDivAmounts = c.ffastParams.subSamplingFactors.map(_._2)
-  val outPhases = c.ffastParams.delays.flatten
+  val outPhases = c.ffastParams.clkDelays
   val maxT = clkDivAmounts.max * clkDivAmounts.max * 4
   val clkOutputs = c.ffastParams.subFFTns.map { case subfft =>
     subfft -> outPhases.map { case d => 

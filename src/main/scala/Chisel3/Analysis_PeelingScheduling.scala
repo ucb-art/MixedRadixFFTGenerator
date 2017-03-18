@@ -9,38 +9,27 @@ case class FFASTParams(
     delays: Seq[Seq[Int]] = Seq(Seq(0, 1))
 ) {
 
+  val adcDelays = delays.flatten
+
   // TODO: Switch over to using this everywhere!
-  def getSubFFTDelayKeys = for (n <- subFFTns; ph <- delays.flatten) yield { (n, ph) }
+  def getSubFFTDelayKeys = for (n <- subFFTns; ph <- adcDelays) yield { (n, ph) }
 
-  require(delays.flatten.contains(0), "Delay of 0 should always be used!")
+  require(adcDelays.contains(0), "Delay of 0 should always be used!")
 
-  require(delays.flatten.length == delays.flatten.distinct.length, "Delays should be unique!")
+  require(adcDelays.length == adcDelays.distinct.length, "Delays should be unique!")
   // Note: The following requirement just makes the design easier -- otherwise, you have to shift order of FFT inputs
   // == starting index
   // For ease of design, assume delays are the same across subFFTn stages
-  require(delays.flatten.max < subSamplingFactors.map(_._2).min, 
-    "Delay amounts should be less than the subsampling factor!")
+  require(adcDelays.max < subSamplingFactors.map(_._2).min, 
+    "Delay amounts should be less than the subsampling factor")
   def subSamplingFactors = subFFTns.map(n => n -> fftn / n).toMap
 
-  // WARNING: Might not use
-  // To transition control logic states, the smallest subFFT should have an extra delay 
-  // at the end that enables clkMux to change before peeling starts + lets
-  // you transition to a different state after other ops report that things are finished
-  // (i.e. check on last count of this latest delayed clk)
-  val clkDelays = subFFTns.map { case n =>
-    val flattenedDelays = delays.flatten
-    val newDlys = 
-      if (n == subFFTns.min) {
-        val origDelays = delays.flatten
-        // Don't use last possible phase so that things can settle before ph 0 for clkMux
-        val stateMachineDelay = n - 2
-        require(origDelays.max < stateMachineDelay, 
-          "Last 2 phases associated with the smallest sub FFT must be reserved for state machine use!")
-        flattenedDelays ++ Seq(stateMachineDelay)
-      }
-      else flattenedDelays
-    n -> newDlys
-  }.toMap
+  def clkDelays = {
+    val maxAllowedDelay = subSamplingFactors.map(_._2).min - 1
+    require(!adcDelays.contains(maxAllowedDelay), 
+      "If checkDelays is used, must reserve min subsampling factor - 1 (last delay) for synchronization")
+    adcDelays ++ Seq(maxAllowedDelay)
+  }
 
 }
 
