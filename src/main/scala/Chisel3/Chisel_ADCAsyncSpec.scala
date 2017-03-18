@@ -1,4 +1,4 @@
-package dspblocks.fft
+/*package dspblocks.fft
 import rocketchiselutil._
 import chisel3._
 import dsptools.numbers._
@@ -42,11 +42,6 @@ class ADCAsyncTestModule[T <: Data:RealBits](ffastParams: FFASTParams, dataType:
 
 
 
-
-
-  // Takes 1 clk cycle after reset to be legal, then always streaming
-  // (technigally shouldn't matter)
-  //io.valid := AsyncResetReg(true.B, clk = io.clk, rst = io.reset) 
 
 
 
@@ -132,12 +127,6 @@ class ADCAsyncTestModule[T <: Data:RealBits](ffastParams: FFASTParams, dataType:
 
 // Need to go to index -> bank here
 
-/*
 
-  for (subFFT <- ffastParams.subFFTns; ph <- mod.delays) {
-    io.outClks(subFFT)(ph) := mod.io.outClks(subFFT)(ph).asUInt
-  }
 
-  */
-
-}
+}*/
