@@ -24,7 +24,7 @@ class FFASTClkDivWrapper(val ffastParams: FFASTParams) extends TopModule(usePads
     val outClks = CustomIndexedBundle(CustomIndexedBundle(Bool(), mod.delays), ffastParams.subFFTns)
     val frameAligned = Output(Bool())
   })
-  mod.io.reset := reset
+  mod.io.resetClk := reset
   mod.io.inClk := clock
   for (subFFT <- ffastParams.subFFTns; ph <- mod.delays) {
     io.outClks(subFFT)(ph) := mod.io.outClks(subFFT)(ph).asUInt
@@ -33,11 +33,12 @@ class FFASTClkDivWrapper(val ffastParams: FFASTParams) extends TopModule(usePads
 }
 
 class FFASTClkDivIO(delays: Seq[Int], subFFTns: Seq[Int]) extends Bundle {
-  val reset = Input(Bool())
+  val resetClk = Input(Bool())
   val inClk = Input(Clock())
   // Each subFFT chain requires a different clk division factor
   // All subFFT stages use the same set of delays
   val outClks = CustomIndexedBundle(CustomIndexedBundle(Clock(), delays), subFFTns)
+  // Useful for debug
   val frameAligned = Output(Bool())
   override def cloneType = (new FFASTClkDivIO(delays, subFFTns)).asInstanceOf[this.type]
 }
@@ -51,7 +52,7 @@ class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
   val clkDivMods = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
     val mod = Module(new SEClkDivider(divBy = divBy, phases = delays))
     mod.io.inClk := io.inClk
-    mod.io.reset := io.reset
+    mod.io.reset := io.resetClk
     delays foreach { case d => 
       io.outClks(subFFT)(d) := mod.io.outClks(d)
     }

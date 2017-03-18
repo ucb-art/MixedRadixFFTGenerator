@@ -3,6 +3,7 @@ import rocketchiselutil._
 import chisel3._
 import dsptools.numbers._
 import dsptools.numbers.implicits._
+import rocketchiselutil._
 
 // ADC: clk, analogIn, digitalOut, reset, valid (registered)
 // AsyncQueue: enq_clock, enq_reset, enq (Decoupled), deq_clock, deq_reset, deq (Decoupled)
@@ -23,6 +24,7 @@ class ADCAsyncTestModule[T <: Data:RealBits](ffastParams: FFASTParams, dataType:
   // Use default clock
   val io = IO(new Bundle {
     val analogIn = Input(DspReal())
+    // Synchronous with globalClk, should happen one clk cycle before you enter ADC state
     val restart = Input(Bool())
   })
 
@@ -31,6 +33,45 @@ class ADCAsyncTestModule[T <: Data:RealBits](ffastParams: FFASTParams, dataType:
   clkGen.io.inClk := clock
   // clkGen.io.outClks
   // clkGen.io.frameAligned
+  // Uses fastest clk, ph 0 as global clk
+  val globalClk = clkGen.io.outClks(ffastParams.subFFTns.max)(0)
+
+
+
+
+
+
+// push in from mux of all addresses
+// current address max -- reg -- prev address -- reg -- prev, prev address
+// allows 1 LUT across all channels
+
+// need valid from ADC
+// goes high along w/ first data valid (after align); goes async low when i feed it something
+// queue reset on restart; reset on allsync
+
+
+
+reset -- synch??? == this & io.restart
+  // Counters disabled @ start of ADC collection state -- re-enabled once clks are aligned
+  // Assumes that after alignment, outputs come in proper order
+  // For counter, reset has precedence over everything -- reset synchronous!
+  val countersEn = Wire(Bool())
+  countersEn := !AsyncResetReg(io.restart | countersEn, clk = globalClk, rst = clkGen.io.frameAligned) 
+
+
+
+
+
+
+
+
+
+// hold count until each has gone through
+// take fft out: see delay: store delay
+
+
+
+
 
   // Assuming you're in the right phase, the memory is always ready to receive data
   // If you're in a different phase, it's ok if the data is just discarded
@@ -56,7 +97,7 @@ class ADCAsyncTestModule[T <: Data:RealBits](ffastParams: FFASTParams, dataType:
     async.io.enq.bits := adc.io.digitalOut
     // Uses ph 0 of fastest clk on other side!
     // TODO: Maybe external clk?
-    async.io.deq_clock := clkGen.io.outClks(ffastParams.subFFTns.max)(0)
+    async.io.deq_clock := globalClk
     async.io.deq_reset := io.restart
     async.io.deq.ready := deqReady
     // Need to separately handle async.io.deq.valid, async.io.deq.bits
