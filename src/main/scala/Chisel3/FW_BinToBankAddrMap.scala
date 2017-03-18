@@ -2,10 +2,18 @@ package dspblocks.fft
 import dsptools.numbers.MixedRadix
 import scala.collection.immutable.ListMap
 
-abstract class FFTType
-object DIT extends FFTType
-object DIF extends FFTType
-object UnknownFFTType extends FFTType
+abstract class FFTType {
+  def serialize: String
+}
+object DIT extends FFTType {
+  def serialize = "DIT"
+}
+object DIF extends FFTType {
+  def serialize = "DIF"
+}
+object UnknownFFTType extends FFTType {
+  def serialize = "Unknown"
+}
 
 case class BinToBankAddr(
     fftType: FFTType = UnknownFFTType, 
