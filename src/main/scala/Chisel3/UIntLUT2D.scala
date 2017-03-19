@@ -17,7 +17,12 @@ class UIntLUT2DSpec extends FlatSpec with Matchers {
       Seq(34, 768, 2033),
       Seq(155, 680, 9)
     )
-    dsptools.Driver.execute(() => new UIntLUT2DWrapper("TestLUT", testLUT), TestParams.options0Tol) { c =>
+    val opt = new DspTesterOptionsManager {
+      dspTesterOptions = TestParams.options0Tol.dspTesterOptions
+      testerOptions = TestParams.options0Tol.testerOptions
+      commonOptions = TestParams.options0Tol.commonOptions.copy(targetDirName = s"test_run_dir/UIntLUT2D")
+    }
+    dsptools.Driver.execute(() => new UIntLUT2DWrapper("TestLUT", testLUT), opt) { c =>
       new UIntLUT2DTester(c)
     } should be (true)
   }

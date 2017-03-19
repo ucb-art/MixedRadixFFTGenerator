@@ -223,6 +223,7 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
   // TODO: Don't copy-paste
   // Never read in this state
   ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) =>
+    // # of lanes/banks
     for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
       io.dataFromMemory(n)(ph)(idx).loc.addr := 0.U
       io.dataFromMemory(n)(ph)(idx).loc.bank := 0.U 
@@ -230,17 +231,4 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
     }
   }
 
-
-
-
-  // twiddle factor gen
-  // external done signal, state signal
-  // debug: read from 1 at a time
-  // escape from debug: done high
-  // enter debug: lower done
- // read one at a time (out of 18 different -- different phase)
-
-  // try multiple phases for reset
-  // connect up to memory -- go straight to debug
-  // interface with outside world packet
 }
