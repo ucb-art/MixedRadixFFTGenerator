@@ -33,11 +33,15 @@ class ControlMemReadPackToCPU[T <: Data:Ring](memDataType: DspComplex[T], ffastP
 
 // TODO: SCR!
 // WARNING: Should set re/we low before exiting debug!
-class ControlStatusIO[T <: Data:Ring](memDataType: DspComplex[T], ffastParams: FFASTParams, numStates: Int) extends Bundle {
+class ControlStatusIO[T <: Data:Ring](
+    memDataType: DspComplex[T], 
+    ffastParams: FFASTParams, 
+    numStates: Int) extends Bundle {
   val ctrlMemWrite = new ControlMemWritePack(memDataType, ffastParams)
   val ctrlMemReadFromCPU = new ControlMemReadPackFromCPU(ffastParams)
   // # adc delays * # subFFT stages --> # of control registers
-  // WARNING: Takes 2 cycles to propagate (one for LUT, one for SyncReadMem) -- how does that need to be reflected in SCR?
+  // WARNING: Takes 2 cycles to propagate (one for LUT, one for SyncReadMem) 
+  // -- how does that need to be reflected in SCR?
   val ctrlMemReadToCPU = CustomIndexedBundle(
     CustomIndexedBundle(
       new ControlMemReadPackToCPU(memDataType, ffastParams), 
@@ -50,13 +54,62 @@ class ControlStatusIO[T <: Data:Ring](memDataType: DspComplex[T], ffastParams: F
   override def cloneType = (new ControlStatusIO(memDataType, ffastParams, numStates)).asInstanceOf[this.type]
 }
 
-
-
-
-
-class DebugIO[T <: Data:Ring](memDataType: DspComplex[T], ffastParams: FFASTParams, numStates: Int) extends Bundle {
+class DebugIO[T <: Data:Ring](
+    memDataType: DspComplex[T], 
+    ffastParams: FFASTParams, 
+    numStates: Int, 
+    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
   val currentState = Input(UInt(range"[0, $numStates)"))
+  val scr = new ControlStatusIO(memDataType, ffastParams, numStates)
+  val dataToMemory = Flipped(FFASTMemInputLanes(dspDataType, ffastParams))
+  val dataFromMemory = Flipped(FFASTMemOutputLanes(dspDataType, ffastParams))
+  val adcIdxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
+  val postFFTIdxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
+  val clk = Input(Clock())
+  val stateInfo = new StateTransitionIO
+  override def cloneType = (new DebugIO(memDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]
 }
+
+class Debug[T <: Data:Ring](
+    memDataType: DspComplex[T], 
+    ffastParams: FFASTParams, 
+    states: Map[String, UInt], 
+    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
+
+  val io = IO(new DebugIO(memDataType, ffastParams, states.length, subFFTnsColMaxs))
+
+  io.scr.currentState := io.currentState
+
+  // Assumes you'll never be reading the same time you write in this state -- writing has precedence
+  val getAllCPUwes = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+    io.scr.dataToMemory.we(n)(ph) }
+  val cpuWrite = getAllCPUwes.reduce(_ | _)
+  val usedIdx = Mux(cpuWrite, io.scr.dataToMemory.wIdx, io.scr.dataToMemory.rIdx)
+  val isADCCollectDebugState = io.currentState === state("ADCCollectDebug")
+  ffastParams.subFFTns.foreach { case n =>
+    io.adcIdxToBankAddr.idx(n) := usedIdx
+    io.postFFTIdxToBankAddr.idx(n) := usedIdx
+  }
+
+  
+
+  bankAddrs
+
+
+
+
+
+
+
+  ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+    io.dataToMemory(n)(ph).din := io.scr.ctrlMemWrite.din
+  }
+
+
+}
+
+
+
 
 
 
@@ -64,16 +117,13 @@ class DebugIO[T <: Data:Ring](memDataType: DspComplex[T], ffastParams: FFASTPara
   FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
 
 
-  // Only 1 input at a time for each memory
-  val dataToMemory = Flipped(FFASTMemInputLanes(dspDataType, ffastParams))
-  // Never used
-  val dataFromMemory = Flipped(FFASTMemOutputLanes(dspDataType, ffastParams))
-
-  val idxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
-
 
 
   
+
+
+
+
 
 // if not debug, insta done. 
 // we == false

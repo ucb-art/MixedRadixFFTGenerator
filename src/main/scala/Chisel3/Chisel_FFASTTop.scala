@@ -9,10 +9,21 @@ import chisel3._
 // NOTE: On the off chance that you've asserted debug done and the states changed BEFORE your last address was written
 // you should double check to see that your address was written correctly before proceeding
 
-class FFASTTop[T <: Data:RealBits](adcDataType: T, dspDataType: T, ffastParams: FFASTParams, maxNumPeels: Int = 10) extends Module {
+class FFASTTop[T <: Data:RealBits](
+  adcDataType: T, 
+  dspDataType: T, 
+  ffastParams: FFASTParams, 
+  maxNumPeels: Int = 10) extends Module {
 
   val inputSubFFTIdxToBankAddrLUT = Module(new SubFFTIdxToBankAddrLUTs(ffastParams, ffastParams.inputType))
   val outputSubFFTIdxToBankAddrLUT = Module(new SubFFTIdxToBankAddrLUTs(ffastParams, ffastParams.outputType))
+  val dataMems = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+    // TODO: Should dspDataType be complex?
+    val memBankLengths = ffastParams.subFFTBankLengths(n)
+    val mem = Module(new MemBankInterface(DspComplex(dspDataType), memBankLengths))
+    mem.desiredName = s"dataMem_$n_$ph"
+    (n, ph) -> mem
+  }.toMap
 
   val collectADCSamplesBlock = Module(
     new CollectADCSamples(
