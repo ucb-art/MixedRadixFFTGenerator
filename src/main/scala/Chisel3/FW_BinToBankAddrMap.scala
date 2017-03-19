@@ -4,15 +4,19 @@ import scala.collection.immutable.ListMap
 
 abstract class FFTType {
   def serialize: String
+  def opposite: FFTType
 }
 object DIT extends FFTType {
   def serialize = "DIT"
+  def opposite = DIF
 }
 object DIF extends FFTType {
   def serialize = "DIF"
+  def opposite = DIT
 }
 object UnknownFFTType extends FFTType {
   def serialize = "Unknown"
+  def opposite = UnknownFFTType
 }
 
 case class BinToBankAddr(

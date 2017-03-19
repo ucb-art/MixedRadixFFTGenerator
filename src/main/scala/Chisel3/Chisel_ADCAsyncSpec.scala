@@ -34,11 +34,15 @@ class StateTransitionIO extends Bundle {
   val inState = Input(Bool())
   // Tells external state machine that this state should be over (held)
   val done = Output(Bool())
+  // Tells the external state machine that when this state is done, it should go to the last
+  // debug state (done w/ calc)
+  // In general, should be high when done is high
+  val skipToEnd = Output(Bool())
 }
 
 // TODO: Find some better way to pass in params
 class CollectADCSamplesIO[T <: Data:RealBits](
-    adcDataType: => T, 
+    dspDataType: => T, 
     ffastParams: FFASTParams, 
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
 
@@ -53,21 +57,21 @@ class CollectADCSamplesIO[T <: Data:RealBits](
   // TODO: Maybe move dataToMemory, dataFromMemory, stateInfo to separate bundle
 
   // Only 1 input at a time for each memory
-  val dataToMemory = Flipped(FFASTMemInputLanes(adcDataType, ffastParams))
+  val dataToMemory = Flipped(FFASTMemInputLanes(dspDataType, ffastParams))
   // Never used
-  val dataFromMemory = Flipped(FFASTMemOutputLanes(adcDataType, ffastParams))
+  val dataFromMemory = Flipped(FFASTMemOutputLanes(dspDataType, ffastParams))
 
   val idxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
 
-  override def cloneType = (new CollectADCSamplesIO(adcDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
+  override def cloneType = (new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
 }
 
-final class FFASTMemInputLanes[T <: Data:RealBits](elts: (Int, FFASTMemInputLanesInner[T])*) 
+final class FFASTMemInputLanes[T <: Data:Ring](elts: (Int, FFASTMemInputLanesInner[T])*) 
     extends CustomIndexedBundle(elts: _*) {
   override def cloneType = (new FFASTMemInputLanes(indexedElements.toList: _*)).asInstanceOf[this.type]
 }
 
-final class FFASTMemInputLanesInner[T <: Data:RealBits](elts: (Int, Vec[MemInputLane[T]])*) 
+final class FFASTMemInputLanesInner[T <: Data:Ring](elts: (Int, Vec[MemInputLane[T]])*) 
     extends CustomIndexedBundle(elts: _*) {
   override def cloneType = (new FFASTMemInputLanesInner(indexedElements.toList: _*)).asInstanceOf[this.type]
 }
@@ -77,20 +81,20 @@ object FFASTMemInputLanes {
   // SubFFT groups of memories
   // Each SubFFT has adcDelays # of independent memories
   // Each banked "memory" takes in # of banks worth of parallel lanes
-  def apply[T <: Data:RealBits](gen: => T, ffastParams:FFASTParams) = {
+  def apply[T <: Data:Ring](gen: => T, ffastParams:FFASTParams) = {
     new FFASTMemInputLanes(
       ffastParams.subFFTBankLengths.map { case (fftn, banklengths) => 
         val bundle = new FFASTMemInputLanesInner(
           // # lanes = # of needed banks
           ffastParams.adcDelays.map(_ -> 
-            Vec(banklengths.length, new MemInputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max))
+            Vec(banklengths.length, new MemInputLane(DspComplex(gen), maxNumBanks = banklengths.length, maxDepth = banklengths.max))
           ): _*
         )
         fftn -> bundle
       }.toSeq: _*
     )
   }
-  def connectToDefault[T <: Data:RealBits](bundle: FFASTMemInputLanes[T], ffastParams: FFASTParams) = {
+  def connectToDefault[T <: Data:Ring](bundle: FFASTMemInputLanes[T], ffastParams: FFASTParams) = {
     ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
       // # of lanes/banks
       for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
@@ -103,12 +107,12 @@ object FFASTMemInputLanes {
   }
 }
 
-class FFASTMemOutputLanes[T <: Data:RealBits](elts: (Int, FFASTMemOutputLanesInner[T])*) 
+class FFASTMemOutputLanes[T <: Data:Ring](elts: (Int, FFASTMemOutputLanesInner[T])*) 
     extends CustomIndexedBundle(elts: _*) {
   override def cloneType = (new FFASTMemOutputLanes(indexedElements.toList: _*)).asInstanceOf[this.type]
 }
 
-class FFASTMemOutputLanesInner[T <: Data:RealBits](elts: (Int, Vec[MemOutputLane[T]])*) 
+class FFASTMemOutputLanesInner[T <: Data:Ring](elts: (Int, Vec[MemOutputLane[T]])*) 
     extends CustomIndexedBundle(elts: _*) {
   override def cloneType = (new FFASTMemOutputLanesInner(indexedElements.toList: _*)).asInstanceOf[this.type]
 }
@@ -123,14 +127,14 @@ object FFASTMemOutputLanes {
         val bundle = new FFASTMemOutputLanesInner(
           // # lanes = # of needed banks
           ffastParams.adcDelays.map(_ -> 
-            Vec(banklengths.length, new MemOutputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max))
+            Vec(banklengths.length, new MemOutputLane(DspComplex(gen), maxNumBanks = banklengths.length, maxDepth = banklengths.max))
           ): _* 
         )
         fftn -> bundle
       }.toSeq: _*
     )
   }
-  def connectToDefault[T <: Data:RealBits](bundle: FFASTMemOutputLanes[T], ffastParams: FFASTParams) = {
+  def connectToDefault[T <: Data:Ring](bundle: FFASTMemOutputLanes[T], ffastParams: FFASTParams) = {
     ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
       // # of lanes/banks
       for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
@@ -144,12 +148,16 @@ object FFASTMemOutputLanes {
 
 class CollectADCSamples[T <: Data:RealBits](
     adcDataType: => T, 
+    dspDataType: => T,
     ffastParams: FFASTParams, 
     fftType: FFTType, 
     // TODO: Consider moving into FFASTParams?
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
 
-  val io = IO(new CollectADCSamplesIO(adcDataType, ffastParams, subFFTnsColMaxs))
+  val io = IO(new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs))
+
+  // Should not jump to the last state if done with this state
+  io.stateInfo.skipToEnd := false.B
 
   // Default memory access
   // Note: this state never requires reading from memory
@@ -195,8 +203,12 @@ class CollectADCSamples[T <: Data:RealBits](
     withClock(analogBlock.io.globalClk) {
       // Only write to memory on valid
       // Only first lane is ever active in this block
+      // NOTE: ADC output has much fewer bits than memory (due to growing during DSP ops)
       val async = asyncs(n, ph)
-      io.dataToMemory(n)(ph)(0).din := RegNext(async.io.deq.bits)
+      val cmplx = Wire(DspComplex(dspDataType))
+      cmplx.real := async.io.deq.bits
+      cmplx.imag := Ring[T].zero
+      io.dataToMemory(n)(ph)(0).din := RegNext(cmplx)
     } 
   }
 

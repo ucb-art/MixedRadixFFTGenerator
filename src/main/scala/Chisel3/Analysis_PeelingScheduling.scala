@@ -6,8 +6,11 @@ package dspblocks.fft
 case class FFASTParams(
     fftn: Int, 
     subFFTns: Seq[Int],
-    delays: Seq[Seq[Int]] = Seq(Seq(0, 1))
+    delays: Seq[Seq[Int]] = Seq(Seq(0, 1)),
+    inputType: FFTType = DIF
 ) {
+
+  def outputType = inputType.opposite
 
   val adcDelays = delays.flatten
 
