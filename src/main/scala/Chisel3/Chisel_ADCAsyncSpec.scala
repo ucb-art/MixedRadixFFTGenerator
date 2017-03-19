@@ -127,6 +127,7 @@ object FFASTMemOutputLanes {
         val bundle = new FFASTMemOutputLanesInner(
           // # lanes = # of needed banks
           ffastParams.adcDelays.map(_ -> 
+            // TODO: Generalize -- do I want it to be DspComplex?
             Vec(banklengths.length, new MemOutputLane(DspComplex(gen), maxNumBanks = banklengths.length, maxDepth = banklengths.max))
           ): _* 
         )

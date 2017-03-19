@@ -1,4 +1,4 @@
-/*package dspblocks.fft
+package dspblocks.fft
 
 import chisel3._
 
@@ -39,25 +39,27 @@ class FFASTTop[T <: Data:RealBits](adcDataType: T, dspDataType: T, ffastParams: 
 
 
 
-// debug: if before fft, one thing, else other thing
-
-
-// debug start --> done goes low (init). when external done (synchronized to globalclk?) --> done goes high
-// read -- takes 2 cycles to propagate
-
-
-
-// SCR: 
-// Status: currentState
-// Control: Which debugs to care about
-// When done with debug
-// Read, Write: (enable, idx, which of the 18?)
-// should always set read/write low before exit debug
 
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+// CONNECT UP MEMORIES, and we're good?
+// go to next state if current state's done is true
+// go to end if done + end
 
 
 
@@ -75,4 +77,4 @@ class FFASTTop[T <: Data:RealBits](adcDataType: T, dspDataType: T, ffastParams: 
 
  
 
-}*/
+}

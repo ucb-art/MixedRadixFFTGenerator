@@ -18,10 +18,10 @@ class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
   val stopCollectingADCSamples = Input(Bool())
   // Full rate ADC in
   val analogIn = Input(DspReal())
-  val adcClks = CustomIndexedBundle(CustomIndexedBundle(Clock(), ffastParams.adcDelays), ffastParams.subFFTns)
+  val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
   val globalClk = Output(Clock())
   val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
-    new ValidIO(adcDataType), ffastParams.adcDelays), ffastParams.subFFTns)
+    Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
 
