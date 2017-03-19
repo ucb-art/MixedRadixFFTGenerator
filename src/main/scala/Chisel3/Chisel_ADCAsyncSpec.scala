@@ -28,7 +28,7 @@ class StateTransitionIO extends Bundle {
   val start = Input(Bool())
   // Held until moved on
   val inState = Input(Bool())
-  // Tells external state machine that this state should be over
+  // Tells external state machine that this state should be over (held)
   val done = Output(Bool())
 }
 
@@ -41,6 +41,8 @@ class CollectADCSamplesIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
   val stateInfo = new StateTransitionIO
   val analogIn = Input(DspReal())
+
+  // TODO: Maybe move dataToMemory, dataFromMemory, stateInfo to separate bundle
 
   // Only 1 input at a time for each memory
   val dataToMemory = Flipped(FFASTMemInputLanes(adcDataType, ffastParams))
@@ -134,7 +136,7 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
   val (memIdxCountsTemp, isMaxCounts) = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
     ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
       // @ count n, hold
-      val count = Wire(UInt(range"[0, n]"))
+      val count = Wire(UInt(range"[0, $n]"))
       val isMaxCount = count === n.U
       val countNext = Mux(isMaxCount, count, count +& 1.U)
       // First time deq valid happens corresponds to data 0
