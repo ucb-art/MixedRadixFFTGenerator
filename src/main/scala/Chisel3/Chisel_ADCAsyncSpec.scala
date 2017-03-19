@@ -9,6 +9,8 @@ import chisel3.experimental._
 import chisel3.util._
 import barstools.modules._
 
+// TODO: Everything should be under with clock and reset
+
 // WARNING: ToMemory WE delayed, stateInfo DONE delayed
 // ToMemory DIN delayed (placeholder b/c ADC calibration output will be delayed 1 cycle)
 // IdxToBankAddr LUT (external) delayed by default (therefore ToMemory WADDR delayed correspondingly)

@@ -1,6 +1,11 @@
 package dspblocks.fft
 
 import chisel3._
+import dsptools.numbers._
+import dsptools.numbers.implicits._
+import chisel3.experimental._
+import barstools.tapeout.transforms._
+import chisel3.util._
 
 // TODO: Hook up to SCR
 
@@ -54,57 +59,87 @@ class ControlStatusIO[T <: Data:Ring](
   override def cloneType = (new ControlStatusIO(memDataType, ffastParams, numStates)).asInstanceOf[this.type]
 }
 
-class DebugIO[T <: Data:Ring](
-    memDataType: DspComplex[T], 
+class DebugIO[T <: Data:RealBits](
+    dspDataType: T, 
     ffastParams: FFASTParams, 
     numStates: Int, 
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
   val currentState = Input(UInt(range"[0, $numStates)"))
-  val scr = new ControlStatusIO(memDataType, ffastParams, numStates)
+  val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, numStates)
   val dataToMemory = Flipped(FFASTMemInputLanes(dspDataType, ffastParams))
   val dataFromMemory = Flipped(FFASTMemOutputLanes(dspDataType, ffastParams))
   val adcIdxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
   val postFFTIdxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
   val clk = Input(Clock())
   val stateInfo = new StateTransitionIO
-  override def cloneType = (new DebugIO(memDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]
+  override def cloneType = (new DebugIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]
 }
 
-class Debug[T <: Data:Ring](
-    memDataType: DspComplex[T], 
+class Debug[T <: Data:RealBits](
+    dspDataType: T, 
     ffastParams: FFASTParams, 
     states: Map[String, UInt], 
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
 
-  val io = IO(new DebugIO(memDataType, ffastParams, states.length, subFFTnsColMaxs))
+  val io = IO(new DebugIO(dspDataType, ffastParams, states.toSeq.length, subFFTnsColMaxs))
 
-  io.scr.currentState := io.currentState
+  // Default connection
+  FFASTMemOutputLanes.connectToDefault(io.dataFromMemory, ffastParams)
+  FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
 
-  // Assumes you'll never be reading the same time you write in this state -- writing has precedence
-  val getAllCPUwes = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-    io.scr.dataToMemory.we(n)(ph) }
-  val cpuWrite = getAllCPUwes.reduce(_ | _)
-  val usedIdx = Mux(cpuWrite, io.scr.dataToMemory.wIdx, io.scr.dataToMemory.rIdx)
-  val isADCCollectDebugState = io.currentState === state("ADCCollectDebug")
-  ffastParams.subFFTns.foreach { case n =>
-    io.adcIdxToBankAddr.idx(n) := usedIdx
-    io.postFFTIdxToBankAddr.idx(n) := usedIdx
+  withClockAndReset(io.clk, io.stateInfo.start) {
+
+    io.scr.currentState := io.currentState
+    io.stateInfo.skipToEnd := false.B
+
+    // Assumes you'll never be reading the same time you write in this state -- writing has precedence
+    val getAllCPUwes = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+      io.scr.ctrlMemWrite.we(n)(ph) }
+    val cpuWrite = getAllCPUwes.reduce(_ | _)
+    val usedIdx = Mux(cpuWrite, io.scr.ctrlMemWrite.wIdx, io.scr.ctrlMemReadFromCPU.rIdx)
+    val isADCCollectDebugState = io.currentState === states("ADCCollectDebug")
+    val delayedIsADCCollectDebugState = RegNext(isADCCollectDebugState)
+
+
+    val (addrTemp, bankTemp) = ffastParams.subFFTns.map { case n =>
+      io.adcIdxToBankAddr.idxs(n) := usedIdx
+      io.postFFTIdxToBankAddr.idxs(n) := usedIdx
+      val addr = Mux(
+        delayedIsADCCollectDebugState, 
+        io.adcIdxToBankAddr.bankAddrs(n).addr, 
+        io.postFFTIdxToBankAddr.bankAddrs(n).addr)
+      val bank = Mux(
+        delayedIsADCCollectDebugState, 
+        io.adcIdxToBankAddr.bankAddrs(n).bank, 
+        io.postFFTIdxToBankAddr.bankAddrs(n).bank)
+      ((n -> addr), (n -> bank))
+    }.unzip
+    val addr = addrTemp.toMap
+    val bank = bankTemp.toMap
+
+    // Since bank, address delayed by 1 clk cycle (through LUT)
+    val delayedCPUdin = RegNext(io.scr.ctrlMemWrite.din)
+    // Bank, address delayed by 1 clk cycle; mem read takes another cycle
+    // TODO: Don't hard code???
+    val delayedCPUrIdx = ShiftRegister(io.scr.ctrlMemReadFromCPU, 2)
+    
+    ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
+      // For each MemBankInterface, only using 1 lane at a time
+      io.dataToMemory(n)(ph)(0).din := delayedCPUdin
+      // To be safe, always reset WE @ CPU side!
+      io.dataToMemory(n)(ph)(0).we := RegNext(io.scr.ctrlMemWrite.we(n)(ph), init = false.B)
+      io.dataFromMemory(n)(ph)(0).re := RegNext(io.scr.ctrlMemReadFromCPU.re(n)(ph), init = false.B)
+      // 1 cycle delay for bank, addr
+      io.dataToMemory(n)(ph)(0).loc.addr := addr(n)
+      io.dataToMemory(n)(ph)(0).loc.bank := bank(n)
+      io.dataFromMemory(n)(ph)(0).loc.addr := addr(n)
+      io.dataFromMemory(n)(ph)(0).loc.bank := bank(n)
+      io.scr.ctrlMemReadToCPU(n)(ph).rIdx := delayedCPUrIdx
+      io.scr.ctrlMemReadToCPU(n)(ph).dout := io.dataFromMemory(n)(ph)(0).dout
+
+    }
+
   }
-
-  
-
-  bankAddrs
-
-
-
-
-
-
-
-  ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-    io.dataToMemory(n)(ph).din := io.scr.ctrlMemWrite.din
-  }
-
 
 }
 
@@ -113,13 +148,17 @@ class Debug[T <: Data:Ring](
 
 
 
-  FFASTMemOutputLanes.connectToDefault(io.dataFromMemory, ffastParams)
-  FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
 
 
 
 
-  
+
+
+
+
+
+  // io.stateInfo.done
+  // io.scr.debugStates -- Vec of Bools
 
 
 
@@ -130,4 +169,4 @@ class Debug[T <: Data:Ring](
 
 // done low on start. enable with done from CPU (synchronous). then hold. 
 
-// current state also affects which LUT idx used
+
