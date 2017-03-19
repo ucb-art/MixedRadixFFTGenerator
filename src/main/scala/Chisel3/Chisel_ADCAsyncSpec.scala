@@ -9,6 +9,10 @@ import chisel3.experimental._
 import chisel3.util._
 import barstools.modules._
 
+// WARNING: ToMemory WE delayed, stateInfo DONE delayed
+// ToMemory DIN delayed (placeholder b/c ADC calibration output will be delayed 1 cycle)
+// IdxToBankAddr LUT (external) delayed by default (therefore ToMemory WADDR delayed correspondingly)
+
 // ADC: clk, analogIn, digitalOut, reset, valid (registered)
 // AsyncQueue: enq_clock, enq_reset, enq (Decoupled), deq_clock, deq_reset, deq (Decoupled)
 // Decoupled interface: ready, valid, bits
@@ -32,7 +36,11 @@ class StateTransitionIO extends Bundle {
   val done = Output(Bool())
 }
 
-class CollectADCSamplesIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Bundle {
+// TODO: Find some better way to pass in params
+class CollectADCSamplesIO[T <: Data:RealBits](
+    adcDataType: => T, 
+    ffastParams: FFASTParams, 
+    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
 
   // Unique to this block b/c clk generator lives here
   val resetClk = Input(Bool())
@@ -49,7 +57,19 @@ class CollectADCSamplesIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   // Never used
   val dataFromMemory = Flipped(FFASTMemOutputLanes(adcDataType, ffastParams))
 
-  override def cloneType = (new CollectADCSamplesIO(adcDataType, ffastParams)).asInstanceOf[this.type]
+  val idxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
+
+  override def cloneType = (new CollectADCSamplesIO(adcDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
+}
+
+final class FFASTMemInputLanes[T <: Data:RealBits](elts: (Int, FFASTMemInputLanesInner[T])*) 
+    extends CustomIndexedBundle(elts: _*) {
+  override def cloneType = (new FFASTMemInputLanes(indexedElements.toList: _*)).asInstanceOf[this.type]
+}
+
+final class FFASTMemInputLanesInner[T <: Data:RealBits](elts: (Int, Vec[MemInputLane[T]])*) 
+    extends CustomIndexedBundle(elts: _*) {
+  override def cloneType = (new FFASTMemInputLanesInner(indexedElements.toList: _*)).asInstanceOf[this.type]
 }
 
 // TODO: Figure out how to copy paste less
@@ -58,17 +78,39 @@ object FFASTMemInputLanes {
   // Each SubFFT has adcDelays # of independent memories
   // Each banked "memory" takes in # of banks worth of parallel lanes
   def apply[T <: Data:RealBits](gen: => T, ffastParams:FFASTParams) = {
-    new CustomIndexedBundle(
+    new FFASTMemInputLanes(
       ffastParams.subFFTBankLengths.map { case (fftn, banklengths) => 
-        val bundle = CustomIndexedBundle(
+        val bundle = new FFASTMemInputLanesInner(
           // # lanes = # of needed banks
-          Vec(banklengths.length, new MemInputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max)), 
-          ffastParams.adcDelays
+          ffastParams.adcDelays.map(_ -> 
+            Vec(banklengths.length, new MemInputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max))
+          ): _*
         )
         fftn -> bundle
       }.toSeq: _*
     )
   }
+  def connectToDefault[T <: Data:RealBits](bundle: FFASTMemInputLanes[T], ffastParams: FFASTParams) = {
+    ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
+      // # of lanes/banks
+      for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
+        bundle(n)(ph)(idx).loc.addr := 0.U
+        bundle(n)(ph)(idx).loc.bank := 0.U 
+        bundle(n)(ph)(idx).we := false.B 
+        bundle(n)(ph)(idx).din := Ring[T].zero
+      }
+    }
+  }
+}
+
+class FFASTMemOutputLanes[T <: Data:RealBits](elts: (Int, FFASTMemOutputLanesInner[T])*) 
+    extends CustomIndexedBundle(elts: _*) {
+  override def cloneType = (new FFASTMemOutputLanes(indexedElements.toList: _*)).asInstanceOf[this.type]
+}
+
+class FFASTMemOutputLanesInner[T <: Data:RealBits](elts: (Int, Vec[MemOutputLane[T]])*) 
+    extends CustomIndexedBundle(elts: _*) {
+  override def cloneType = (new FFASTMemOutputLanesInner(indexedElements.toList: _*)).asInstanceOf[this.type]
 }
 
 object FFASTMemOutputLanes {
@@ -76,21 +118,44 @@ object FFASTMemOutputLanes {
   // Each SubFFT has adcDelays # of independent memories
   // Each banked "memory" takes in # of banks worth of parallel lanes
   def apply[T <: Data:RealBits](gen: => T, ffastParams:FFASTParams) = {
-    new CustomIndexedBundle(
+    new FFASTMemOutputLanes(
       ffastParams.subFFTBankLengths.map { case (fftn, banklengths) => 
-        val bundle = CustomIndexedBundle(
+        val bundle = new FFASTMemOutputLanesInner(
           // # lanes = # of needed banks
-          Vec(banklengths.length, new MemOutputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max)), 
-          ffastParams.adcDelays
+          ffastParams.adcDelays.map(_ -> 
+            Vec(banklengths.length, new MemOutputLane(gen, maxNumBanks = banklengths.length, maxDepth = banklengths.max))
+          ): _* 
         )
         fftn -> bundle
       }.toSeq: _*
     )
   }
+  def connectToDefault[T <: Data:RealBits](bundle: FFASTMemOutputLanes[T], ffastParams: FFASTParams) = {
+    ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
+      // # of lanes/banks
+      for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
+        bundle(n)(ph)(idx).loc.addr := 0.U
+        bundle(n)(ph)(idx).loc.bank := 0.U 
+        bundle(n)(ph)(idx).re := false.B 
+      }
+    }
+  }
 }
 
-class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, fftType: FFTType) extends Module {
-  val io = IO(new CollectADCSamplesIO(adcDataType, ffastParams))
+class CollectADCSamples[T <: Data:RealBits](
+    adcDataType: => T, 
+    ffastParams: FFASTParams, 
+    fftType: FFTType, 
+    // TODO: Consider moving into FFASTParams?
+    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
+
+  val io = IO(new CollectADCSamplesIO(adcDataType, ffastParams, subFFTnsColMaxs))
+
+  // Default memory access
+  // Note: this state never requires reading from memory
+  FFASTMemOutputLanes.connectToDefault(io.dataFromMemory, ffastParams)
+  FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
+
   val analogBlock = Module(new AnalogModel(adcDataType, ffastParams))
   analogBlock.io.resetClk := io.resetClk
   analogBlock.io.inClk := io.inClk
@@ -119,15 +184,21 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
     async.io.deq_reset := io.stateInfo.start
     async.io.deq.ready := deqReady
 
-    // Only write to memory on valid
-    io.dataToMemory(n)(ph)(0).din := async.io.deq.bits
-    for (idx <- (1 until ffastParams.subFFTBankLengths(n).length)) {
-      io.dataToMemory(n)(ph)(idx).din := Ring[T].zero
-    }
-
     (n, ph) -> async
 
   }.toMap
+
+  // Placeholder
+  // Eventually, calibration blocks will be here
+  // Also, the idx -> bank, addr LUT takes 1 cycle (outputs registered)
+  ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+    withClock(analogBlock.io.globalClk) {
+      // Only write to memory on valid
+      // Only first lane is ever active in this block
+      val async = asyncs(n, ph)
+      io.dataToMemory(n)(ph)(0).din := RegNext(async.io.deq.bits)
+    } 
+  }
 
   // TODO: When passing through calibration, delay deq.valid one time b/c SeqReadMem has 1 cycle latency
 
@@ -142,22 +213,20 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
       // First time deq valid happens corresponds to data 0
       // which means that it goes to idx one the next time data is received (data 1)
       count := RegEnable(next = countNext, init = 0.U, enable = asyncs(n, ph).io.deq.valid)
-      io.dataToMemory(n)(ph)(0).we := asyncs(n, ph).io.deq.valid & (~isMaxCount)
-      // Inactive lanes should not be writing
+      // Delayed to match Idx -> Bank, Addr LUT + Calibration delay
+      io.dataToMemory(n)(ph)(0).we := RegNext(asyncs(n, ph).io.deq.valid & (~isMaxCount))
       // TODO: Is # of lanes always == # of banks?
-      for (idx <- (1 until ffastParams.subFFTBankLengths(n).length)) {
-        io.dataToMemory(n)(ph)(idx).we := false.B
-      }
       // Address associated with *current* count
       (((n, ph) -> count), isMaxCount)
     }
   }.unzip
+
   val memIdxCounts = memIdxCountsTemp.toMap
   // Done when all counts maxed out
   val done = isMaxCounts.reduce(_ & _)
   // Reset enq valid
   analogBlock.io.stopCollectingADCSamples := done
-  io.stateInfo.done := done
+  io.stateInfo.done := withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) { RegNext(done, init = false.B) }
 
   // TODO: Are all ADC outputs @ the same relative data index? If they're not, I don't think they'll differ by too many
 
@@ -174,40 +243,36 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
     n -> (Seq(max) ++ delayedMax)
   }.toMap
 
-  val (idxToBankAddrLUTsTemp, bankAddrsTemp) = ffastParams.subFFTns.map { case n => 
-    val lutName = s"ADC${fftType.serialize}IdxToBankAddr$n"
-    val lutConsts = PeelingScheduling.getIOMemBankAddr(n, fftType).map(x => x.getBankAddr)
-    val lutMod = Module(new UIntLUT2D(lutName, lutConsts, Seq("bank", "addr")))
-    val lutModColMax = lutMod.colMax
-    lutMod.io.clk := analogBlock.io.globalClk
-    // zero corresponds to delay of 0
-    lutMod.io.addr := countMaxPerSubFFT(n)(0)
-    // TODO: Don't use Seq
-    val bankAddr = Wire(new BankAddressBundle(lutModColMax))
-    bankAddr.bank := lutMod.io.dout("bank")
-    bankAddr.addr := lutMod.io.dout("addr")
-    ((n -> lutMod), (n -> bankAddr))
-  }.unzip
-  val idxToBankAddrLuts = idxToBankAddrLUTsTemp.toMap
-  val bankAddrs = bankAddrsTemp.map { case (n, dout) => 
-    val delayedDout = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
-      val doutInit = Wire(dout.cloneType) 
-      doutInit.addr := 0.U
-      doutInit.bank := 0.U
-      val doutDly = RegNext(next = dout, init = doutInit)
-      val doutDly2 = RegNext(next = doutDly, init = doutInit)
-      Seq(doutDly, doutDly2)
+  // One cycle delayed relative to countMaxPerSubFFT
+  val bankAddrs = ffastParams.subFFTns.map { case n => 
+    // Delay 0
+    io.idxToBankAddr.idxs(n) := countMaxPerSubFFT(n)(0)
+    // Delay 1 (LUT outputs registered)
+    val bankAddr = io.idxToBankAddr.bankAddrs(n)
+    // TODO: Have withClockAndReset only once
+    val delayedBankAddr = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
+      // TODO: Is RegInit not necessary? -- it's OK to write garbage and then write over it
+      val bankAddrDly = RegNext(bankAddr)
+      val bankAddrDly2 = RegNext(bankAddrDly)
+      Seq(bankAddrDly, bankAddrDly2)
     }
-    n -> (Seq(dout) ++ delayedDout)
-  }.toMap
+    Seq(bankAddr) ++ delayedBankAddr
+  }
 
+  // TODO: I'm being silly for the sake of time
+  // Match LUT output delay
+  val countMaxPerSubFFTDelayed = countMaxPerSubFFT.map { case (n, seq) =>
+    n -> seq.map { case x => withClock(analogBlock.io.globalClk) { RegNext(x) } }
+  }
+ 
   // Point of this code is to not have repeated LUTs for each Phase
   // Assume that the queue outputs occur roughly at the same time, so that the fastest
   // ADC lane would only be ahead by ~1 data address. You keep track of older addresses
   // and translate as necessary by matching to older results.
   ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
-    val idxCount = memIdxCounts(n, ph)
-    val countMaxCurrentSubFFT = countMaxPerSubFFT(n)
+    // Need to delay idxCount, countMaxCurrentSubFFT to match bankAddrs latency
+    val idxCount = withClock(analogBlock.io.globalClk) { RegNext(memIdxCounts(n, ph)) }
+    val countMaxCurrentSubFFT = countMaxPerSubFFTDelayed(n)
     val bankAddrsCurrentSubFFT = bankAddrs(n)
     val correctBankAddr = Mux1H(
       countMaxCurrentSubFFT.zip(bankAddrsCurrentSubFFT).map { case (thisMax, thisBankAddr) => 
@@ -216,21 +281,6 @@ class CollectADCSamples[T <: Data:RealBits](adcDataType: => T, ffastParams: FFAS
     )
     io.dataToMemory(n)(ph)(0).loc.addr := correctBankAddr.addr
     io.dataToMemory(n)(ph)(0).loc.bank := correctBankAddr.bank
-    for (idx <- (1 until ffastParams.subFFTBankLengths(n).length)) {
-      io.dataToMemory(n)(ph)(idx).loc.addr := 0.U
-      io.dataToMemory(n)(ph)(idx).loc.bank := 0.U
-    }
-  }
-
-  // TODO: Don't copy-paste
-  // Never read in this state
-  ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) =>
-    // # of lanes/banks
-    for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
-      io.dataFromMemory(n)(ph)(idx).loc.addr := 0.U
-      io.dataFromMemory(n)(ph)(idx).loc.bank := 0.U 
-      io.dataFromMemory(n)(ph)(idx).re := false.B 
-    }
   }
 
 }
