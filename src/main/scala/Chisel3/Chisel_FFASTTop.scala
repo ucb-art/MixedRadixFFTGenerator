@@ -378,7 +378,7 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
 
 
-
+// what's up w/ debugStates?
 
 // asyncqueue 2 lost the first data?
 // change back to queue depth of 4 -- why is queue not emptying???
@@ -388,7 +388,7 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 // why doesn't state change instantly??
 
 class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
-  val adcIn = (-10.0 until 150.0 by 1.0).zipWithIndex
+  val adcIn = (-10.0 until 200.0 by 1.0).zipWithIndex
   
   reset(10)
   poke(c.io.scr.debugStates, 1)

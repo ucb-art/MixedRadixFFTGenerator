@@ -194,7 +194,6 @@ class CollectADCSamples[T <: Data:RealBits](
   val analogBlock = Module(new AnalogModel(adcDataType, ffastParams))
   analogBlock.io.resetClk := io.resetClk
   analogBlock.io.inClk := io.inClk
-  analogBlock.io.collectADCSamplesState := io.stateInfo.inState
   analogBlock.io.analogIn := io.analogIn
   io.globalClk := analogBlock.io.globalClk
 
@@ -223,6 +222,15 @@ class CollectADCSamples[T <: Data:RealBits](
     (n, ph) -> async
 
   }.toMap
+
+  // TODO: RESET BEFORE PREVIOUS STATE DONE TO MINIMIZE LATENCY
+  // Queue takes many cycles to reset -- should not feed data in until all queues are reset
+  val collectAsyncEnqReady = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => asyncs(n, ph).io.enq.ready }
+  val asyncEnqsAllReady = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
+    RegEnable(true.B, enable = collectAsyncEnqReady.reduce(_ & _), init = false.B)
+  }
+  // Don't synchronize enq_valids until the queues are all ready
+  analogBlock.io.collectADCSamplesState := io.stateInfo.inState & asyncEnqsAllReady
 
   // Placeholder
   // Eventually, calibration blocks will be here
