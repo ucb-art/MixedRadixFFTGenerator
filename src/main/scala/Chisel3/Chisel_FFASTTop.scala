@@ -7,6 +7,8 @@ import dsptools.numbers.implicits._
 import barstools.tapeout.TestParams
 import dsptools.DspTester
 import org.scalatest.{FlatSpec, Matchers}
+import barstools.tapeout.transforms.pads._
+import barstools.tapeout.transforms.clkgen._
 
 // TODO: Suggest better names???
 
@@ -51,9 +53,11 @@ class FFASTTop[T <: Data:RealBits](
     "ADCCollect" //,
     //"FFT",
     //"PopulateNonZerotons"
-  ) ++ Seq(0 until maxNumPeels).map(n => s"Peel$n")
+  ) ++ (if (maxNumPeels == 0) Seq.empty else Seq(0 until maxNumPeels).map(n => s"Peel$n"))
   val stateNames = basicStateNames.map(state => Seq(state, s"${state}Debug")).flatten ++ Seq("reset")
   require(stateNames.distinct.length == stateNames.length, "State names must be unique!")
+
+  println("State machine states: " + stateNames.mkString(", "))
   
   // TODO: Unnecessary???
   val statesInt = stateNames.zipWithIndex.map { case (name, idx) => name -> idx }.toMap
@@ -71,8 +75,10 @@ class FFASTTop[T <: Data:RealBits](
 
 ///////////////// END STATE MACHINE
 
+val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
+
   val io = IO(
-    new FFASTTopIO(dspDataType, ffastParams, numStates, inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs))
+    new FFASTTopIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs))
 
   val collectADCSamplesBlock = Module(
     new CollectADCSamples(
@@ -80,7 +86,7 @@ class FFASTTop[T <: Data:RealBits](
       dspDataType = dspDataType, 
       ffastParams, 
       ffastParams.inputType, 
-      inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs)
+      subFFTnsColMaxs)
   )
   collectADCSamplesBlock.io.resetClk := io.resetClk
   collectADCSamplesBlock.io.inClk := io.inClk
@@ -101,7 +107,7 @@ class FFASTTop[T <: Data:RealBits](
       dspDataType,
       ffastParams,
       statesInt,
-      inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs)
+      subFFTnsColMaxs)
   )
 
   debugBlock.io.scr <> io.scr
@@ -218,16 +224,32 @@ class FFASTTopWrapper[T <: Data:RealBits](
     adcDataType: T, 
     dspDataType: T, 
     val ffastParams: FFASTParams, 
-    maxNumPeels: Int = 10) extends Module {
+    maxNumPeels: Int = 10) extends TopModule(usePads = false) {
+  // Need to annotate top-level clk when using clk div
   val mod = Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels))
-  val io = IO(mod.io.cloneType)
+  
+  val io = IO(new Bundle {
+    val resetClk = Input(Bool())
+    val analogIn = Input(DspReal())
+    val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, mod.numStates)
+    // TODO: Option clk
+    // The following IO are for debug purposes only (removed for real tapeout)
+    // val adc = new CollectADCSamplesIO(dspDataType, ffastParams, mod.subFFTnsColMaxs)
+    // val debug = new DebugIO(dspDataType, ffastParams, mod.numStates, mod.subFFTnsColMaxs)
+  })
+
   mod.io.resetClk := reset
   mod.io.inClk := clock
   mod.io.analogIn := io.analogIn
   mod.io.scr <> io.scr
 
-  mod.io.adc <> io.adc
-  mod.io.debug <> io.debug
+  // mod.io.adc <> io.adc
+  // mod.io.debug <> io.debug
+
+  annotateClkPort(clock, 
+    id = "clock", // not in io bundle
+    sink = Sink(Some(ClkSrc(period = 5.0)))
+  )
 }
 
 class FFASTTopSpec extends FlatSpec with Matchers {
@@ -237,16 +259,36 @@ class FFASTTopSpec extends FlatSpec with Matchers {
       new FFASTTopWrapper(
         adcDataType = FixedPoint(16.W, 8.BP), 
         dspDataType = FixedPoint(22.W, 12.BP),
-        FFASTParams(
+        ffastParams = FFASTParams(
           fftn = 20,
           subFFTns = Seq(4, 5),
           delays = Seq(Seq(0, 1)),
           inputType = DIF
-        )
+        ),
+        maxNumPeels = 0
       ), TestParams.options1Tol
     ) { c =>
       new FFASTTopTester(c)
     } should be (true)
+  }
+}
+
+class FFASTTopBuildSpec extends FlatSpec with Matchers {
+  behavior of "FFASTTopBuild"
+  it should "not fail to build" in {
+    chisel3.Driver.execute(TestParams.debugBuild, () => 
+      new FFASTTopWrapper(
+        adcDataType = FixedPoint(16.W, 8.BP), 
+        dspDataType = FixedPoint(22.W, 12.BP),
+        ffastParams = FFASTParams(
+          fftn = 20,
+          subFFTns = Seq(4, 5),
+          delays = Seq(Seq(0, 1)),
+          inputType = DIF
+        ),
+        maxNumPeels = 0
+      )
+    ) 
   }
 }
 
@@ -270,31 +312,16 @@ class FFASTTopSpec extends FlatSpec with Matchers {
 
 
 
-object FFASTTop {
-  def main(args: Array[String]) = {
-    dsptools.Driver.execute(() => 
-      new FFASTTopWrapper(
-        adcDataType = FixedPoint(16.W, 8.BP), 
-        dspDataType = FixedPoint(22.W, 12.BP),
-        FFASTParams(
-          fftn = 20,
-          subFFTns = Seq(4, 5),
-          delays = Seq(Seq(0, 1)),
-          inputType = DIF
-        )
-      ), TestParams.options1Tol
-    ) { c =>
-      new FFASTTopTester(c)
-    } 
-  }
-}
 
 
 
+
+// currentSTate = 4 for some reason
 
 class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
   val adcIn = (-10.0 until 20.0 by 1.0).zipWithIndex
   reset(10)
+  poke(c.io.scr.debugStates, 1)
   for ((in, idx) <- adcIn) {
     poke(c.io.analogIn, in)
     peek(c.io.scr.currentState)

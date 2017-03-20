@@ -4,6 +4,7 @@ package rocketchiselutil
 
 import chiselcompatibility._
 
+
 /** This black-boxes an Async Reset
   *  (or Set)
   * Register.
@@ -30,7 +31,7 @@ import chiselcompatibility._
   *  
   */
 
-class AsyncResetReg extends BlackBox {
+class AsyncResetReg extends BlackBox with chisel3.util.HasBlackBoxInline {
   val io = new Bundle {
     val d = Bool(INPUT)
     val q = Bool(OUTPUT)
@@ -39,6 +40,24 @@ class AsyncResetReg extends BlackBox {
     val clk = Clock(INPUT)
     val rst = Bool(INPUT)
   }
+  setInline("AsyncResetReg.v",
+    s"""
+    |module AsyncResetReg (
+    |  input      d,
+    |  output reg q,
+    |  input      en,
+    |  input      clk,
+    |  input      rst);
+    |
+    |  always @(posedge clk or posedge rst) begin
+    |    if (rst) begin
+    |      q <= 1'b0;
+    |    end else if (en) begin
+    |      q <= d;
+    |    end
+    |  end
+    |endmodule""".stripMargin
+  )
 }
 
 class SimpleRegIO(val w: Int) extends Bundle{

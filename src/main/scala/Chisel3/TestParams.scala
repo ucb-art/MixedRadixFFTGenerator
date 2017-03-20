@@ -3,6 +3,7 @@ import dsptools.{DspTesterOptionsManager, DspTesterOptions}
 import chisel3.iotesters.TesterOptions
 import firrtl._
 import logger.LogLevel
+import chisel3._
 
 object TestParams {
 
@@ -26,6 +27,14 @@ object TestParams {
         genVerilogTb = false,
         isVerbose = true)
     testerOptions = testerOptionsGlobal
-    commonOptions = CommonOptions(globalLogLevel = LogLevel.Debug)
   }
+
+  val debugBuild = new ExecutionOptionsManager("DebugBuild") with HasChiselExecutionOptions with HasFirrtlOptions {
+    commonOptions = CommonOptions(
+      globalLogLevel = LogLevel.Info,
+      targetDirName = s"test_run_dir/DebugBuild"
+    )
+    firrtlOptions = FirrtlExecutionOptions(compilerName = "verilog") 
+  }
+   
 }
