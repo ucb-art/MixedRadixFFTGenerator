@@ -92,7 +92,8 @@ class Debug[T <: Data:RealBits](
   FFASTMemOutputLanes.connectToDefault(io.dataFromMemory, ffastParams)
   FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
 
-  withClockAndReset(io.clk, io.stateInfo.start) {
+  // TODO: Clean up indent
+  // withClockAndReset(io.clk, io.stateInfo.start) {
 
     io.scr.currentState := io.currentState
     io.stateInfo.skipToEnd := false.B
@@ -103,7 +104,8 @@ class Debug[T <: Data:RealBits](
     val cpuWrite = getAllCPUwes.reduce(_ | _)
     val usedIdx = Mux(cpuWrite, io.scr.ctrlMemWrite.wIdx, io.scr.ctrlMemReadFromCPU.rIdx)
     val isADCCollectDebugState = io.currentState === states("ADCCollectDebug").U
-    val delayedIsADCCollectDebugState = RegNext(isADCCollectDebugState)
+    val delayedIsADCCollectDebugState = 
+      withClockAndReset(io.clk, io.stateInfo.start) { RegNext(isADCCollectDebugState) }
 
 
     val (addrTemp, bankTemp) = ffastParams.subFFTns.map { case n =>
@@ -123,21 +125,27 @@ class Debug[T <: Data:RealBits](
     val bank = bankTemp.toMap
 
     // Since bank, address delayed by 1 clk cycle (through LUT)
-    val delayedCPUdin = RegNext(io.scr.ctrlMemWrite.din)
+    val delayedCPUdin = withClockAndReset(io.clk, io.stateInfo.start) { RegNext(io.scr.ctrlMemWrite.din) }
     // Bank, address delayed by 1 clk cycle; mem read takes another cycle
     // TODO: Don't hard code???
-    val delayedCPUrIdx = ShiftRegister(io.scr.ctrlMemReadFromCPU.rIdx, 2)
+    val delayedCPUrIdx = withClockAndReset(io.clk, io.stateInfo.start) { 
+      ShiftRegister(io.scr.ctrlMemReadFromCPU.rIdx, 2) }
 
     // TODO: Kind of redundant with what's outside but whatever...
-    val currStateIsDebug =
+    // TODO: Figure out another way to get Chisel to name this better for debug
+    // Force Chisel to name this properly :(
+    val currStateIsDebug = 
       Mux1H((0 until states.toSeq.length).map(x => (io.currentState === x.U) -> io.scr.debugStates(x)))
     
     ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
       // For each MemBankInterface, only using 1 lane at a time
       io.dataToMemory(n)(ph)(0).din := delayedCPUdin
       // To be safe, always reset WE @ CPU side!
-      io.dataToMemory(n)(ph)(0).we := RegNext(io.scr.ctrlMemWrite.we(n)(ph), init = false.B) & currStateIsDebug
-      io.dataFromMemory(n)(ph)(0).re := RegNext(io.scr.ctrlMemReadFromCPU.re(n)(ph), init = false.B)
+      val weTemp = withClockAndReset(io.clk, io.stateInfo.start) { 
+        RegNext(io.scr.ctrlMemWrite.we(n)(ph), init = false.B) }
+      io.dataToMemory(n)(ph)(0).we := weTemp & currStateIsDebug 
+      io.dataFromMemory(n)(ph)(0).re := withClockAndReset(io.clk, io.stateInfo.start) {
+        RegNext(io.scr.ctrlMemReadFromCPU.re(n)(ph), init = false.B) }
       // 1 cycle delay for bank, addr
       io.dataToMemory(n)(ph)(0).loc.addr := addr(n)
       io.dataToMemory(n)(ph)(0).loc.bank := bank(n)
@@ -147,13 +155,16 @@ class Debug[T <: Data:RealBits](
       io.scr.ctrlMemReadToCPU(n)(ph).dout := io.dataFromMemory(n)(ph)(0).dout
     }
 
-    val cpuDoneDly = RegNext(io.scr.cpuDone)
+    val cpuDoneDly = withClockAndReset(io.clk, io.stateInfo.start) { RegNext(io.scr.cpuDone) }
     val cpuDoneRising = ~cpuDoneDly & io.scr.cpuDone
     // Generally make sure what you've written/read is right before asserting done
     // Done immediately asserted if this state isn't supposed to be used
-    val done = RegEnable(true.B, init = false.B, enable = cpuDoneRising) | ~currStateIsDebug
+    val doneTemp = withClockAndReset(io.clk, io.stateInfo.start) { 
+      RegEnable(true.B, init = false.B, enable = cpuDoneRising)
+    }
+    val done = doneTemp | ~currStateIsDebug
     io.stateInfo.done := done
 
-  }
+  // }
 
 }
