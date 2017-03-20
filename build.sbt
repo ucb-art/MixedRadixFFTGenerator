@@ -59,7 +59,8 @@ libraryDependencies ++= dependencies
 scalacOptions ++= ops
 
 // Define default sbt run main class
-mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
+// mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
 // mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
 // mainClass in (Compile, run) := Some("FFT.DebugFFT")
 // mainClass in (Compile, run) := Some("dspblocks.fft.PeelingScheduling")
+mainClass in (Compile, run) := Some("dspblocks.fft.FFASTTop")

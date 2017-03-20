@@ -1,6 +1,8 @@
 package barstools.tapeout
 import dsptools.{DspTesterOptionsManager, DspTesterOptions}
 import chisel3.iotesters.TesterOptions
+import firrtl._
+import logger.LogLevel
 
 object TestParams {
 
@@ -24,5 +26,6 @@ object TestParams {
         genVerilogTb = false,
         isVerbose = true)
     testerOptions = testerOptionsGlobal
+    commonOptions = CommonOptions(globalLogLevel = LogLevel.Debug)
   }
 }

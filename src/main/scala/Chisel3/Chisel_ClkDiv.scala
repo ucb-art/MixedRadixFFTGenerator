@@ -37,7 +37,7 @@ class FFASTClkDivIO(delays: Seq[Int], subFFTns: Seq[Int]) extends Bundle {
   val inClk = Input(Clock())
   // Each subFFT chain requires a different clk division factor
   // All subFFT stages use the same set of delays
-  val outClks = CustomIndexedBundle(CustomIndexedBundle(Clock(), delays), subFFTns)
+  val outClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), delays), subFFTns)
   // Useful for debug
   val frameAligned = Output(Bool())
   override def cloneType = (new FFASTClkDivIO(delays, subFFTns)).asInstanceOf[this.type]

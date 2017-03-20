@@ -180,9 +180,10 @@ class CollectADCSamples[T <: Data:RealBits](
 
   // TODO: Switch over to this syntax everywhere
   val asyncs = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-    // Only need depth 2 b/c clk to the right of async is always fastest clk
+    // Only need depth 2 b/c clk to the right of async is always fastest clk -- add for margin
+    // NOTE: Async queue has weird power of 2 requirement
     // Sync 3 is safe enough for metastability
-    val async = Module(new AsyncQueue(adcDataType, depth = 3, sync = 3))
+    val async = Module(new AsyncQueue(adcDataType, depth = 4, sync = 3))
     async.io.enq_clock := analogBlock.io.adcClks(n)(ph)
     // 1 cycle before state starts
     async.io.enq_reset := io.stateInfo.start
@@ -273,8 +274,8 @@ class CollectADCSamples[T <: Data:RealBits](
       val bankAddrDly2 = RegNext(bankAddrDly)
       Seq(bankAddrDly, bankAddrDly2)
     }
-    Seq(bankAddr) ++ delayedBankAddr
-  }
+    n -> (Seq(bankAddr) ++ delayedBankAddr)
+  }.toMap
 
   // TODO: I'm being silly for the sake of time
   // Match LUT output delay

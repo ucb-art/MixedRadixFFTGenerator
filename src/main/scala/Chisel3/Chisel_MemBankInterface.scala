@@ -26,8 +26,8 @@ class MemOutputLane[T <: Data:Ring](dataType: => T, maxNumBanks: Int, maxDepth: 
 
 class MemBankInterfaceIO[T <: Data:Ring](dataType: T, maxNumBanks: Int, maxDepth: Int) extends Bundle {
   val clk = Input(Clock())
-  val i = Input(Vec(maxNumBanks, new MemInputLane(dataType, maxNumBanks, maxDepth)))
-  val o = Output(Vec(maxNumBanks, new MemOutputLane(dataType, maxNumBanks, maxDepth)))
+  val i = Vec(maxNumBanks, new MemInputLane(dataType, maxNumBanks, maxDepth))
+  val o = Vec(maxNumBanks, new MemOutputLane(dataType, maxNumBanks, maxDepth))
   override def cloneType = (new MemBankInterfaceIO(dataType, maxNumBanks, maxDepth)).asInstanceOf[this.type]
 }
 
@@ -38,15 +38,18 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
   val io = IO(new MemBankInterfaceIO(dataType, maxNumBanks = bankLengths.length, maxDepth = bankLengths.max))
   val memBanks = Module(new MemBanks(dataType, bankLengths))
   withClock(io.clk) {
-    val writeBankSel = memBanks.io.bank.zipWithIndex map { case (_, bankIdx) =>
-      io.i.map { case lane => lane.loc.bank === bankIdx.U }
-    }
+    val writeBankSel = memBanks.io.bank.elements.map { case (bankIdx, _) =>
+      bankIdx.toInt -> io.i.map { case lane => lane.loc.bank === bankIdx.toInt.U }
+    }.toMap
 
-    val readBankSel = memBanks.io.bank.zipWithIndex map { case (_, bankIdx) =>
-      io.o.map { case lane => lane.loc.bank === bankIdx.U }
-    }
+    val readBankSel = memBanks.io.bank.elements.map { case (bankIdx, _) =>
+      bankIdx.toInt -> io.o.map { case lane => lane.loc.bank === bankIdx.toInt.U }
+    }.toMap
 
-    memBanks.io.bank.zipWithIndex foreach { case (bankIo, bankIdx) =>
+    memBanks.io.bank.elements foreach { case (bankIdxS, bankIo) =>
+
+      val bankIdx = bankIdxS.toInt
+
       bankIo.din := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
         (writeBankSel(bankIdx)(laneIdx), lane.din)
       })
@@ -66,9 +69,9 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
     }
 
     io.o.zipWithIndex foreach { case (lane, laneIdx) =>
-      lane.dout := Mux1H(memBanks.io.bank.zipWithIndex.map { case (bankIo, bankIdx) => 
+      lane.dout := Mux1H(memBanks.io.bank.elements.map { case (bankIdx, bankIo) => 
         // Read delay happens one cycle after address valid -- need to delay match
-        (RegNext(readBankSel(bankIdx)(laneIdx)), bankIo.dout)
+        (RegNext(readBankSel(bankIdx.toInt)(laneIdx)), bankIo.dout)
       })
     }
   }

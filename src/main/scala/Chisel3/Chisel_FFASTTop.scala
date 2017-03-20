@@ -4,6 +4,13 @@ import chisel3._
 import chisel3.experimental._
 import dsptools.numbers._
 import dsptools.numbers.implicits._
+import barstools.tapeout.TestParams
+import dsptools.DspTester
+import org.scalatest.{FlatSpec, Matchers}
+
+// TODO: Suggest better names???
+
+// TODO: Simplify imports
 
 // TODO: SCR DEBUG should all be low @ start to let stuff flush out 
 // TODO: ADC Calibration -- read/write (in ADC) -- write only in debug ; read in both -- CAN USE SINGLE-PORTED
@@ -27,8 +34,10 @@ class FFASTTopIO[T <: Data:RealBits](
   // The following IO are for debug purposes only (removed for real tapeout)
   val adc = new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs)
   val debug = new DebugIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)
-}
 
+  override def cloneType = 
+    (new FFASTTopIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]
+}
 
 class FFASTTop[T <: Data:RealBits](
   adcDataType: T, 
@@ -52,7 +61,7 @@ class FFASTTop[T <: Data:RealBits](
 
   // Reset is not a state you enter -- only a state you leave
   // After last debug, return back to ADCCollect
-  val nextStateNames = stateNames.tail.dropRight(1) ++ Seq.fill(2)(stateNames.head)
+  // val nextStateNames = stateNames.tail.dropRight(1) ++ Seq.fill(2)(stateNames.head)
 
   // TODO: Remove subFFTnsColMaxs dependence -- move to FFASTParams
   val inputSubFFTIdxToBankAddrLUT = Module(new SubFFTIdxToBankAddrLUTs(ffastParams, ffastParams.inputType))
@@ -63,12 +72,12 @@ class FFASTTop[T <: Data:RealBits](
 ///////////////// END STATE MACHINE
 
   val io = IO(
-    new FFASTTopIO(dspDataType, ffastParams, stateNames.length, inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs))
+    new FFASTTopIO(dspDataType, ffastParams, numStates, inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs))
 
   val collectADCSamplesBlock = Module(
     new CollectADCSamples(
-      adcDataType,
-      dspDataType, 
+      adcDataType = adcDataType,
+      dspDataType = dspDataType, 
       ffastParams, 
       ffastParams.inputType, 
       inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs)
@@ -81,7 +90,7 @@ class FFASTTop[T <: Data:RealBits](
   val globalClk = collectADCSamplesBlock.io.globalClk
 
   // Start @ reset state
-  val currentState = withClockAndReset(globalClk, io.resetClk) { RegInit(init = states.toSeq.last._2) }
+  val currentState = withClockAndReset(globalClk, io.resetClk) { RegInit(init = (numStates - 1).U) }
 
   // Clks for LUTs
   inputSubFFTIdxToBankAddrLUT.io.clk := globalClk
@@ -94,7 +103,8 @@ class FFASTTop[T <: Data:RealBits](
       statesInt,
       inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs)
   )
-  debugBlock.io.scr := io.scr
+
+  debugBlock.io.scr <> io.scr
   debugBlock.io.currentState := currentState
   debugBlock.io.clk := globalClk
   debugBlock.io.adcIdxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
@@ -105,7 +115,7 @@ class FFASTTop[T <: Data:RealBits](
     val memBankLengths = ffastParams.subFFTBankLengths(n)
     val mem = Module(new MemBankInterface(DspComplex(dspDataType), memBankLengths))
     mem.io.clk := globalClk
-    mem.suggestName(s"dataMem_${n}_${ph}")
+    mem.suggestName(s"ffastDataMem_${n}_${ph}")
     (n, ph) -> mem
   }.toMap
 
@@ -116,10 +126,11 @@ class FFASTTop[T <: Data:RealBits](
       dataFromMemory: FFASTMemOutputLanes[DspComplex[T]]): Unit = {
     ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
       mems(n, ph).io.i := dataToMemory(n)(ph)
-      dataFromMemory(n)(ph) := mems(n, ph).io.o
+      dataFromMemory(n)(ph) <> mems(n, ph).io.o
     }
   }
 
+  // TODO: Add more!
   when(currentState === states("ADCCollect")) {
     connectToMem(dataMems, collectADCSamplesBlock.io.dataToMemory, collectADCSamplesBlock.io.dataFromMemory)
   } .otherwise {
@@ -148,8 +159,8 @@ class FFASTTop[T <: Data:RealBits](
   */
 
   val done = Wire(Bool())
-  val currentStateBools = stateNames.zipWithIndex.map { (name, idx) => name -> currentState === x.U }
-  val nextStateWithoutSkipToEnd = Wire(currentState.cloneType)
+  val currentStateBools = stateNames.zipWithIndex.map { case (name, idx) => name -> (currentState === idx.U) }.toMap
+  val nextStateWithoutSkipToEnd = Wire(UInt(range"[0, $numStates)"))
 
   // TODO: Should be last debug
   when(currentStateBools("reset") | currentStateBools("ADCCollectDebug")) {
@@ -185,7 +196,7 @@ class FFASTTop[T <: Data:RealBits](
     done := debugBlock.io.stateInfo.done 
     // TODO: Change -- here we assume this is the last state
     collectADCSamplesBlock.io.stateInfo.start := done 
-    collectADCSamplesBlock.io.stateInfo.inState := true.B 
+    collectADCSamplesBlock.io.stateInfo.inState := false.B 
     debugBlock.io.stateInfo.start := false.B
     debugBlock.io.stateInfo.inState := true.B 
 
@@ -201,4 +212,93 @@ class FFASTTop[T <: Data:RealBits](
 
 }
 
-// check complex
+//////////////
+
+class FFASTTopWrapper[T <: Data:RealBits](
+    adcDataType: T, 
+    dspDataType: T, 
+    val ffastParams: FFASTParams, 
+    maxNumPeels: Int = 10) extends Module {
+  val mod = Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels))
+  val io = IO(mod.io.cloneType)
+  mod.io.resetClk := reset
+  mod.io.inClk := clock
+  mod.io.analogIn := io.analogIn
+  mod.io.scr <> io.scr
+
+  mod.io.adc <> io.adc
+  mod.io.debug <> io.debug
+}
+
+class FFASTTopSpec extends FlatSpec with Matchers {
+  behavior of "FFASTTop"
+  it should "read in ADC inputs" in {
+    dsptools.Driver.execute(() => 
+      new FFASTTopWrapper(
+        adcDataType = FixedPoint(16.W, 8.BP), 
+        dspDataType = FixedPoint(22.W, 12.BP),
+        FFASTParams(
+          fftn = 20,
+          subFFTns = Seq(4, 5),
+          delays = Seq(Seq(0, 1)),
+          inputType = DIF
+        )
+      ), TestParams.options1Tol
+    ) { c =>
+      new FFASTTopTester(c)
+    } should be (true)
+  }
+}
+
+//////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+object FFASTTop {
+  def main(args: Array[String]) = {
+    dsptools.Driver.execute(() => 
+      new FFASTTopWrapper(
+        adcDataType = FixedPoint(16.W, 8.BP), 
+        dspDataType = FixedPoint(22.W, 12.BP),
+        FFASTParams(
+          fftn = 20,
+          subFFTns = Seq(4, 5),
+          delays = Seq(Seq(0, 1)),
+          inputType = DIF
+        )
+      ), TestParams.options1Tol
+    ) { c =>
+      new FFASTTopTester(c)
+    } 
+  }
+}
+
+
+
+
+class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
+  val adcIn = (-10.0 until 20.0 by 1.0).zipWithIndex
+  reset(10)
+  for ((in, idx) <- adcIn) {
+    poke(c.io.analogIn, in)
+    peek(c.io.scr.currentState)
+    step(1)
+  }
+  // Try to loop around several times
+}
