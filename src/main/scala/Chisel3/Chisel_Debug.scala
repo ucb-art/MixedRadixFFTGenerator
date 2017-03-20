@@ -56,6 +56,10 @@ class ControlStatusIO[T <: Data:Ring](
   // TODO: Make less noob -- technically needs to just have width = # of debug states
   // This ignores and 1's for non-debug states
   val debugStates = Input(UInt(numStates.W))
+  // Assumes it's low then goes high sometime during the state -- looks for rising edge
+  // i.e. can be high @ beginning of state, but doesn't matter
+  // Always check that last value is written before asserting
+  val cpuDone = Input(Bool())
   override def cloneType = (new ControlStatusIO(memDataType, ffastParams, numStates)).asInstanceOf[this.type]
 }
 
@@ -122,12 +126,15 @@ class Debug[T <: Data:RealBits](
     // Bank, address delayed by 1 clk cycle; mem read takes another cycle
     // TODO: Don't hard code???
     val delayedCPUrIdx = ShiftRegister(io.scr.ctrlMemReadFromCPU, 2)
+
+    val currStateIsDebug =
+      Mux1H((0 until states.toSeq.length).map(x => (io.currentState === x.U) -> io.scr.debugStates(x)))
     
     ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
       // For each MemBankInterface, only using 1 lane at a time
       io.dataToMemory(n)(ph)(0).din := delayedCPUdin
       // To be safe, always reset WE @ CPU side!
-      io.dataToMemory(n)(ph)(0).we := RegNext(io.scr.ctrlMemWrite.we(n)(ph), init = false.B)
+      io.dataToMemory(n)(ph)(0).we := RegNext(io.scr.ctrlMemWrite.we(n)(ph), init = false.B) & currStateIsDebug
       io.dataFromMemory(n)(ph)(0).re := RegNext(io.scr.ctrlMemReadFromCPU.re(n)(ph), init = false.B)
       // 1 cycle delay for bank, addr
       io.dataToMemory(n)(ph)(0).loc.addr := addr(n)
@@ -136,37 +143,14 @@ class Debug[T <: Data:RealBits](
       io.dataFromMemory(n)(ph)(0).loc.bank := bank(n)
       io.scr.ctrlMemReadToCPU(n)(ph).rIdx := delayedCPUrIdx
       io.scr.ctrlMemReadToCPU(n)(ph).dout := io.dataFromMemory(n)(ph)(0).dout
-
     }
+
+    val cpuDoneDly = RegNext(io.scr.cpuDone)
+    val cpuDoneRising = ~cpuDoneDly & io.scr.cpuDone
+    // Generally make sure what you've written/read is right before asserting done
+    val done = RegEnable(true.B, init = false.B, enable = cpuDoneRising) | ~currStateIsDebug
+    io.stateInfo.done := done
 
   }
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // io.stateInfo.done
-  // io.scr.debugStates -- Vec of Bools
-
-
-
-
-
-// if not debug, insta done. 
-// we == false
-
-// done low on start. enable with done from CPU (synchronous). then hold. 
-
-
