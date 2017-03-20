@@ -42,15 +42,22 @@ class FFASTTopIO[T <: Data:RealBits](
 
   ///////////////////////////////////////
   //////////////////////////////// DEBUG
-  val asyncEnqValid = Output(Bool())
-  val asyncEnqData = Output(dspDataType)
-  val asyncDeqValid = Output(Bool())
-  val asyncDeqData = Output(dspDataType)
+/*
+  val asyncEnqValidMin = Output(Bool())
+  val asyncEnqDataMin = Output(dspDataType)
+  val asyncDeqValidMin = Output(Bool())
+  val asyncDeqDataMin = Output(dspDataType)
+
+  val asyncEnqValidMax = Output(Bool())
+  val asyncEnqDataMax = Output(dspDataType)
+  val asyncDeqValidMax = Output(Bool())
+  val asyncDeqDataMax = Output(dspDataType)
+
   val subFFTMin = ffastParams.subFFTns.min 
   val subFFTMax = ffastParams.subFFTns.max
   val countMaxFFTMin = Output(UInt(range"[0, $subFFTMin]"))
   val countMaxFFTMax = Output(UInt(range"[0, $subFFTMin]"))
-
+*/
 }
 
 class FFASTTop[T <: Data:RealBits](
@@ -230,13 +237,20 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
 
   //////////////////////////////////
   /////////////////////////// DEBUG
-  io.asyncEnqValid := collectADCSamplesBlock.io.asyncEnqValid
-  io.asyncEnqData := collectADCSamplesBlock.io.asyncEnqData
-  io.asyncDeqValid := collectADCSamplesBlock.io.asyncDeqValid
-  io.asyncDeqData := collectADCSamplesBlock.io.asyncDeqData
+/*
+  io.asyncEnqValidMin := collectADCSamplesBlock.io.asyncEnqValidMin
+  io.asyncEnqDataMin := collectADCSamplesBlock.io.asyncEnqDataMin
+  io.asyncDeqValidMin := collectADCSamplesBlock.io.asyncDeqValidMin
+  io.asyncDeqDataMin := collectADCSamplesBlock.io.asyncDeqDataMin
+
+  io.asyncEnqValidMax := collectADCSamplesBlock.io.asyncEnqValidMax
+  io.asyncEnqDataMax := collectADCSamplesBlock.io.asyncEnqDataMax
+  io.asyncDeqValidMax := collectADCSamplesBlock.io.asyncDeqValidMax
+  io.asyncDeqDataMax := collectADCSamplesBlock.io.asyncDeqDataMax
+
   io.countMaxFFTMin := collectADCSamplesBlock.io.countMaxFFTMin
   io.countMaxFFTMax := collectADCSamplesBlock.io.countMaxFFTMax
-
+*/
 }
 
 //////////////
@@ -255,14 +269,22 @@ class FFASTTopWrapper[T <: Data:RealBits](
     val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, mod.numStates)
 
     // DEBUG
-    val asyncEnqValid = Output(Bool())
-    val asyncEnqData = Output(dspDataType)
-    val asyncDeqValid = Output(Bool())
-    val asyncDeqData = Output(dspDataType)
+  /*
+    val asyncEnqValidMin = Output(Bool())
+    val asyncEnqDataMin = Output(dspDataType)
+    val asyncDeqValidMin = Output(Bool())
+    val asyncDeqDataMin = Output(dspDataType)
+
+    val asyncEnqValidMax = Output(Bool())
+    val asyncEnqDataMax = Output(dspDataType)
+    val asyncDeqValidMax = Output(Bool())
+    val asyncDeqDataMax = Output(dspDataType)
+
     val subFFTMin = ffastParams.subFFTns.min 
     val subFFTMax = ffastParams.subFFTns.max
     val countMaxFFTMin = Output(UInt(range"[0, $subFFTMin]"))
     val countMaxFFTMax = Output(UInt(range"[0, $subFFTMin]"))
+  */
     // TODO: Option clk
     // The following IO are for debug purposes only (removed for real tapeout)
     // val adc = new CollectADCSamplesIO(dspDataType, ffastParams, mod.subFFTnsColMaxs)
@@ -275,12 +297,20 @@ class FFASTTopWrapper[T <: Data:RealBits](
   mod.io.scr <> io.scr
 
   // DEBUG
-  io.asyncEnqValid := mod.io.asyncEnqValid
-  io.asyncEnqData := mod.io.asyncEnqData
-  io.asyncDeqValid := mod.io.asyncDeqValid
-  io.asyncDeqData := mod.io.asyncDeqData
+/*
+  io.asyncEnqValidMin := mod.io.asyncEnqValidMin
+  io.asyncEnqDataMin := mod.io.asyncEnqDataMin
+  io.asyncDeqValidMin := mod.io.asyncDeqValidMin
+  io.asyncDeqDataMin := mod.io.asyncDeqDataMin
+
+  io.asyncEnqValidMax := mod.io.asyncEnqValidMax
+  io.asyncEnqDataMax := mod.io.asyncEnqDataMax
+  io.asyncDeqValidMax := mod.io.asyncDeqValidMax
+  io.asyncDeqDataMax := mod.io.asyncDeqDataMax
+
   io.countMaxFFTMin := mod.io.countMaxFFTMin
   io.countMaxFFTMax := mod.io.countMaxFFTMax
+*/
   // mod.io.adc <> io.adc
   // mod.io.debug <> io.debug
 
@@ -295,8 +325,8 @@ class FFASTTopSpec extends FlatSpec with Matchers {
   it should "read in ADC inputs" in {
     dsptools.Driver.execute(() => 
       new FFASTTopWrapper(
-        adcDataType = FixedPoint(16.W, 8.BP), 
-        dspDataType = FixedPoint(22.W, 12.BP),
+        adcDataType = DspReal(), //FixedPoint(16.W, 8.BP), 
+        dspDataType = DspReal(), //FixedPoint(22.W, 12.BP),
         ffastParams = FFASTParams(
           fftn = 20,
           subFFTns = Seq(4, 5),
@@ -304,7 +334,7 @@ class FFASTTopSpec extends FlatSpec with Matchers {
           inputType = DIF
         ),
         maxNumPeels = 0
-      ), TestParams.options1Tol
+      ), TestParams.options1TolWaveform
     ) { c =>
       new FFASTTopTester(c)
     } should be (true)
@@ -350,29 +380,47 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
 
 
-
-
-
+// asyncqueue 2 lost the first data?
+// change back to queue depth of 4 -- why is queue not emptying???
+// debugStates, 1 didn't work???
 // what is false?
 // why does it take so long for 5 to catch up?
 // why doesn't state change instantly??
 
 class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
-  val adcIn = (-10.0 until 100.0 by 1.0).zipWithIndex
+  val adcIn = (-10.0 until 150.0 by 1.0).zipWithIndex
+  
   reset(10)
   poke(c.io.scr.debugStates, 1)
   poke(c.io.scr.cpuDone, false)
+  
   for ((in, idx) <- adcIn) {
-    poke(c.io.analogIn, in)
+
     peek(c.io.scr.currentState)
-    //peek(c.io.asyncEnqData)
-    //peek(c.io.asyncEnqValid)
-    peek(c.io.asyncDeqData)
-    peek(c.io.asyncDeqValid)
+    poke(c.io.analogIn, in)
+/*  
+    peek(c.io.asyncEnqDataMin)
+    peek(c.io.asyncEnqValidMin)
+
+    peek(c.io.asyncEnqDataMax)
+    peek(c.io.asyncEnqValidMax)
+
+    peek(c.io.asyncDeqDataMin)
+    peek(c.io.asyncDeqValidMin)
+
+    peek(c.io.asyncDeqDataMax)
+    peek(c.io.asyncDeqValidMax)
+
     peek(c.io.countMaxFFTMax)
     peek(c.io.countMaxFFTMin)
+*/
 
     step(1)
   }
+
   // Try to loop around several times
+
+  // gets stuck before 5???
+  // not aligned initially
+
 }

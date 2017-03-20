@@ -71,15 +71,22 @@ class CollectADCSamplesIO[T <: Data:RealBits](
 
   ////////////////////////////////////////
   ////////////////////////////////// DEBUG
+/*
+  val asyncEnqValidMin = Output(Bool())
+  val asyncEnqDataMin = Output(dspDataType)
+  val asyncDeqValidMin = Output(Bool())
+  val asyncDeqDataMin = Output(dspDataType)
 
-  val asyncEnqValid = Output(Bool())
-  val asyncEnqData = Output(dspDataType)
-  val asyncDeqValid = Output(Bool())
-  val asyncDeqData = Output(dspDataType)
+  val asyncEnqValidMax = Output(Bool())
+  val asyncEnqDataMax = Output(dspDataType)
+  val asyncDeqValidMax = Output(Bool())
+  val asyncDeqDataMax = Output(dspDataType)
+
   val subFFTMin = ffastParams.subFFTns.min 
   val subFFTMax = ffastParams.subFFTns.max
   val countMaxFFTMin = Output(UInt(range"[0, $subFFTMin]"))
   val countMaxFFTMax = Output(UInt(range"[0, $subFFTMin]"))
+*/
 
 }
 
@@ -111,14 +118,16 @@ object FFASTMemInputLanes {
       }.toSeq: _*
     )
   }
-  def connectToDefault[T <: Data:Ring](bundle: FFASTMemInputLanes[T], ffastParams: FFASTParams) = {
+  // TODO: This T stuff got messy -- hard to figure out if it's DspComplex[T] or T
+  def connectToDefault[T <: Data:RealBits](bundle: FFASTMemInputLanes[DspComplex[T]], ffastParams: FFASTParams) = {
     ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
       // # of lanes/banks
       for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
         bundle(n)(ph)(idx).loc.addr := 0.U
         bundle(n)(ph)(idx).loc.bank := 0.U 
-        bundle(n)(ph)(idx).we := false.B 
-        bundle(n)(ph)(idx).din := Ring[T].zero
+        bundle(n)(ph)(idx).we := false.B
+        bundle(n)(ph)(idx).din.imag := Ring[T].zero 
+        bundle(n)(ph)(idx).din.real := Ring[T].zero
       }
     }
   }
@@ -152,7 +161,7 @@ object FFASTMemOutputLanes {
       }.toSeq: _*
     )
   }
-  def connectToDefault[T <: Data:Ring](bundle: FFASTMemOutputLanes[T], ffastParams: FFASTParams) = {
+  def connectToDefault[T <: Data:RealBits](bundle: FFASTMemOutputLanes[DspComplex[T]], ffastParams: FFASTParams) = {
     ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
       // # of lanes/banks
       for (idx <- 0 until ffastParams.subFFTBankLengths(n).length) {
@@ -196,7 +205,7 @@ class CollectADCSamples[T <: Data:RealBits](
     // Only need depth 2 b/c clk to the right of async is always fastest clk -- add for margin
     // NOTE: Async queue has weird power of 2 requirement
     // Sync 3 is safe enough for metastability
-    val async = Module(new AsyncQueue(adcDataType, depth = 4, sync = 3, safe = false))
+    val async = Module(new AsyncQueue(adcDataType, depth = 8, sync = 3, safe = true))
     async.io.enq_clock := analogBlock.io.adcClks(n)(ph)
     // 1 cycle before state starts
     async.io.enq_reset := io.stateInfo.start
@@ -316,11 +325,18 @@ class CollectADCSamples[T <: Data:RealBits](
 
   ////////////////////////////////////
   ///////////////////////////// DEBUG
-  io.asyncEnqValid := asyncs(ffastParams.subFFTns.min, 0).io.enq.valid
-  io.asyncEnqData := asyncs(ffastParams.subFFTns.min, 0).io.enq.bits
-  io.asyncDeqValid := asyncs(ffastParams.subFFTns.min, 0).io.deq.valid
-  io.asyncDeqData := asyncs(ffastParams.subFFTns.min, 0).io.deq.bits
+/*
+  io.asyncEnqValidMin := asyncs(ffastParams.subFFTns.min, 0).io.enq.valid
+  io.asyncEnqDataMin := asyncs(ffastParams.subFFTns.min, 0).io.enq.bits
+  io.asyncDeqValidMin := asyncs(ffastParams.subFFTns.min, 0).io.deq.valid
+  io.asyncDeqDataMin := asyncs(ffastParams.subFFTns.min, 0).io.deq.bits
+
+  io.asyncEnqValidMax := asyncs(ffastParams.subFFTns.max, 0).io.enq.valid
+  io.asyncEnqDataMax := asyncs(ffastParams.subFFTns.max, 0).io.enq.bits
+  io.asyncDeqValidMax := asyncs(ffastParams.subFFTns.max, 0).io.deq.valid
+  io.asyncDeqDataMax := asyncs(ffastParams.subFFTns.max, 0).io.deq.bits
+
   io.countMaxFFTMin := countMaxPerSubFFT(ffastParams.subFFTns.min)(0)
   io.countMaxFFTMax := countMaxPerSubFFT(ffastParams.subFFTns.max)(0)
-
+*/
 }

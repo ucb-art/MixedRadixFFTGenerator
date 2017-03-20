@@ -7,6 +7,7 @@ import dsptools.{DspTester, DspTesterOptionsManager}
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
 import rocketchiselutil._
+import chisel3.util._
 
 class FakeADCIO[T <: Data:RealBits](gen: => T) extends Bundle {
   val clk = Input(Clock())
@@ -16,14 +17,15 @@ class FakeADCIO[T <: Data:RealBits](gen: => T) extends Bundle {
 }
 
 // WARNING: NON-SYNTHESIZABLE!!!
+// 2 cycle "delay": need to sample one 1 clk, then valid @ end of SAR logic
 class FakeADC[T <: Data:RealBits](gen: => T) extends Module {
   val io = IO(new FakeADCIO(gen))
   withClock(io.clk) {
      gen match {
       case _: UInt => throw new Exception("ADC gen should be signed!")
-      case _: SInt => io.digitalOut := RegNext(io.analogIn.intPart)
-      case f: FixedPoint => io.digitalOut := RegNext(io.analogIn.asFixed(f))
-      case _: DspReal => io.digitalOut := RegNext(io.analogIn)
+      case _: SInt => io.digitalOut := ShiftRegister(io.analogIn.intPart, 2)
+      case f: FixedPoint => io.digitalOut := ShiftRegister(io.analogIn.asFixed(f), 2)
+      case _: DspReal => io.digitalOut := ShiftRegister(io.analogIn, 2)
       case _ => throw new Exception("Invalid gen for ADC!")
     }
   }

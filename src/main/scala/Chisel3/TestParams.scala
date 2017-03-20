@@ -29,6 +29,14 @@ object TestParams {
     testerOptions = testerOptionsGlobal
   }
 
+  val options1TolWaveform = new DspTesterOptionsManager {
+    dspTesterOptions = DspTesterOptions(
+        fixTolLSBs = 1,
+        genVerilogTb = false,
+        isVerbose = true)
+    testerOptions = testerOptionsGlobal.copy(waveform = Some(new java.io.File("test_run_dir/waveform.vcd")))
+  }
+
   val debugBuild = new ExecutionOptionsManager("DebugBuild") with HasChiselExecutionOptions with HasFirrtlOptions {
     commonOptions = CommonOptions(
       globalLogLevel = LogLevel.Info,
