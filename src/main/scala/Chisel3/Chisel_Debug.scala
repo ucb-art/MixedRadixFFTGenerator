@@ -70,6 +70,7 @@ class DebugIO[T <: Data:RealBits](
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
   val currentState = Input(UInt(range"[0, $numStates)"))
   val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, numStates)
+  // TODO: Really make DspComplex(gen) and gen consistent
   val dataToMemory = Flipped(FFASTMemInputLanes(dspDataType, ffastParams))
   val dataFromMemory = Flipped(FFASTMemOutputLanes(dspDataType, ffastParams))
   val adcIdxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
@@ -82,7 +83,7 @@ class DebugIO[T <: Data:RealBits](
 class Debug[T <: Data:RealBits](
     dspDataType: T, 
     ffastParams: FFASTParams, 
-    states: Map[String, UInt], 
+    states: Map[String, Int], 
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
 
   val io = IO(new DebugIO(dspDataType, ffastParams, states.toSeq.length, subFFTnsColMaxs))
@@ -101,7 +102,7 @@ class Debug[T <: Data:RealBits](
       io.scr.ctrlMemWrite.we(n)(ph) }
     val cpuWrite = getAllCPUwes.reduce(_ | _)
     val usedIdx = Mux(cpuWrite, io.scr.ctrlMemWrite.wIdx, io.scr.ctrlMemReadFromCPU.rIdx)
-    val isADCCollectDebugState = io.currentState === states("ADCCollectDebug")
+    val isADCCollectDebugState = io.currentState === states("ADCCollectDebug").U
     val delayedIsADCCollectDebugState = RegNext(isADCCollectDebugState)
 
 
@@ -125,7 +126,7 @@ class Debug[T <: Data:RealBits](
     val delayedCPUdin = RegNext(io.scr.ctrlMemWrite.din)
     // Bank, address delayed by 1 clk cycle; mem read takes another cycle
     // TODO: Don't hard code???
-    val delayedCPUrIdx = ShiftRegister(io.scr.ctrlMemReadFromCPU, 2)
+    val delayedCPUrIdx = ShiftRegister(io.scr.ctrlMemReadFromCPU.rIdx, 2)
 
     val currStateIsDebug =
       Mux1H((0 until states.toSeq.length).map(x => (io.currentState === x.U) -> io.scr.debugStates(x)))
@@ -148,6 +149,7 @@ class Debug[T <: Data:RealBits](
     val cpuDoneDly = RegNext(io.scr.cpuDone)
     val cpuDoneRising = ~cpuDoneDly & io.scr.cpuDone
     // Generally make sure what you've written/read is right before asserting done
+    // Done immediately asserted if this state isn't supposed to be used
     val done = RegEnable(true.B, init = false.B, enable = cpuDoneRising) | ~currStateIsDebug
     io.stateInfo.done := done
 
