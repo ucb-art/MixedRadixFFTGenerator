@@ -59,7 +59,6 @@ class FFASTTop[T <: Data:RealBits](
   val outputSubFFTIdxToBankAddrLUT = Module(new SubFFTIdxToBankAddrLUTs(ffastParams, ffastParams.outputType))
 
   val numStates = stateNames.length
-  val currentState = Reg(UInt(range"[0, $numStates)"))
 
 ///////////////// END STATE MACHINE
 
@@ -80,6 +79,9 @@ class FFASTTop[T <: Data:RealBits](
   collectADCSamplesBlock.io.idxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs
 
   val globalClk = collectADCSamplesBlock.io.globalClk
+
+  // Start @ reset state
+  val currentState = withClockAndReset(globalClk, io.resetClk) { RegInit(init = states.toSeq.last._2) }
 
   // Clks for LUTs
   inputSubFFTIdxToBankAddrLUT.io.clk := globalClk
@@ -134,36 +136,69 @@ class FFASTTop[T <: Data:RealBits](
     inputSubFFTIdxToBankAddrLUT.io.pack.idxs := debugBlock.io.adcIdxToBankAddr.idxs
   }
 
+  // TODO: Any way to automate this more?
+  /*
+  stateNames.map { 
+    case name: String if name == "ADCCollect" => name -> collectADCSamplesBlock
+    case name: String if name == "FFT" => throw new Exception("Not valid state!")
+    case name: String if name == "PopulateNonZerotons" => throw new Exception("Not valid state!")
+    case name: String if name.endsWidth("Debug") => name -> debugBlock
+    case name: String if name.startsWith("Peel") => throw new Exception("Not valid state!")
+  }
+  */
 
+  val done = Wire(Bool())
+  val currentStateBools = stateNames.zipWithIndex.map { (name, idx) => name -> currentState === x.U }
+  val nextStateWithoutSkipToEnd = Wire(currentState.cloneType)
 
+  // TODO: Should be last debug
+  when(currentStateBools("reset") | currentStateBools("ADCCollectDebug")) {
+    nextStateWithoutSkipToEnd := states("ADCCollect")
+  } .otherwise {
+    nextStateWithoutSkipToEnd := currentState +& 1.U
+  }
 
+  // TODO: When done + skip to end (peel only), nextState is different
+  val nextState = nextStateWithoutSkipToEnd
+  currentState := Mux(done, nextState, currentState)
 
+  // TODO: Make state machine smarter...
 
+  when (currentStateBools("reset")) {
 
+    done := true.B
+    collectADCSamplesBlock.io.stateInfo.start := done
+    collectADCSamplesBlock.io.stateInfo.inState := false.B 
+    debugBlock.io.stateInfo.start := false.B
+    debugBlock.io.stateInfo.inState := false.B 
 
+  } .elsewhen (currentStateBools("ADCCollect")) {
 
+    done := collectADCSamplesBlock.io.stateInfo.done 
+    collectADCSamplesBlock.io.stateInfo.start := false.B 
+    collectADCSamplesBlock.io.stateInfo.inState := true.B 
+    debugBlock.io.stateInfo.start := done
+    debugBlock.io.stateInfo.inState := false.B 
 
-  val stateMods = 
-  
-start
-instate
-done
-skiptoend
+  } .elsewhen (currentStateBools("ADCCollectDebug")) {
 
-// ADC
-//io.stateInfo
- 
+    done := debugBlock.io.stateInfo.done 
+    // TODO: Change -- here we assume this is the last state
+    collectADCSamplesBlock.io.stateInfo.start := done 
+    collectADCSamplesBlock.io.stateInfo.inState := true.B 
+    debugBlock.io.stateInfo.start := false.B
+    debugBlock.io.stateInfo.inState := true.B 
 
-// Debug
-//stateInfo
+  } .otherwise { // SHOULD NEVER GET HERE
 
-//currentState
+    done := false.B 
+    collectADCSamplesBlock.io.stateInfo.start := false.B 
+    collectADCSamplesBlock.io.stateInfo.inState := false.B
+    debugBlock.io.stateInfo.start := false.B
+    debugBlock.io.stateInfo.inState := false.B
 
-// go to next state if current state's done is true
-// go to end if done + end
-
-
-// check complex
-
+  }
 
 }
+
+// check complex

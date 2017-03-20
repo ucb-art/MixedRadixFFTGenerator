@@ -128,6 +128,7 @@ class Debug[T <: Data:RealBits](
     // TODO: Don't hard code???
     val delayedCPUrIdx = ShiftRegister(io.scr.ctrlMemReadFromCPU.rIdx, 2)
 
+    // TODO: Kind of redundant with what's outside but whatever...
     val currStateIsDebug =
       Mux1H((0 until states.toSeq.length).map(x => (io.currentState === x.U) -> io.scr.debugStates(x)))
     
