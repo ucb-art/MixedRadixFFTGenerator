@@ -68,6 +68,19 @@ class CollectADCSamplesIO[T <: Data:RealBits](
   val idxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
 
   override def cloneType = (new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
+
+  ////////////////////////////////////////
+  ////////////////////////////////// DEBUG
+
+  val asyncEnqValid = Output(Bool())
+  val asyncEnqData = Output(dspDataType)
+  val asyncDeqValid = Output(Bool())
+  val asyncDeqData = Output(dspDataType)
+  val subFFTMin = ffastParams.subFFTns.min 
+  val subFFTMax = ffastParams.subFFTns.max
+  val countMaxFFTMin = Output(UInt(range"[0, $subFFTMin]"))
+  val countMaxFFTMax = Output(UInt(range"[0, $subFFTMin]"))
+
 }
 
 final class FFASTMemInputLanes[T <: Data:Ring](elts: (Int, FFASTMemInputLanesInner[T])*) 
@@ -183,7 +196,7 @@ class CollectADCSamples[T <: Data:RealBits](
     // Only need depth 2 b/c clk to the right of async is always fastest clk -- add for margin
     // NOTE: Async queue has weird power of 2 requirement
     // Sync 3 is safe enough for metastability
-    val async = Module(new AsyncQueue(adcDataType, depth = 4, sync = 3))
+    val async = Module(new AsyncQueue(adcDataType, depth = 4, sync = 3, safe = false))
     async.io.enq_clock := analogBlock.io.adcClks(n)(ph)
     // 1 cycle before state starts
     async.io.enq_reset := io.stateInfo.start
@@ -300,5 +313,14 @@ class CollectADCSamples[T <: Data:RealBits](
     io.dataToMemory(n)(ph)(0).loc.addr := correctBankAddr.addr
     io.dataToMemory(n)(ph)(0).loc.bank := correctBankAddr.bank
   }
+
+  ////////////////////////////////////
+  ///////////////////////////// DEBUG
+  io.asyncEnqValid := asyncs(ffastParams.subFFTns.min, 0).io.enq.valid
+  io.asyncEnqData := asyncs(ffastParams.subFFTns.min, 0).io.enq.bits
+  io.asyncDeqValid := asyncs(ffastParams.subFFTns.min, 0).io.deq.valid
+  io.asyncDeqData := asyncs(ffastParams.subFFTns.min, 0).io.deq.bits
+  io.countMaxFFTMin := countMaxPerSubFFT(ffastParams.subFFTns.min)(0)
+  io.countMaxFFTMax := countMaxPerSubFFT(ffastParams.subFFTns.max)(0)
 
 }
