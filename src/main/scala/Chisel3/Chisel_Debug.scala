@@ -145,11 +145,13 @@ class Debug[T <: Data:RealBits](
       io.dataToMemory(n)(ph)(0).din := delayedCPUdin
       // To be safe, always reset WE @ CPU side!
       val weTemp = withClockAndReset(io.clk, io.stateInfo.start) { 
-        RegNext(io.scr.ctrlMemWrite.we(n)(ph), init = false.B) }
+        RegNext(io.scr.ctrlMemWrite.we(n)(ph)) }
       io.dataToMemory(n)(ph)(0).we := weTemp & currStateIsDebug 
-      io.dataFromMemory(n)(ph)(0).re := withClockAndReset(io.clk, io.stateInfo.start) {
-        RegNext(io.scr.ctrlMemReadFromCPU.re(n)(ph), init = false.B) }
-      // 1 cycle delay for bank, addr
+      val reTemp = withClockAndReset(io.clk, io.stateInfo.start) {
+        RegNext(io.scr.ctrlMemReadFromCPU.re(n)(ph)) }
+      io.dataFromMemory(n)(ph)(0).re := reTemp & currStateIsDebug
+      // WARNING: always check that last read/write were successful before exiting!
+      // 1 cycle delay for bank, addr (therefore we, re need to be equivalently delayed)
       io.dataToMemory(n)(ph)(0).loc.addr := addr(n)
       io.dataToMemory(n)(ph)(0).loc.bank := bank(n)
       io.dataFromMemory(n)(ph)(0).loc.addr := addr(n)

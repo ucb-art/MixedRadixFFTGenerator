@@ -500,6 +500,9 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
 }
 
+
+
+// try writing to memories
 // try delay 3
 // 21600
 // fixed?
