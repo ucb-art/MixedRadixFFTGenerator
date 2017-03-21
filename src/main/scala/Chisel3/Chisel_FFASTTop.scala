@@ -10,6 +10,7 @@ import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.transforms.pads._
 import barstools.tapeout.transforms.clkgen._
 import breeze.math.Complex
+import dsptools.{DspTester, DspTesterOptionsManager}
 
 // TODO: Suggest better names???
 // TODO: Use Array.range(), etc.
@@ -325,20 +326,29 @@ class FFASTTopWrapper[T <: Data:RealBits](
 class FFASTTopSpec extends FlatSpec with Matchers {
   behavior of "FFASTTop"
   it should "read in ADC inputs" in {
+
+    val opt = new DspTesterOptionsManager {
+      dspTesterOptions = TestParams.options1TolWaveform.dspTesterOptions
+      testerOptions = TestParams.options1TolWaveform.testerOptions
+      commonOptions = TestParams.options1TolWaveform.commonOptions.copy(targetDirName = s"test_run_dir/FFASTTopTB")
+    }
+
     dsptools.Driver.execute(() => 
       new FFASTTopWrapper(
-        adcDataType = DspReal(), //FixedPoint(16.W, 8.BP), 
-        dspDataType = DspReal(), //FixedPoint(22.W, 12.BP),
+        adcDataType = DspReal(),
+        dspDataType = DspReal(),
+        // adcDataType = FixedPoint(16.W, 8.BP), 
+        // dspDataType = FixedPoint(22.W, 12.BP),
         ffastParams = FFASTParams(
-          fftn = 20,
-          subFFTns = Seq(4, 5),
-          // fftn = 21600,
-          // subFFTns = Seq(675, 800, 864),
+          // fftn = 20,
+          // subFFTns = Seq(4, 5),
+          fftn = 21600,
+          subFFTns = Seq(675, 800, 864),
           delays = Seq(Seq(0, 1)),
           inputType = DIF
         ),
         maxNumPeels = 0
-      ), TestParams.options1TolWaveform
+      ), opt
     ) { c =>
       new FFASTTopTester(c)
     } should be (true)
@@ -393,70 +403,103 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
 class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
 
-  val numLoops = 2
-  val adcInInc = 1.0
+  // Thread safe ?
+  run()
 
-  val subsamplingT = c.ffastParams.subSamplingFactors.map(_._2).min
+  def run(): Unit = this.synchronized {
 
-  var loopNum = 0
-  var adcIn = -100.0
-  var rIdxIn = 0
+    val numLoops = 2
+    val adcInInc = 1.0
 
-  val peekedResults = (0 until numLoops).map { case loop =>
-    val temp = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-      (n, ph) -> (
-        Array.fill(c.ffastParams.subFFTns.max)(Complex(0.0, 0.0))
-      )
+    val subsamplingT = c.ffastParams.subSamplingFactors.map(_._2).min
+
+    var loopNum = 0
+    var adcIn = -100.0
+    var rIdxIn = 0
+
+    val peekedResults = (0 until numLoops).map { case loop =>
+      val temp = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+        (n, ph) -> (
+          Array.fill(c.ffastParams.subFFTns.max)(Complex(0.0, 0.0))
+        )
+      }.toMap
+      loop -> temp
     }.toMap
-    loop -> temp
-  }.toMap
 
-  reset(10)
-  // ADC Collect Debug
-  poke(c.io.scr.debugStates, 1 << 1)
-  poke(c.io.scr.cpuDone, false)
+    reset(10)
+    // ADC Collect Debug
+    poke(c.io.scr.debugStates, 1 << 1)
+    poke(c.io.scr.cpuDone, false)
 
-  // In debug, always read; never write
-  c.ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
-    poke(c.io.scr.ctrlMemReadFromCPU.re(n)(ph), true.B)
-    poke(c.io.scr.ctrlMemWrite.we(n)(ph), false.B)
-  }
-  
-  while (loopNum < numLoops) {
-
-    poke(c.io.analogIn, adcIn)
-    adcIn += adcInInc
-
-    val currentState = peek(c.io.scr.currentState)
-
-    // Slow clk
-    if (currentState == c.mod.statesInt("ADCCollectDebug") && t % subsamplingT == 0) {
-
-      poke(c.io.scr.ctrlMemReadFromCPU.rIdx, rIdxIn)
-      rIdxIn += 1
-
-      val rIdxOutMax = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-        val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
-        if (rIdxOut < c.ffastParams.subFFTns.max)
-          peekedResults(loopNum)(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
-        rIdxOut
-      }.min
-
-      if (rIdxOutMax == c.ffastParams.subFFTns.max - 1) {
-        poke(c.io.scr.cpuDone, true.B)
-        rIdxIn = 0
-        loopNum += 1
-      }
-      else poke(c.io.scr.cpuDone, false.B)
-
+    // In debug, always read; never write
+    c.ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
+      poke(c.io.scr.ctrlMemReadFromCPU.re(n)(ph), true.B)
+      poke(c.io.scr.ctrlMemWrite.we(n)(ph), false.B)
     }
-    step(1)
-  }
+    
+    while (loopNum < numLoops) {
 
-  peekedResults foreach { case (loop, res) => 
-    res foreach { case ((n, ph), outVals) =>
-      println(s"Loop $loop, SubFFT $n, Phase $ph : \t" + outVals.toSeq.take(n).mkString(","))
+      poke(c.io.analogIn, adcIn)
+      adcIn += adcInInc
+
+      val currentState = peek(c.io.scr.currentState)
+
+      // Slow clk
+      if (currentState == c.mod.statesInt("ADCCollectDebug") && t % subsamplingT == 0) {
+
+        poke(c.io.scr.ctrlMemReadFromCPU.rIdx, rIdxIn)
+        rIdxIn += 1
+
+        val rIdxOutMax = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+          val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
+          if (rIdxOut < c.ffastParams.subFFTns.max)
+            peekedResults(loopNum)(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
+          rIdxOut
+        }.min
+
+        if (rIdxOutMax == c.ffastParams.subFFTns.max - 1) {
+          poke(c.io.scr.cpuDone, true.B)
+          rIdxIn = 0
+          loopNum += 1
+        }
+        else poke(c.io.scr.cpuDone, false.B)
+
+      }
+      step(1)
+    }
+
+    peekedResults foreach { case (loop, res) =>
+      var headAtPh0 = Complex(0.0, 0.0)
+      // Guarantee you look at PH0 first
+      res.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) } foreach { case ((n, ph), outVals) =>
+        // No good reason for choosing the min
+        val outValsSeq = outVals.toSeq.take(n)
+        if (c.ffastParams.subFFTns.min == n && ph == 0)
+          headAtPh0 = outValsSeq.head
+        else {
+          expect(outValsSeq.head == headAtPh0 + Complex(ph * adcInInc, 0.0), 
+            "Relative samples must be right across sub-ADCs")
+        }
+        val subsamplingFactor = c.ffastParams.subSamplingFactors(n)
+        val expectedAdd = Seq.fill(outValsSeq.length - 1)(Complex(subsamplingFactor * adcInInc, 0.0))
+        val expected = expectedAdd.scanLeft(outValsSeq.head)((accum, next) => accum + next)
+        println(s"Loop $loop, SubFFT $n, Phase $ph")
+        // println(s"Loop $loop, SubFFT $n, Phase $ph : \t" + outValsSeq.mkString(","))
+        val pass = expect(outValsSeq == expected, "Subsampled values should be spaced correctly!")
+        if (!pass) {
+          val firstFailed = outValsSeq.zip(expected).find { case (out, exp) => out != exp }.get
+          println("First failed @ index " + 
+            expected.indexOf(firstFailed._2) + 
+            s". Expected ${firstFailed._2}. Got ${firstFailed._1}")
+        }
+
+        // println(s"Expected : \t" + expected.mkString(","))
+      }
     }
   }
 
 }
+
+// try delay 3
+// 21600
+// fixed?
