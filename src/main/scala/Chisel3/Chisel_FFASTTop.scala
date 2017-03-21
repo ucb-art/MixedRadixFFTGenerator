@@ -9,8 +9,10 @@ import dsptools.DspTester
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.transforms.pads._
 import barstools.tapeout.transforms.clkgen._
+import breeze.math.Complex
 
 // TODO: Suggest better names???
+// TODO: Use Array.range(), etc.
 
 // TODO: Simplify imports
 
@@ -330,6 +332,8 @@ class FFASTTopSpec extends FlatSpec with Matchers {
         ffastParams = FFASTParams(
           fftn = 20,
           subFFTns = Seq(4, 5),
+          // fftn = 21600,
+          // subFFTns = Seq(675, 800, 864),
           delays = Seq(Seq(0, 1)),
           inputType = DIF
         ),
@@ -378,49 +382,81 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
 
 
-// what's up w/ debugStates?
 
-// asyncqueue 2 lost the first data?
-// change back to queue depth of 4 -- why is queue not emptying???
-// debugStates, 1 didn't work???
-// what is false?
-// why does it take so long for 5 to catch up?
-// why doesn't state change instantly??
+
+
+
+
+
+
+
 
 class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
-  val adcIn = (-10.0 until 200.0 by 1.0).zipWithIndex
-  
+
+  val numLoops = 2
+  val adcInInc = 1.0
+
+  val subsamplingT = c.ffastParams.subSamplingFactors.map(_._2).min
+
+  var loopNum = 0
+  var adcIn = -100.0
+  var rIdxIn = 0
+
+  val peekedResults = (0 until numLoops).map { case loop =>
+    val temp = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+      (n, ph) -> (
+        Array.fill(c.ffastParams.subFFTns.max)(Complex(0.0, 0.0))
+      )
+    }.toMap
+    loop -> temp
+  }.toMap
+
   reset(10)
-  poke(c.io.scr.debugStates, 1)
+  // ADC Collect Debug
+  poke(c.io.scr.debugStates, 1 << 1)
   poke(c.io.scr.cpuDone, false)
+
+  // In debug, always read; never write
+  c.ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
+    poke(c.io.scr.ctrlMemReadFromCPU.re(n)(ph), true.B)
+    poke(c.io.scr.ctrlMemWrite.we(n)(ph), false.B)
+  }
   
-  for ((in, idx) <- adcIn) {
+  while (loopNum < numLoops) {
 
-    peek(c.io.scr.currentState)
-    poke(c.io.analogIn, in)
-/*  
-    peek(c.io.asyncEnqDataMin)
-    peek(c.io.asyncEnqValidMin)
+    poke(c.io.analogIn, adcIn)
+    adcIn += adcInInc
 
-    peek(c.io.asyncEnqDataMax)
-    peek(c.io.asyncEnqValidMax)
+    val currentState = peek(c.io.scr.currentState)
 
-    peek(c.io.asyncDeqDataMin)
-    peek(c.io.asyncDeqValidMin)
+    // Slow clk
+    if (currentState == c.mod.statesInt("ADCCollectDebug") && t % subsamplingT == 0) {
 
-    peek(c.io.asyncDeqDataMax)
-    peek(c.io.asyncDeqValidMax)
+      poke(c.io.scr.ctrlMemReadFromCPU.rIdx, rIdxIn)
+      rIdxIn += 1
 
-    peek(c.io.countMaxFFTMax)
-    peek(c.io.countMaxFFTMin)
-*/
+      val rIdxOutMax = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+        val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
+        if (rIdxOut < c.ffastParams.subFFTns.max)
+          peekedResults(loopNum)(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
+        rIdxOut
+      }.min
 
+      if (rIdxOutMax == c.ffastParams.subFFTns.max - 1) {
+        poke(c.io.scr.cpuDone, true.B)
+        rIdxIn = 0
+        loopNum += 1
+      }
+      else poke(c.io.scr.cpuDone, false.B)
+
+    }
     step(1)
   }
 
-  // Try to loop around several times
-
-  // gets stuck before 5???
-  // not aligned initially
+  peekedResults foreach { case (loop, res) => 
+    res foreach { case ((n, ph), outVals) =>
+      println(s"Loop $loop, SubFFT $n, Phase $ph : \t" + outVals.toSeq.take(n).mkString(","))
+    }
+  }
 
 }

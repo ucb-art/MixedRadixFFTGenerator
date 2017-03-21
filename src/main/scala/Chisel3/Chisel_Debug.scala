@@ -8,6 +8,7 @@ import barstools.tapeout.transforms._
 import chisel3.util._
 
 // TODO: Hook up to SCR
+// TODO: Consider we, re as UInts (then split internally)
 
 // Big memory is dual ported -- can read/write simultaneously
 // Nominally 32 + 10 + 18 bits
@@ -55,6 +56,9 @@ class ControlStatusIO[T <: Data:Ring](
   // If position is high, the corresponding debug state is active 
   // TODO: Make less noob -- technically needs to just have width = # of debug states
   // This ignores and 1's for non-debug states
+  // For UInt value 1, you're saying state 0 should be in debug
+  // For UInt value 2, you're saying state 1 should be in debug
+  // "One hot"-style
   val debugStates = Input(UInt(numStates.W))
   // Assumes it's low then goes high sometime during the state -- looks for rising edge
   // i.e. can be high @ beginning of state, but doesn't matter
@@ -106,7 +110,6 @@ class Debug[T <: Data:RealBits](
     val isADCCollectDebugState = io.currentState === states("ADCCollectDebug").U
     val delayedIsADCCollectDebugState = 
       withClockAndReset(io.clk, io.stateInfo.start) { RegNext(isADCCollectDebugState) }
-
 
     val (addrTemp, bankTemp) = ffastParams.subFFTns.map { case n =>
       io.adcIdxToBankAddr.idxs(n) := usedIdx
