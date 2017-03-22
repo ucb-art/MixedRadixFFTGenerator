@@ -232,7 +232,7 @@ class CollectADCSamples[T <: Data:RealBits](
   // Don't synchronize enq_valids until the queues are all ready
   analogBlock.io.collectADCSamplesState := io.stateInfo.inState & asyncEnqsAllReady
 
-  // Placeholder
+  // TODO: Placeholder
   // Eventually, calibration blocks will be here
   // Also, the idx -> bank, addr LUT takes 1 cycle (outputs registered)
   ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 

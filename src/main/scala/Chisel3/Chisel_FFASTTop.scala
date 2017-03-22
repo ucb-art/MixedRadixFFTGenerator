@@ -11,6 +11,7 @@ import barstools.tapeout.transforms.pads._
 import barstools.tapeout.transforms.clkgen._
 import breeze.math.Complex
 import dsptools.{DspTester, DspTesterOptionsManager}
+import barstools.tapeout.transforms._
 
 // TODO: Suggest better names???
 // TODO: Use Array.range(), etc.
@@ -165,14 +166,24 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
     connectToMem(dataMems, debugBlock.io.dataToMemory, debugBlock.io.dataFromMemory)
   }
 
+  def connectLUTIdxsToDefault(idxs: CustomIndexedBundle[UInt]): Unit = {
+    idxs.elements foreach { case (idx, port) => 
+      port := 0.U
+    }
+  }
+
   // TODO: Change when I write peel
   // Currently, only used for debug
+  // FFT and before: use default
   outputSubFFTIdxToBankAddrLUT.io.pack.idxs := debugBlock.io.postFFTIdxToBankAddr.idxs
 
   when(currentState === states("ADCCollect")) {
     inputSubFFTIdxToBankAddrLUT.io.pack.idxs := collectADCSamplesBlock.io.idxToBankAddr.idxs  
-  } .otherwise {
+  } .elsewhen(currentState === states("ADCCollectDebug")) {
     inputSubFFTIdxToBankAddrLUT.io.pack.idxs := debugBlock.io.adcIdxToBankAddr.idxs
+  } .otherwise {
+    // This LUT is only ever used for ADC Input + Debug right after
+    connectLUTIdxsToDefault(inputSubFFTIdxToBankAddrLUT.io.pack.idxs)
   }
 
   // TODO: Any way to automate this more?
@@ -382,6 +393,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   val usedDebugStates = Seq("ADCCollectDebug")
   val numLoops = 3
   val adcInInc = 1.0
+  // Fastest clk
   val subsamplingT = c.ffastParams.subSamplingFactors.map(_._2).min
   val adcInStart = -1000.0
   val checksPerformed = scala.collection.mutable.ArrayBuffer[String]()
@@ -421,6 +433,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     updatableDspVerbose.withValue(false) {
       poke(c.io.scr.ctrlMemReadFromCPU.rIdx, debugNext.idx)
 
+      // All memories must be fully read
       val rIdxOutMin = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
 
         val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
@@ -445,6 +458,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   def checkADCResults(loop: Int, skip: Boolean = false): Complex = {
     val startingValue = 
       if (skip) 
+        // All test results can be derived once you know at what point ADC input was fed in (which time sample was 
+        // gotten when clks were aligned)
         peekedResults(c.ffastParams.subFFTns.min, 0)(0)
       else {
         var headAtPh0 = Complex(0.0, 0.0)
