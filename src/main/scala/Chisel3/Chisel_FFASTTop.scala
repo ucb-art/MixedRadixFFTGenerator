@@ -65,8 +65,8 @@ class FFASTTopIO[T <: Data:RealBits](
 }
 
 class FFASTTop[T <: Data:RealBits](
-  adcDataType: T, 
-  dspDataType: T, 
+  adcDataType: => T, 
+  dspDataType: => T, 
   ffastParams: FFASTParams, 
   maxNumPeels: Int = 10) extends Module {
 
@@ -270,8 +270,8 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
 //////////////
 
 class FFASTTopWrapper[T <: Data:RealBits](
-    adcDataType: T, 
-    dspDataType: T, 
+    val adcDataType: T, 
+    val dspDataType: T, 
     val ffastParams: FFASTParams, 
     maxNumPeels: Int = 10) extends TopModule(usePads = false) {
   // Need to annotate top-level clk when using clk div
@@ -348,15 +348,15 @@ class FFASTTopSpec extends FlatSpec with Matchers {
       new FFASTTopWrapper(
         //adcDataType = DspReal(),
         //dspDataType = DspReal(),
-        adcDataType = FixedPoint(20.W, 8.BP), 
-        dspDataType = FixedPoint(24.W, 12.BP),
+        adcDataType = FixedPoint(23.W, 8.BP), 
+        dspDataType = FixedPoint(27.W, 12.BP),
         ffastParams = FFASTParams(
           // fftn = 20,
           // subFFTns = Seq(4, 5),
           // delays = Seq(Seq(0, 1)),
           fftn = 21600,
-          subFFTns = Seq(675),//, 800, 864),
-          delays = Seq(Seq(0)),//, 1, 3, 23)),
+          subFFTns = Seq(675, 800, 864),
+          delays = Seq(Seq(0, 1, 3, 23)),
           inputType = DIF
         ),
         maxNumPeels = 0
@@ -374,8 +374,8 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
       new FFASTTopWrapper(
         // adcDataType = DspReal(),
         // dspDataType = DspReal(),
-        adcDataType = FixedPoint(20.W, 8.BP), 
-        dspDataType = FixedPoint(24.W, 12.BP),
+        adcDataType = FixedPoint(23.W, 8.BP), 
+        dspDataType = FixedPoint(27.W, 12.BP),
         ffastParams = FFASTParams(
           // fftn = 20,
           // subFFTns = Seq(4, 5),
@@ -408,10 +408,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   val usedDebugStates = Seq("ADCCollectDebug")
   val numLoops = 3
-  val adcInInc = 1.toDouble / (1 << 12) //(1 << 8)
+  val adcInInc = 1.0 / (1 << 8) + 1.0 / (1 << 5)
   // Fastest clk
   val subsamplingT = c.ffastParams.subSamplingFactors.map(_._2).min
-  val adcInStart = -500.0
+  val adcInStart = -10000.0
   val checksPerformed = scala.collection.mutable.ArrayBuffer[String]()
 
   case class DebugNext(idx: Int, done: Boolean)
@@ -591,7 +591,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   def checkWriteResults(state: String, flipInput: Boolean): Unit = {
     peekedResults.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) } foreach { case ((n, ph), outVals) =>
-      val testRef = s"WRITE RESULTS: DebugState $state SubFFT $n, Phase $ph"
+      val testRef = s"WRITE RESULTS: DebugState $state SubFFT $n, Phase $ph, R/I Flipped? $flipInput"
       checksPerformed += testRef
 
       println(s" ***** $testRef ***** ")
@@ -612,7 +612,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           s". Expected ${firstFailed._2}. Got ${firstFailed._1}.")
       }
       // Terminate if fail
-      // require(pass)
+      require(pass)
     }
     clearResults()
   }
@@ -620,20 +620,25 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   reset(10)
   setupDebug(usedDebugStates)
 
-  /*for (loopNum <- 0 until numLoops) {
+  for (loopNum <- 0 until numLoops) {
     runADC()
     // Always run ADCCollectDebug -- gives you a sense of how to calculate stuff afterwards
     val stopIdx = if (usedDebugStates.contains("ADCCollectDebug")) -1 else 0
     runDebug("ADCCollectDebug", stopIdx)
     val adcInInitialVal = checkADCResults(loopNum)
     println(s"------- Loop $loopNum ADC In Initial Value: $adcInInitialVal")
-  }*/
+  }
 
   // Check that writing works
   runADC()
   runWriteDebug("ADCCollectDebug", flipInput = false)
   runDebug("ADCCollectDebug")
   checkWriteResults("ADCCollectDebug", flipInput = false)
+
+  runADC()
+  runWriteDebug("ADCCollectDebug", flipInput = true)
+  runDebug("ADCCollectDebug")
+  checkWriteResults("ADCCollectDebug", flipInput = true)
 
   println("\n\n *************************************************** ")
   checksPerformed.toSeq foreach { x => println(x) }
