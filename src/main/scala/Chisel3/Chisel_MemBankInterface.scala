@@ -4,6 +4,7 @@ import chisel3.util.Mux1H
 import dsptools.numbers._
 import dsptools.numbers.implicits._
 import chisel3.experimental._
+import barstools.tapeout.transforms._
 
 // Crossbar + Membanks
 
@@ -31,6 +32,7 @@ class MemBankInterfaceIO[T <: Data:Ring](dataType: T, maxNumBanks: Int, maxDepth
   override def cloneType = (new MemBankInterfaceIO(dataType, maxNumBanks, maxDepth)).asInstanceOf[this.type]
 }
 
+@chiselName
 class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) extends Module with DelayTracking {
   // Read data valid 1 clk cycle after read address
   // Have as many input ports as # of banks -- that then gets sorted
@@ -38,9 +40,28 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
   val io = IO(new MemBankInterfaceIO(dataType, maxNumBanks = bankLengths.length, maxDepth = bankLengths.max))
   val memBanks = Module(new MemBanks(dataType, bankLengths))
   withClock(io.clk) {
+
+
+
+    
+    val writeBankSel = Wire(CustomIndexedBundle(Seq.fill(memBanks.io.bank.elements.toSeq.length)(
+      CustomIndexedBundle(Seq.fill(io.i.length)(Bool()))
+    )))
+
+
+    /*val zero = Wire(dataType)//DspComplex.wire(Ring[T].zero, Ring[T].zero) 
+    zero.real := Ring[T].zero
+    zero.imag := Ring[T].zero*/
+
+/*
     val writeBankSel = memBanks.io.bank.elements.map { case (bankIdx, _) =>
       bankIdx.toInt -> io.i.map { case lane => lane.loc.bank === bankIdx.toInt.U }
     }.toMap
+*/
+
+    memBanks.io.bank.elements foreach { case (bankIdx, _) =>
+      io.i.zipWithIndex foreach { case (lane, laneIdx) => writeBankSel(bankIdx.toInt)(laneIdx) := (lane.loc.bank === bankIdx.toInt.U) }
+    }
 
     val readBankSel = memBanks.io.bank.elements.map { case (bankIdx, _) =>
       bankIdx.toInt -> io.o.map { case lane => lane.loc.bank === bankIdx.toInt.U }
@@ -50,9 +71,30 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
 
       val bankIdx = bankIdxS.toInt
 
-      bankIo.din := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
+      /*bankIo.din := Mux1H(Seq(
+        writeBankSel(bankIdx)(0) -> io.i(0).din//, //right
+        //writeBankSel(bankIdx)(1) -> io.i(1).din
+      ))*///io.i(0).din
+
+
+      /*bankIo.din := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
         (writeBankSel(bankIdx)(laneIdx), lane.din)
-      })
+      })*/
+
+
+      //println("xxx" + bankIdx)
+      //bankIo.din := Mux(writeBankSel(bankIdx)(1), io.i(1).din, Mux(writeBankSel(bankIdx)(0), io.i(0).din, zero))
+
+
+
+      bankIo.din := Mux1H(Seq(
+        writeBankSel(bankIdx)(0) -> io.i(0).din,
+        writeBankSel(bankIdx)(1) -> io.i(1).din
+      ))
+
+
+
+
       bankIo.we := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
         (writeBankSel(bankIdx)(laneIdx), lane.we)
       })
