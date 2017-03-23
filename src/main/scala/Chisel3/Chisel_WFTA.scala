@@ -24,6 +24,8 @@ abstract class WFTAStageType
 case object WFTAMul extends WFTAStageType
 case object WFTAAdd extends WFTAStageType
 
+
+/*
 // TODO: Make an only real version (only real inputs)
 // TODO: Already stated -- rename FactorizationParams
 class WFTAIO[T <: Data:RealBits](dspType: => T, fftParams: FactorizationParams) extends Bundle {
@@ -39,6 +41,8 @@ class WFTAIO[T <: Data:RealBits](dspType: => T, fftParams: FactorizationParams) 
   val clk = Input(Clock())
   override def cloneType = (new WFTIO(dspType, fftParams)).asInstanceOf[this.type]
 }
+
+
 
 @chiselName
 class WFTA[T <: Data:RealBits](dspType: => T, fftParams: FactorizationParams) extends Module with hasContext with DelayTracking {
@@ -329,7 +333,12 @@ class WFTA[T <: Data:RealBits](dspType: => T, fftParams: FactorizationParams) ex
 
 
 
-/*
+
+
+
+
+
+
   val n5a = n4a + (n4b,dly(5))
   val n5b = n4a - (n4b,dly(5))
   val n5c = n4a - (n4d,dly(5))
@@ -363,7 +372,7 @@ class WFTA[T <: Data:RealBits](dspType: => T, fftParams: FactorizationParams) ex
   )
   debug(y)
 
-*/
+
 
 
 
@@ -385,4 +394,5 @@ class WFTA[T <: Data:RealBits](dspType: => T, fftParams: FactorizationParams) ex
 
   }
 }
+*/
 // todo: externally set inputs to zero when not doing FFT
