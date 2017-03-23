@@ -339,9 +339,9 @@ class FFASTTopSpec extends FlatSpec with Matchers {
   it should "read in ADC inputs" in {
 
     val opt = new DspTesterOptionsManager {
-      dspTesterOptions = TestParams.options1TolWaveformTBVCS.dspTesterOptions
-      testerOptions = TestParams.options1TolWaveformTBVCS.testerOptions
-      commonOptions = TestParams.options1TolWaveformTBVCS.commonOptions.copy(targetDirName = s"test_run_dir/FFASTTopTB")
+      dspTesterOptions = TestParams.options1TolWaveformTB.dspTesterOptions
+      testerOptions = TestParams.options1TolWaveformTB.testerOptions
+      commonOptions = TestParams.options1TolWaveformTB.commonOptions.copy(targetDirName = s"test_run_dir/FFASTTopTB")
     }
 
     dsptools.Driver.execute(() => 

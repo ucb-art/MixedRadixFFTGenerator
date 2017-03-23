@@ -41,60 +41,36 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
   val memBanks = Module(new MemBanks(dataType, bankLengths))
   withClock(io.clk) {
 
-
-
-    
-    val writeBankSel = Wire(CustomIndexedBundle(Seq.fill(memBanks.io.bank.elements.toSeq.length)(
-      CustomIndexedBundle(Seq.fill(io.i.length)(Bool()))
+    // Wire to give a better name :\
+    val writeBankSel = Wire(CustomIndexedBundle(
+      // TODO: Make length helper in CustomIndexedBundle
+      Seq.fill(memBanks.io.bank.elements.toSeq.length)(
+        CustomIndexedBundle(Seq.fill(io.i.length)(Bool()))
     )))
-
-
-    /*val zero = Wire(dataType)//DspComplex.wire(Ring[T].zero, Ring[T].zero) 
-    zero.real := Ring[T].zero
-    zero.imag := Ring[T].zero*/
-
-/*
+    // Same length
+    val readBankSel = Wire(writeBankSel.cloneType)
+    /*
     val writeBankSel = memBanks.io.bank.elements.map { case (bankIdx, _) =>
       bankIdx.toInt -> io.i.map { case lane => lane.loc.bank === bankIdx.toInt.U }
     }.toMap
-*/
-
-    memBanks.io.bank.elements foreach { case (bankIdx, _) =>
-      io.i.zipWithIndex foreach { case (lane, laneIdx) => writeBankSel(bankIdx.toInt)(laneIdx) := (lane.loc.bank === bankIdx.toInt.U) }
-    }
-
     val readBankSel = memBanks.io.bank.elements.map { case (bankIdx, _) =>
       bankIdx.toInt -> io.o.map { case lane => lane.loc.bank === bankIdx.toInt.U }
     }.toMap
+    */
 
     memBanks.io.bank.elements foreach { case (bankIdxS, bankIo) =>
 
       val bankIdx = bankIdxS.toInt
 
-      /*bankIo.din := Mux1H(Seq(
-        writeBankSel(bankIdx)(0) -> io.i(0).din//, //right
-        //writeBankSel(bankIdx)(1) -> io.i(1).din
-      ))*///io.i(0).din
-
-
-      /*bankIo.din := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
+      io.i.zipWithIndex foreach { case (lane, laneIdx) => 
+        writeBankSel(bankIdx)(laneIdx) := (lane.loc.bank === bankIdx.U) 
+      }
+      io.o.zipWithIndex foreach { case (lane, laneIdx) => 
+        readBankSel(bankIdx)(laneIdx) := (lane.loc.bank === bankIdx.U) 
+      }
+      bankIo.din := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
         (writeBankSel(bankIdx)(laneIdx), lane.din)
-      })*/
-
-
-      //println("xxx" + bankIdx)
-      //bankIo.din := Mux(writeBankSel(bankIdx)(1), io.i(1).din, Mux(writeBankSel(bankIdx)(0), io.i(0).din, zero))
-
-
-
-      bankIo.din := Mux1H(Seq(
-        writeBankSel(bankIdx)(0) -> io.i(0).din,
-        writeBankSel(bankIdx)(1) -> io.i(1).din
-      ))
-
-
-
-
+      })
       bankIo.we := Mux1H(io.i.zipWithIndex.map { case (lane, laneIdx) => 
         (writeBankSel(bankIdx)(laneIdx), lane.we)
       })
@@ -108,6 +84,7 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) exten
         (readBankSel(bankIdx)(laneIdx), lane.re)
       })
       bankIo.clk := io.clk
+      
     }
 
     io.o.zipWithIndex foreach { case (lane, laneIdx) =>
