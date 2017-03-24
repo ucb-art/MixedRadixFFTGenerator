@@ -14,6 +14,7 @@ object Mux1H {
   def apply[T <: Data](sel: Seq[Bool], in: Seq[T]): T =
     apply(sel zip in)
   def apply[T <: Data](in: Iterable[(Bool, T)]): T = {
+    require(in.toSeq.length > 1, "Double check that Mux1H behavior is right! When in length = 1, it'll return in...")
     val (sels, possibleOuts) = in.unzip
     val out = possibleOuts.head match {
       case _: DspComplex[_] =>

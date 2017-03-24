@@ -1,6 +1,5 @@
 package dspblocks.fft
 import chisel3._
-import chisel3.util.Mux1H
 import dsptools.numbers._
 import dsptools.numbers.implicits._
 import chisel3.experimental._

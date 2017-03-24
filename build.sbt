@@ -63,4 +63,4 @@ scalacOptions ++= ops
 // mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
 // mainClass in (Compile, run) := Some("FFT.DebugFFT")
 // mainClass in (Compile, run) := Some("dspblocks.fft.PeelingScheduling")
-mainClass in (Compile, run) := Some("dspblocks.fft.FFASTTop")
+mainClass in (Compile, run) := Some("dspblocks.fft.WFTATest")

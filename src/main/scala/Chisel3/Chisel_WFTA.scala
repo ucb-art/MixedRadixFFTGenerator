@@ -79,15 +79,36 @@ class WFTATester[T <: Data:RealBits](c: WFTAWrapper[T]) extends DspTester(c) {
 
   val usedRads = c.mod.usedRads 
   val tests = for (rad <- usedRads) yield {
-    val partialInputs = DenseVector(ins.take(rad).toArray)
-    val partialOutputs = fourierTr(partialInputs)
-    val padAmount = ins.length - partialInputs.length
-    val pad = Seq.fill(padAmount)(Complex(0.0, 0.0))
-    WFTATest(
-      rad = rad,
-      in = partialInputs.toArray.toSeq ++ pad,
-      out = partialOutputs.toArray.toSeq ++ pad
-    )
+    if (rad != 2) {
+      val partialInputs = DenseVector(ins.take(rad).toArray)
+      val partialOutputs = fourierTr(partialInputs)
+      val padAmount = ins.length - partialInputs.length
+      // Should be ignored
+      val padIn = Seq.fill(padAmount)(Complex(0.12345, -0.12345))
+      val padOut = Seq.fill(padAmount)(Complex(0.0, 0.0))
+      WFTATest(
+        rad = rad,
+        in = partialInputs.toArray.toSeq ++ padIn,
+        out = partialOutputs.toArray.toSeq ++ padOut
+      )
+    }
+    else {
+      val partialInputs1 = DenseVector(ins.take(rad).toArray)
+      val partialInputs2 = DenseVector(ins.drop(rad).take(rad).toArray)
+      val partialOutputs1 = fourierTr(partialInputs1)
+      val partialOutputs2 = fourierTr(partialInputs2)
+      val padAmount = ins.length - 2 * partialInputs1.length
+      // Should be ignored
+      val padIn = Seq.fill(padAmount)(Complex(0.12345, -0.12345))
+      val padOut = Seq.fill(padAmount)(Complex(0.0, 0.0))
+      WFTATest(
+        rad = rad,
+        in = (partialInputs1.toArray.toSeq ++ partialInputs2.toArray.toSeq) ++ padIn,
+        out = (partialOutputs1.toArray.toSeq ++ partialOutputs2.toArray.toSeq) ++ padOut
+      )
+    }
+    // TODO: Generalize
+    
   }
 
   val delay = c.mod.moduleDelay
@@ -120,7 +141,7 @@ class WFTASpec extends FlatSpec with Matchers {
   behavior of "WFTA"
   it should "compute small FFTs" in {
     // Need to alter context externally
-    DspContext.alter(DspContext.current.copy(numMulPipes = 0, numAddPipes = 0)) { 
+    DspContext.alter(DspContext.current.copy(numMulPipes = 1, numAddPipes = 0)) { 
       val opt = new DspTesterOptionsManager {
         dspTesterOptions = TestParams.options1TolWaveform.dspTesterOptions.copy(
           fixTolLSBs = 3
@@ -132,8 +153,8 @@ class WFTASpec extends FlatSpec with Matchers {
       dsptools.Driver.execute(() => 
         new WFTAWrapper(
           dspDataType = DspReal(),
-          //dspDataType = FixedPoint(27.W, 12.BP),
-          fftParams = FactorizationParams(FFTNs(3))
+          //dspDataType = FixedPoint(26.W, 24.BP),
+          fftParams = FactorizationParams(FFTNs(2, 3, 4, 5, 7))
         ), opt
       ) { c =>
         new WFTATester(c)
@@ -225,7 +246,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     // TODO: Pick better adder (reuse rather than add more)
     val r2r5i = r2i | r5i
 
-    val zero = DspComplex.wire(dspDataType)
+    val zero = Wire(DspComplex(dspDataType))
     zero.real := Ring[T].zero
     zero.imag := Ring[T].zero
     // Assign internal "inputs" to 0 if >= max used radix
@@ -305,15 +326,23 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val c3 = -2 * Pi / 7
     val C70 = dspDataType.fromDouble((cos(c3) + cos(2 * c3) + cos(3 * c3)) / 3 - 1)
     val C71 = dspDataType.fromDouble((2 * cos(c3) - cos(2 * c3) - cos(3 * c3)) / 3)
-    val C72 = dspDataType.fromDouble((cos(c3) + cos(2 * c3) - 2 * cos(3 * c3)) / 3)
-    val C73 = dspDataType.fromDouble((cos(c3) - 2 * cos(2 * c3) + cos(3 * c3)) / 3)
+    // TODO: Does forcing with prevent optimization? What on earth is up with Chisel and undeeclared reference?
+    // WithFixedWidth guarantees you can fully contain the constant
+    val C72 = Wire(dspDataType)
+    C72 := dspDataType.fromDoubleWithFixedWidth((cos(c3) + cos(2 * c3) - 2 * cos(3 * c3)) / 3)
+    val C73 =  Wire(dspDataType)
+    C73 := dspDataType.fromDoubleWithFixedWidth((cos(c3) - 2 * cos(2 * c3) + cos(3 * c3)) / 3)
     val C74 = dspDataType.fromDouble((sin(c3) + sin(2 * c3) - sin(3 * c3)) / 3)
     val C75 = dspDataType.fromDouble((2 * sin(c3) - sin(2 * c3) + sin(3 * c3)) / 3)
-    val C76 = dspDataType.fromDouble((sin(c3) + sin(2 * c3) + 2 * sin(3 * c3)) / 3)
+    val C76 =  Wire(dspDataType)
+    C76 := dspDataType.fromDoubleWithFixedWidth((sin(c3) + sin(2 * c3) + 2 * sin(3 * c3)) / 3)
     val C77 = dspDataType.fromDouble((sin(c3) - 2 * sin(2 * c3) - sin(3 * c3)) / 3)
 
     // TODO: Does using Ring[T].one vs. dspDataType.fromDouble(1.0) affect anything?
     val one = dspDataType.fromDouble(1.0)
+    // TODO: What the heck is going on? keeps saying "Reference C72 is not declared", etc.
+    val scalarZero = Wire(dspDataType)
+    scalarZero := dspDataType.fromDouble(0.0)
 
     // TODO: Should this be a Vec?
 
@@ -333,8 +362,8 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       r5m -> C51,
       r7m -> C71
     ))
-    val A2 = Mux(r7m, C72, Ring[T].zero)
-    val A3 = Mux(r7m, C73, Ring[T].zero) 
+    val A2 = Mux(r7m, C72, scalarZero)
+    val A3 = Mux(r7m, C73, scalarZero) 
     val A4 = Mux1H(Seq(
       r3m -> C31,
       r4m -> C41,
@@ -347,7 +376,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       r7m -> C75,
       r2m -> one
     ))
-    val A6 = Mux(r7m, C76, Ring[T].zero)
+    val A6 = Mux(r7m, C76, scalarZero)
     val A7 = Mux1H(Seq(
       r4m -> one,
       r5m -> C54, 
@@ -359,6 +388,17 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val MulI7 = ~r4m
     val MulI5 = ~r2r4m
 
+    def Mux1H0[T <: Data:RealBits](sel: Bool, in: DspComplex[T]): DspComplex[T] = {
+      val zeroR = Wire(in.real.cloneType)
+      zeroR := zeroR.fromDoubleWithFixedWidth(0.0)
+      val zeroI = Wire(in.imag.cloneType)
+      zeroI := zeroI.fromDoubleWithFixedWidth(0.0)
+      val out = Wire(in.cloneType)
+      out.real := Mux(sel, in.real, zeroR)
+      out.imag := Mux(sel, in.imag, zeroI)
+      out
+    }
+
     // TODO: Make less copy-paste-y
     // Butterfly diagram (unified WFTA) stage 0 - 7
     val (n0a, n0b, n0c, n0d, n0e, n0f, n0g, n0cTemp, n0dTemp) = DspContext.withNumAddPipes(internalDelays(0)) {
@@ -368,8 +408,9 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n0dTemp = x(4) context_- x(3)
       val n0e = x(2) context_+ x(5)
       val nr2_1 = ~rad(0)(2)                                // Don't propagate result (so it won't mess up other results)
-      val n0c = Mux(nr2_1, n0cTemp, zero)                   // **
-      val n0d = Mux(nr2_1, n0dTemp, zero)    
+      // TODO: Combat can't create Mux with non-equivalent types dsptools.numbers.DspComplex@440 and dsptools.numbers.DspComplex@9e    
+      val n0c = Mux1H0(nr2_1, n0cTemp)                      // **
+      val n0d = Mux1H0(nr2_1, n0dTemp)  
       val n0f = x(2) context_- x(5)
       val n0g = ShiftRegister(x(0), internalDelays(0)) 
       (n0a, n0b, n0c, n0d, n0e, n0f, n0g, n0cTemp, n0dTemp)   
@@ -379,9 +420,10 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n1a = n0a context_+ n0c
       val n1b = n0a context_- n0c
       val n1c = n0e context_- n0a
-      val n1d = n0cTemp context_- n0e                               // ** Can pass through
-      val n1e = n0dTemp context_+ Mux(s1_1, n0b, zero)              // **
-      val n1f = n0b context_- Mux(s0_1, n0d, zero)   
+      val n1d = n0cTemp context_- n0e                                   // ** Can pass through
+      // TODO: What's going on?!
+      val n1e = n0dTemp context_+ Mux1H0(s1_1, n0b)                // **
+      val n1f = n0b context_- Mux1H0(s0_1, n0d)   
       val n1g = n0f context_- n0b
       val n1h = n0d context_- n0f
       val n1i = ShiftRegister(n0e, internalDelays(1))
@@ -447,8 +489,12 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val n3h = context_complex_scalar_reconfig_*(n2c, A7, bIsImag = MulI7)
     val n3i = DspContext.withNumAddPipes(context.numMulPipes) { n2i context_+ n2a }
 
+    // TODO: can't create Mux with FixedPoint with differing binaryPoints -- not sure why that needs
+    // to be illegal...
+
     val (n4a, n4b, n4c, n4d, n4e, n4f, n4g, n4h, n4i) = DspContext.withNumAddPipes(internalDelays(4)) {
-      val n4a = n3a context_+ Mux(s3_4, n3i, zero)     
+      // TODO: Same :(
+      val n4a = n3a context_+ Mux1H0(s3_4, n3i)     
       val n4b = ShiftRegister(n3b, internalDelays(4))
       val n4c = ShiftRegister(n3c, internalDelays(4))
       val n4d = ShiftRegister(n3d, internalDelays(4))
@@ -464,10 +510,15 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n5a = n4a context_+ n4b
       val n5b = n4a context_- n4b
       val n5c = n4a context_- n4d
-      val n5d = n4e context_+ Mux(s2_5, n4f, zero)    
+      val n5d = n4e context_+ Mux1H0(s2_5, n4f)    
       val n5e = n4e context_- n4f
-      val n5f = Mux(s1_5, n4e, zero) context_- n4h
-      val n5g = ShiftRegister(Mux(s1_5, n4h, n4g), internalDelays(5))
+      val n5f = Mux1H0(s1_5, n4e) context_- n4h
+      //val n5g = ShiftRegister(Mux(s1_5, n4h, n4g), internalDelays(5))
+      // TODO: ...
+      val temp3 = Wire(if (n4h.getWidth > n4g.getWidth) n4h.cloneType else n4g.cloneType)
+      temp3.real := Mux(s1_5, n4h.real, n4g.real)
+      temp3.imag := Mux(s1_5, n4h.imag, n4g.imag)
+      val n5g = ShiftRegister(temp3, internalDelays(5))
       val n5h = ShiftRegister(n4d, internalDelays(5)) 
       val n5i = ShiftRegister(n4c, internalDelays(5))
       val n5j = ShiftRegister(n4g, internalDelays(5)) 
@@ -480,7 +531,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n6b = n5b context_- n5i
       val n6c = n5i context_+ n5c
       val n6d = n5d context_+ n5g
-      val n6e = n5e context_- Mux(s0_6, n5j, zero)
+      val n6e = n5e context_- Mux1H0(s0_6, n5j)
       val n6f = n5j context_+ n5f
       val n6g = ShiftRegister(n5k, internalDelays(6))
       (n6a, n6b, n6c, n6d, n6e, n6f, n6g)
@@ -496,7 +547,10 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
         n6b context_- n6e,
         n6a context_- n6d
       )
-      val yNodes = Wire(CustomIndexedBundle(yScala.map(y => y.cloneType)))
+      // TODO: Specialize trim type? -- here's where I bring it down
+      // Mux1H also needs fixed BP, therefore can't have different BPs in CIB
+      // val yNodes = Wire(CustomIndexedBundle(yScala.map(y => y.cloneType)))
+      val yNodes = Wire(Vec(yScala.length, DspComplex(dspDataType)))   
       yScala.zipWithIndex foreach { case (y, idx) => yNodes(idx) := y }
       yNodes
     }
@@ -536,11 +590,14 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
         r7o -> y(4)
       ))
 
-    if (maxRad > 5)
-      io.y(5) := Mux(r7o, y(5), zero)    
+    // TODO: ... Silly me. I should've made a helper function to hack this
+    if (maxRad > 5){
+      io.y(5) := Mux1H0(r7o, y(5))    
+    }
 
-    if (maxRad > 6)
-      io.y(6) := Mux(r7o, y(6), zero)
+    if (maxRad > 6) {
+      io.y(6) := Mux1H0(r7o, y(6))
+    }
 
     io.currRadOut.elements foreach { case (key, port) =>
       // TODO: Be smarter...
