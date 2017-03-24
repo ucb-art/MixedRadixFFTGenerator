@@ -146,15 +146,15 @@ class WFTASpec extends FlatSpec with Matchers {
         dspTesterOptions = TestParams.options1TolWaveform.dspTesterOptions.copy(
           fixTolLSBs = 3
         )
-        testerOptions = TestParams.options1TolWaveform.testerOptions
+        testerOptions = TestParams.options1TolFir.testerOptions
         commonOptions = TestParams.options1TolWaveform.commonOptions.copy(targetDirName = s"test_run_dir/WFTATB")
       }
 
       dsptools.Driver.execute(() => 
         new WFTAWrapper(
-          dspDataType = DspReal(),
-          //dspDataType = FixedPoint(26.W, 24.BP),
-          fftParams = FactorizationParams(FFTNs(2, 3, 4, 5, 7))
+          //dspDataType = DspReal(),
+          dspDataType = FixedPoint(28.W, 24.BP),
+          fftParams = FactorizationParams(FFTNs(7))//2, 3, 4, 5, 7))
         ), opt
       ) { c =>
         new WFTATester(c)
@@ -330,16 +330,17 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     // WithFixedWidth guarantees you can fully contain the constant
     val C72 = Wire(dspDataType)
     C72 := dspDataType.fromDoubleWithFixedWidth((cos(c3) + cos(2 * c3) - 2 * cos(3 * c3)) / 3)
-    val C73 =  Wire(dspDataType)
+    val C73 = Wire(dspDataType)
     C73 := dspDataType.fromDoubleWithFixedWidth((cos(c3) - 2 * cos(2 * c3) + cos(3 * c3)) / 3)
     val C74 = dspDataType.fromDouble((sin(c3) + sin(2 * c3) - sin(3 * c3)) / 3)
     val C75 = dspDataType.fromDouble((2 * sin(c3) - sin(2 * c3) + sin(3 * c3)) / 3)
-    val C76 =  Wire(dspDataType)
+    val C76 = Wire(dspDataType)
     C76 := dspDataType.fromDoubleWithFixedWidth((sin(c3) + sin(2 * c3) + 2 * sin(3 * c3)) / 3)
     val C77 = dspDataType.fromDouble((sin(c3) - 2 * sin(2 * c3) - sin(3 * c3)) / 3)
 
     // TODO: Does using Ring[T].one vs. dspDataType.fromDouble(1.0) affect anything?
-    val one = dspDataType.fromDouble(1.0)
+    val one = Wire(dspDataType)
+    one := dspDataType.fromDoubleWithFixedWidth(1.0)
     // TODO: What the heck is going on? keeps saying "Reference C72 is not declared", etc.
     val scalarZero = Wire(dspDataType)
     scalarZero := dspDataType.fromDouble(0.0)
@@ -349,7 +350,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val maxConstantWidth = 
       Seq(C30, C31, C41, C50, C51, C52, C53, C54, C70, C71, C72, C73, C74, C75, C76, C77).map(x => x.getWidth).max
     // one should be the largest represented constant
-    require(maxConstantWidth <= one.getWidth, "Cannot chop off MSBs")
+    require(maxConstantWidth <= one.getWidth, s"Cannot chop off MSBs. $maxConstantWidth > ${one.getWidth}")
     // Select between constants @ multiplier
     // val A = Wire(Vec(WFTA.getValidRad.max + 1, one.cloneType))
     
