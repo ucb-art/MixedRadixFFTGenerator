@@ -15,25 +15,7 @@ object Mux1H {
     apply(sel zip in)
   def apply[T <: Data](in: Iterable[(Bool, T)]): T = {
     require(in.toSeq.length > 1, "Double check that Mux1H behavior is right! When in length = 1, it'll return in...")
-    val (sels, possibleOutsTemp) = in.unzip
-
-
-
-
-
-
-    val maxWidth = possibleOutsTemp.map(x => x.getWidth).max
-    val cloneProto = possibleOutsTemp.find(x => x.getWidth == maxWidth).get
-    val possibleOuts = possibleOutsTemp.map(x => Wire(cloneProto.cloneType))
-    possibleOuts.zip(possibleOutsTemp) foreach { case (lhs, rhs) => lhs := rhs }
-
-
-
-
-
-
-
-
+    val (sels, possibleOuts) = in.unzip
     val out = possibleOuts.head match {
       case _: DspComplex[_] =>
         val cmplxs = scala.collection.mutable.ArrayBuffer[DspComplex[_]]()
