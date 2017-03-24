@@ -5,7 +5,6 @@ import chisel3.experimental._
 import dsptools.numbers._
 import dsptools.numbers.implicits._
 import barstools.tapeout.TestParams
-import dsptools.DspTester
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.transforms.pads._
 import barstools.tapeout.transforms.clkgen._
