@@ -9,6 +9,7 @@ import chisel3.experimental._
 // To get Verilator to actually do something correct, hopefully
 // There was a horrible bug where when it cat the real and imaginary parts together,
 // the VCD waveform would be wrong and PeekPoketTester would give garbage data for positive real
+// WARNING: Mux1H with Seq of length 1 returns the input instead of zero!
 object Mux1H {
   def apply[T <: Data](sel: Seq[Bool], in: Seq[T]): T =
     apply(sel zip in)

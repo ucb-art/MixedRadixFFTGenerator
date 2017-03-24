@@ -29,6 +29,16 @@ object TestParams {
     testerOptions = testerOptionsGlobal
   }
 
+  val options1TolFir = new DspTesterOptionsManager {
+    dspTesterOptions = DspTesterOptions(
+        fixTolLSBs = 1,
+        genVerilogTb = false,
+        isVerbose = true)
+    testerOptions = testerOptionsGlobal.copy(
+      backendName = "firrtl"
+    )
+  }
+
   val options1TolWaveform = new DspTesterOptionsManager {
     dspTesterOptions = DspTesterOptions(
         fixTolLSBs = 1,

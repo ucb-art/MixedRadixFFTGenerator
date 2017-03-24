@@ -77,7 +77,8 @@ class WFTATester[T <: Data:RealBits](c: WFTAWrapper[T]) extends DspTester(c) {
     out: Seq[Complex]
   )
 
-  val tests = for (rad <- WFTA.getValidRad) yield {
+  val usedRads = c.mod.usedRads 
+  val tests = for (rad <- usedRads) yield {
     val partialInputs = DenseVector(ins.take(rad).toArray)
     val partialOutputs = fourierTr(partialInputs)
     val padAmount = ins.length - partialInputs.length
@@ -90,25 +91,25 @@ class WFTATester[T <: Data:RealBits](c: WFTAWrapper[T]) extends DspTester(c) {
   }
 
   val delay = c.mod.moduleDelay
-  // Circle around, only works for < 7
-  val testsRightPadded = tests ++ tests.take(delay)
+  val zeroLanes = Seq.fill(usedRads.max)(Complex(0.0, 0.0))
+  // Pad vectors for delay reasons
+  val testsRightPadded = tests ++ Seq.fill(delay)(WFTATest(usedRads.min, zeroLanes, zeroLanes))
 
   for ((test, t) <- testsRightPadded.zipWithIndex) {
     // Default
-    WFTA.getValidRad foreach { rad => poke(c.io.currRad(rad), false.B) }
+    usedRads foreach { rad => poke(c.io.currRad(rad), false.B) }
     poke(c.io.currRad(test.rad), true.B)
     c.io.x.zipWithIndex foreach { case (x, idx) => poke(x, test.in(idx)) }
     if (t >= delay) {
       val outT = t - delay
       c.io.y.zipWithIndex foreach { case (y, idx) => expect(y, tests(outT).out(idx)) }
-      WFTA.getValidRad foreach { rad =>
+      usedRads foreach { rad =>
         val currRad = tests(outT).rad
         if (currRad == rad)
           expect(c.io.currRadOut(rad), true.B)
         else 
           expect(c.io.currRadOut(rad), false.B)
       }
-      
     }
     step(1)
   }
@@ -119,20 +120,20 @@ class WFTASpec extends FlatSpec with Matchers {
   behavior of "WFTA"
   it should "compute small FFTs" in {
     // Need to alter context externally
-    DspContext.alter(DspContext.current.copy(numMulPipes = 1, numAddPipes = 0)) { 
+    DspContext.alter(DspContext.current.copy(numMulPipes = 0, numAddPipes = 0)) { 
       val opt = new DspTesterOptionsManager {
-        dspTesterOptions = TestParams.options1TolWaveformTB.dspTesterOptions.copy(
+        dspTesterOptions = TestParams.options1TolWaveform.dspTesterOptions.copy(
           fixTolLSBs = 3
         )
-        testerOptions = TestParams.options1TolWaveformTB.testerOptions
-        commonOptions = TestParams.options1TolWaveformTB.commonOptions.copy(targetDirName = s"test_run_dir/WFTATB")
+        testerOptions = TestParams.options1TolWaveform.testerOptions
+        commonOptions = TestParams.options1TolWaveform.commonOptions.copy(targetDirName = s"test_run_dir/WFTATB")
       }
 
       dsptools.Driver.execute(() => 
         new WFTAWrapper(
           dspDataType = DspReal(),
           //dspDataType = FixedPoint(27.W, 12.BP),
-          fftParams = FactorizationParams(FFTNs(2, 3, 4, 5, 7))
+          fftParams = FactorizationParams(FFTNs(3))
         ), opt
       ) { c =>
         new WFTATester(c)
@@ -153,7 +154,7 @@ class WFTAWrapper[T <: Data:RealBits](dspDataType: => T, val fftParams: Factoriz
 }
 
 // TODO: @chiselName incompatible w/ context_complex_scalar_* defined twice
-// @chiselName
+@chiselName
 class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams) extends Module 
     with hasContext with DelayTracking {
 
@@ -224,20 +225,23 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     // TODO: Pick better adder (reuse rather than add more)
     val r2r5i = r2i | r5i
 
-    val zero = DspComplex(Ring[T].zero, Ring[T].zero)
-
+    val zero = DspComplex.wire(dspDataType)
+    zero.real := Ring[T].zero
+    zero.imag := Ring[T].zero
     // Assign internal "inputs" to 0 if >= max used radix
     val xp = Wire(Vec(WFTA.getValidRad.max, DspComplex(dspDataType)))
     xp.zipWithIndex foreach { case (x, idx) =>
-      if (idx >= io.maxRad) x := zero
+      if (idx >= io.maxRad) {
+        x := zero
+      }
       else x := ShiftRegister(io.x(idx), inPipe)
     }
     // TODO: Move shift register here?
     // Input mux (see ICASSP paper for mapping)
     val x = Wire(xp.cloneType)
-    x(0) := Mux1H(Seq((~r2r4i) -> xp(0)))
+    x(0) := Mux(~r2r4i, xp(0), zero)
     x(1) := Mux(r2r4i, xp(0), xp(1))
-    x(2) := Mux1H(Seq(r7i -> xp(2)))
+    x(2) := Mux(r7i, xp(2), zero)
     x(3) := Mux1H(Seq(
       r2r5i -> xp(3),                         // To support 2x radix 2
       r4r7i -> xp(3)
@@ -247,7 +251,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       r2r5i -> xp(2),                         // To support 2x radix 2
       r7i -> xp(4)
     ))
-    x(5) := Mux1H(Seq(r7i -> xp(5)))
+    x(5) := Mux(r7i, xp(5), zero)
     x(6) := Mux1H(Seq(
       r2i -> xp(1),
       r5i -> xp(4),
@@ -329,12 +333,8 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       r5m -> C51,
       r7m -> C71
     ))
-    val A2 = Mux1H(Seq(
-      r7m -> C72
-    ))
-    val A3 = Mux1H(Seq(
-      r7m -> C73
-    ))
+    val A2 = Mux(r7m, C72, Ring[T].zero)
+    val A3 = Mux(r7m, C73, Ring[T].zero) 
     val A4 = Mux1H(Seq(
       r3m -> C31,
       r4m -> C41,
@@ -347,9 +347,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       r7m -> C75,
       r2m -> one
     ))
-    val A6 = Mux1H(Seq(
-      r7m -> C76
-    ))
+    val A6 = Mux(r7m, C76, Ring[T].zero)
     val A7 = Mux1H(Seq(
       r4m -> one,
       r5m -> C54, 
@@ -370,8 +368,8 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n0dTemp = x(4) context_- x(3)
       val n0e = x(2) context_+ x(5)
       val nr2_1 = ~rad(0)(2)                                // Don't propagate result (so it won't mess up other results)
-      val n0c = Mux1H(Seq(nr2_1 -> n0cTemp))                // **
-      val n0d = Mux1H(Seq(nr2_1 -> n0dTemp))
+      val n0c = Mux(nr2_1, n0cTemp, zero)                   // **
+      val n0d = Mux(nr2_1, n0dTemp, zero)    
       val n0f = x(2) context_- x(5)
       val n0g = ShiftRegister(x(0), internalDelays(0)) 
       (n0a, n0b, n0c, n0d, n0e, n0f, n0g, n0cTemp, n0dTemp)   
@@ -382,8 +380,8 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n1b = n0a context_- n0c
       val n1c = n0e context_- n0a
       val n1d = n0cTemp context_- n0e                               // ** Can pass through
-      val n1e = n0dTemp context_+ Mux1H(Seq(s1_1 -> n0b))           // **
-      val n1f = n0b context_- Mux1H(Seq(s0_1 -> n0d))  
+      val n1e = n0dTemp context_+ Mux(s1_1, n0b, zero)              // **
+      val n1f = n0b context_- Mux(s0_1, n0d, zero)   
       val n1g = n0f context_- n0b
       val n1h = n0d context_- n0f
       val n1i = ShiftRegister(n0e, internalDelays(1))
@@ -450,7 +448,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val n3i = DspContext.withNumAddPipes(context.numMulPipes) { n2i context_+ n2a }
 
     val (n4a, n4b, n4c, n4d, n4e, n4f, n4g, n4h, n4i) = DspContext.withNumAddPipes(internalDelays(4)) {
-      val n4a = n3a context_+ Mux1H(Seq(s3_4 -> n3i))       
+      val n4a = n3a context_+ Mux(s3_4, n3i, zero)     
       val n4b = ShiftRegister(n3b, internalDelays(4))
       val n4c = ShiftRegister(n3c, internalDelays(4))
       val n4d = ShiftRegister(n3d, internalDelays(4))
@@ -466,9 +464,9 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n5a = n4a context_+ n4b
       val n5b = n4a context_- n4b
       val n5c = n4a context_- n4d
-      val n5d = n4e context_+ Mux1H(Seq(s2_5 -> n4f))
+      val n5d = n4e context_+ Mux(s2_5, n4f, zero)    
       val n5e = n4e context_- n4f
-      val n5f = Mux1H(Seq(s1_5 -> n4e)) context_- n4h
+      val n5f = Mux(s1_5, n4e, zero) context_- n4h
       val n5g = ShiftRegister(Mux(s1_5, n4h, n4g), internalDelays(5))
       val n5h = ShiftRegister(n4d, internalDelays(5)) 
       val n5i = ShiftRegister(n4c, internalDelays(5))
@@ -482,7 +480,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n6b = n5b context_- n5i
       val n6c = n5i context_+ n5c
       val n6d = n5d context_+ n5g
-      val n6e = n5e context_- Mux1H(Seq(s0_6 -> n5j))
+      val n6e = n5e context_- Mux(s0_6, n5j, zero)
       val n6f = n5j context_+ n5f
       val n6g = ShiftRegister(n5k, internalDelays(6))
       (n6a, n6b, n6c, n6d, n6e, n6f, n6g)
@@ -539,16 +537,20 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       ))
 
     if (maxRad > 5)
-      io.y(5) := Mux1H(Seq(r7o -> y(5)))
+      io.y(5) := Mux(r7o, y(5), zero)    
 
     if (maxRad > 6)
-      io.y(6) := Mux1H(Seq(r7o -> y(6)))
+      io.y(6) := Mux(r7o, y(6), zero)
 
-    io.currRadOut(2) := r2o
-    io.currRadOut(3) := r3o
-    io.currRadOut(4) := r4o
-    io.currRadOut(5) := r5o
-    io.currRadOut(7) := r7o
+    io.currRadOut.elements foreach { case (key, port) =>
+      // TODO: Be smarter...
+      if (key == "2") io.currRadOut(2) := r2o
+      if (key == "3") io.currRadOut(3) := r3o
+      if (key == "4") io.currRadOut(4) := r4o
+      if (key == "5") io.currRadOut(5) := r5o
+      if (key == "7") io.currRadOut(7) := r7o
+    }
+    
   }
 }
 
