@@ -11,43 +11,34 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
   val maxNumBanks = fftParams.mem.maxNumBanks
   // TODO: Rename to maxNumStages
   val maxNumStages = fftParams.calc.maxStages
-  val usedRads = fftParams.butterfly.rad 
+  val usedRads = fftParams.butterfly.rad
+  val stages = fftParams.calc.getStages.head.stages 
 
   val clk = Input(Clock())
   val stateInfo = new StateTransitionIO
   // Not read on stall
   val re = Output(Bool())
+  val we = Output(Bool())
   // TODO: Better way to input! Differentiate between # of banks + # of FFT lanes
   // Banks/addresses for each lane
   val locs = CustomIndexedBundle(
     Seq.fill(maxNumBanks)(new BankAddressBundle(Seq(maxNumBanks - 1, maxDepth - 1)))
   )
-  val currentStage = Output(UInt(range"[0, $maxNumStages)"))
-  val currentRad = new CustomIndexedBundle(usedRads.map(r => r -> Output(Bool())): _*)
+  // Not delayed
+  val currentStageToTwiddle = Output(UInt(range"[0, $maxNumStages)"))
+  val currentRadToBF = new CustomIndexedBundle(usedRads.map(r => r -> Output(Bool())): _*)
 
   override def cloneType = (new CalcCtrlIO(fftParams)).asInstanceOf[this.type]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   // DEBUG ONLY
-  //val n = Wire(CustomIndexedBundle(stages.map(r => UInt(range"[0, $r)"))))
+  val nNoDelay = Wire(CustomIndexedBundle(stages.map(r => UInt(range"[0, $r)"))))
 
 }
 
 @chiselName
-class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, peAndMemOutDly: Int) extends Module with DelayTracking {
+class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: Int, peDelay: Int) extends Module with DelayTracking {
+
+  val peAndMemOutDly = peDelay + memOutDelay
 
   val maxDepth = fftParams.mem.bankLengths.max
   val maxNumBanks = fftParams.mem.maxNumBanks
@@ -237,112 +228,58 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, peAndMemOutDly:
 
 /////////////////////////////
     
-
-
-
-
-
-
-
-
-
-
-
-
     io.stateInfo.skipToEnd := false.B
     // Done after last write: delay through this module + mem read out + butterfly delay
-    io.stateInfo.done := ShiftRegister(calcDone, moduleDelay + peAndMemOutDly)
+    io.stateInfo.done := ShiftRegister(
+      in = calcDone, 
+      n = moduleDelay + peAndMemOutDly, 
+      resetData = false.B, 
+      en = io.stateInfo.inState
+    )
     // Align with bank + address
-    val re = ShiftRegister(stallMaxed, moduleDelay)
-    io.stateInfo.re := re
+    val re = ShiftRegister(
+      in = stallMaxed & ~calcDone, 
+      n = moduleDelay,
+      resetData = false.B,
+      en = io.stateInfo.inState
+    )
+    io.re := re
+    // Not delayed
+    io.currentStageToTwiddle := stageCount
+    io.currentRadToBF.elements foreach { case (rad, port) =>
+      port := ShiftRegister(
+        in = currentRadBools(rad.toInt),
+        // Match timing to butterfly input
+        n = moduleDelay + memOutDelay,
+        resetData = false.B,
+        en = io.stateInfo.inState
+      )
+    }
+    io.we := ShiftRegister(
+      in = re,
+      // Match timing to butterfly output
+      n = peAndMemOutDly,
+      resetData = false.B,
+      en = io.stateInfo.inState
+    )
 
-
-
-
-
-
-
-
-
-
-  
-  
-
-  val currentStage = Output(UInt(range"[0, $maxNumStages)"))
-  val currentRad = new CustomIndexedBundle(usedRads.map(r => r -> Output(Bool())): _*)
-
-delay modDelay + memDelay for currrad 
-currentstage is undelayed
-
-
-we
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
-
-
-
-
-  
-
-
-
-
-
-
-
-
-
-
-    
-        // State shouldn't finish until after things have all been written
-    //io.stateInfo.done := ShiftRegister(calcDone, peAndMemOutDly + moduleDelay)
-
-    // re
-   // init: stageInit or chance state --> reset
-    // we appropriately delay instate stuff too
-    // do i make tones for FFT???
-
-  
-  
-   
-
-
+    // DEBUG
+    io.nNoDelay.elements foreach { case (idxS, port) =>  
+      val idx = idxS.toInt
+      port := calcCounts(idx)
+    }
 
   }
-
-  
-
-
-
-
-
 }
 
 
-// pass which currentrad to wfta?
+
+
+
+
+
+
+
+
 // TODO: Try both DIT/DIF
-// don't WE unless in state; not done, not stall
-//currentstageNoDelay??
-// currentradbools
 // global: wait until all counts end for all FFTs
-// delay we ecternally
