@@ -20,8 +20,8 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
   val clk = Input(Clock())
   val stateInfo = new StateTransitionIO
   // Not read on stall
-  val re = Output(Bool())
-  val we = Output(Bool())
+  val re = Vec(maxNumBanks, Output(Bool()))
+  val we = Vec(maxNumBanks, Output(Bool()))
   // TODO: Better way to input! Differentiate between # of banks + # of FFT lanes
   // Banks/addresses for each lane
   val locs = CustomIndexedBundle(
@@ -252,11 +252,16 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
       resetData = false.B, 
       en = io.stateInfo.inState
     )
+
+    val reNoDelay = stallMaxed & ~calcDone
+    val reInternal = Wire(Vec(maxNumBanks, Bool()))
+    reInternal.zipWithIndex foreach { case (lane, idx) => lane := (idx.U < currentRadWithScheduling) & reNoDelay }
+    
     // Align with bank + address
     val re = ShiftRegister(
-      in = stallMaxed & ~calcDone, 
+      in = reInternal, 
       n = moduleDelay,
-      resetData = false.B,
+      resetData = Vec(Seq.fill(maxNumBanks)(false.B)),
       en = io.stateInfo.inState
     )
     io.re := re
@@ -275,7 +280,7 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
       in = re,
       // Match timing to butterfly output
       n = peAndMemOutDly,
-      resetData = false.B,
+      resetData = Vec(Seq.fill(maxNumBanks)(false.B)),
       en = io.stateInfo.inState
     )
 
@@ -305,28 +310,30 @@ class CalcCtrlSpec extends FlatSpec with Matchers {
   }
 }
 
-
-
-
-
-
-
-
-
-
-
 class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
+
   require(c.fftParams.calc.getStages.length == 1)
   val stages = c.fftParams.calc.getStages.head.stages
-  val addressConstants = fftParams.mem.addressConstants.head
+  val addressConstants = c.fftParams.mem.addressConstants.head
+  val maxNumBanks = c.fftParams.mem.maxNumBanks
 
-  val nExpected = for ((s, idx) <- stages.zipWithIndex) yield {
+  case class CalcCtrlTests(
+    n: Seq[Int] = Seq.empty,
+    rad: Int = 0,
+    stageNum: Int = 0,
+    bank: Seq[Int] = Seq.empty,
+    addr: Seq[Int] = Seq.empty
+  )
+
+  val stagedNExpected = for ((srad, idx) <- stages.zipWithIndex) yield {
     // Max stage count associated with current stage is zeroed
     val stagesNew = stages.updated(idx, 1)
     // TODO: Generalize! -- now assumes 4 is left-most
+    // Uses half as many serial butterflies for radix 2 stage
     val stagesHack = 
-      if (s == 2 && stages.contains(4) && !stages.contains(5)) stagesNew.updated(0, 4)
+      if (srad == 2 && stages.contains(4) && !stages.contains(5)) stagesNew.updated(0, 2)
       else stagesNew
+    // TODO: Do I need reverse?
     val stagesReversed = stagesHack.reverse
     val stageCountFlipped = stagesReversed.zipWithIndex.map { case (rad, stageIdx) => 
       val origRightProduct = if (stageIdx == 0) 1 else stagesReversed.take(stageIdx).product 
@@ -335,37 +342,59 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
         (0 until rad).map(Seq.fill(origRightProduct)(_)).flatten
       ).flatten
     }.transpose
-    stageCountFlipped.map(row => row.reverse)
+    stageCountFlipped.map(row => 
+      CalcCtrlTests(
+        n = row.reverse,
+        rad = srad,
+        stageNum = idx
+      )
+    )
   }
+  val nExpected = stagedNExpected.flatten
 
   // TODO: Minimize copy-pasta from FW_BinToBankAddrMap
-
-  val (bank0, addr0) = nExpected.zipWithIndex.map { case (row, idx) =>
-    val addr = row.zip(addressConstants).map { case (n, ac) => n * ac }.sum
-    val bank = row.sum % maxNumBanks
-    (bank, addr)
-  }.unzip
-
-  val banks = bank0.map { case bank0Row => 
-    Seq(bank0Row) ++ (1 until maxNumBanks).map(idx => (bank0Row + idx) % maxNumBanks)
+  // Incrementally add info
+  val testVectors = nExpected.map { row =>
+    val currentStageAddressConstant = addressConstants(row.stageNum)
+    val addr0 = row.n.zip(addressConstants).map { case (n, ac) => n * ac }.sum
+    val bank0 = row.n.sum % maxNumBanks
+    val usedBankLength = 
+      if (row.rad == 2 && stages.contains(4) && !stages.contains(5)) 4
+      else row.rad
+    val banks = Seq(bank0) ++ (1 until usedBankLength).map(i => (bank0 + i) % maxNumBanks)
+    val addrs = Seq(addr0) ++ (1 until row.rad).map(i => addr0 + i * currentStageAddressConstant)
+    val addrsNew = 
+      // Hack: Repeat address 2x (different banks)
+      if (row.rad == 2 && stages.contains(4) && !stages.contains(5))
+        addrs ++ addrs 
+      else 
+        addrs
+    row.copy(bank = banks, addr = addrsNew)
   }
 
 
 
-  
 
 
 
 
 
 
-  nExpected foreach { x => 
-    println("tttt")
-    x foreach { y => println(y.mkString(",")) } }
-
-// how many low
 
 
+
+// record time of re
+// should not be done until after
+
+
+
+
+
+
+
+
+
+testVectors foreach { row => println(row.toString)}
 
 
 
@@ -382,7 +411,7 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
 
 // TODO: Try DIT
 
-
+// we per lane depends on r
 
 
 
