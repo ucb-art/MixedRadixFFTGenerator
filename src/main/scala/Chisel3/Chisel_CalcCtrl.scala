@@ -3,6 +3,9 @@ import chisel3._
 import chisel3.experimental._
 import barstools.tapeout.transforms._
 import chisel3.util._
+import dsptools.{DspTester, DspTesterOptionsManager}
+import org.scalatest.{FlatSpec, Matchers}
+import barstools.tapeout.TestParams
 
 // TODO: Make runtime reconfigurable
 
@@ -31,8 +34,21 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
   override def cloneType = (new CalcCtrlIO(fftParams)).asInstanceOf[this.type]
 
   // DEBUG ONLY
-  val nNoDelay = Wire(CustomIndexedBundle(stages.map(r => UInt(range"[0, $r)"))))
+  val nNoDelay = CustomIndexedBundle(stages.map(r => Output(UInt(range"[0, $r)"))))
 
+}
+
+class CalcCtrlWrapper(val fftParams: FactorizationParams, val fftType: FFTType, memOutDelay: Int, peDelay: Int) extends Module {
+  val mod = Module(new CalcCtrl(fftParams, fftType, memOutDelay, peDelay))
+  val io = IO(mod.io.cloneType)
+  mod.io.clk := clock
+  mod.io.stateInfo <> io.stateInfo
+  io.re := mod.io.re 
+  io.we := mod.io.we 
+  io.locs := mod.io.locs 
+  io.currentStageToTwiddle := mod.io.currentStageToTwiddle
+  io.currentRadToBF := mod.io.currentRadToBF
+  io.nNoDelay := mod.io.nNoDelay
 }
 
 @chiselName
@@ -272,6 +288,22 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
   }
 }
 
+class CalcCtrlSpec extends FlatSpec with Matchers {
+  behavior of "CalcCtrl"
+  it should "generate correct calculation banks + addresses" in {
+    // TODO: Change name of PeelingScheduling
+    dsptools.Driver.execute(() =>
+      new CalcCtrlWrapper(
+        fftParams = PeelingScheduling.getFFTParams(24),
+        fftType = DIF, 
+        memOutDelay = 1, 
+        peDelay = 3                 // in + 1 constant multiply + 1 twiddle multiply
+      ), TestParams.options0Tol
+    ) { c =>
+      new CalcCtrlTester(c)
+    } should be (true)
+  }
+}
 
 
 
@@ -281,5 +313,77 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
 
 
 
-// TODO: Try both DIT/DIF
+
+
+class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
+  require(c.fftParams.calc.getStages.length == 1)
+  val stages = c.fftParams.calc.getStages.head.stages
+  val addressConstants = fftParams.mem.addressConstants.head
+
+  val nExpected = for ((s, idx) <- stages.zipWithIndex) yield {
+    // Max stage count associated with current stage is zeroed
+    val stagesNew = stages.updated(idx, 1)
+    // TODO: Generalize! -- now assumes 4 is left-most
+    val stagesHack = 
+      if (s == 2 && stages.contains(4) && !stages.contains(5)) stagesNew.updated(0, 4)
+      else stagesNew
+    val stagesReversed = stagesHack.reverse
+    val stageCountFlipped = stagesReversed.zipWithIndex.map { case (rad, stageIdx) => 
+      val origRightProduct = if (stageIdx == 0) 1 else stagesReversed.take(stageIdx).product 
+      val origLeftProduct = stagesReversed.drop(stageIdx + 1).product
+      Seq.fill(origLeftProduct)(
+        (0 until rad).map(Seq.fill(origRightProduct)(_)).flatten
+      ).flatten
+    }.transpose
+    stageCountFlipped.map(row => row.reverse)
+  }
+
+  // TODO: Minimize copy-pasta from FW_BinToBankAddrMap
+
+  val (bank0, addr0) = nExpected.zipWithIndex.map { case (row, idx) =>
+    val addr = row.zip(addressConstants).map { case (n, ac) => n * ac }.sum
+    val bank = row.sum % maxNumBanks
+    (bank, addr)
+  }.unzip
+
+  val banks = bank0.map { case bank0Row => 
+    Seq(bank0Row) ++ (1 until maxNumBanks).map(idx => (bank0Row + idx) % maxNumBanks)
+  }
+
+
+
+  
+
+
+
+
+
+
+  nExpected foreach { x => 
+    println("tttt")
+    x foreach { y => println(y.mkString(",")) } }
+
+// how many low
+
+
+
+
+
+  
+  // no we immediately before/after are same
+
+}
+
+
+
+
+
+
+
+// TODO: Try DIT
+
+
+
+
+
 // global: wait until all counts end for all FFTs
