@@ -209,7 +209,7 @@ class WFTAWrapper[T <: Data:RealBits](dspDataType: => T, val fftParams: Factoriz
 class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams) extends Module 
     with hasContext with DelayTracking {
 
-  // TODO: Move to some delay params?
+  // TODO: Move to some delay params? + come up with a better name
   val inPipe = 1
 
   // TODO: Move to some delay params?

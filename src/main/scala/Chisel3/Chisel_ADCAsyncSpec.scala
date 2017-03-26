@@ -257,7 +257,7 @@ class CollectADCSamples[T <: Data:RealBits](
       // @ count n, hold
       val count = Wire(UInt(range"[0, $n]"))
       val isMaxCount = count === n.U
-      val countNext = Mux(isMaxCount, count, count +& 1.U)
+      val countNext = Mux(isMaxCount, n.U, count +& 1.U)
       // First time deq valid happens corresponds to data 0
       // which means that it goes to idx one the next time data is received (data 1)
       count := RegEnable(next = countNext, init = 0.U, enable = asyncs(n, ph).io.deq.valid)

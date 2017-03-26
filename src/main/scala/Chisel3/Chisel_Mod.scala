@@ -90,3 +90,30 @@ object ConstantMod {
     (mod.io.out, mod)
   }
 }
+
+// TODO: Generalize, use ranges; otherwise can't guarantee anything...
+/** Short Mod (n is a constant)
+  * Returns (x % n) for x <= 2 * n - 1
+  */
+object ShortConstantMod {
+  def apply(x: UInt, n: Int, xmax: Int): UInt = {
+    require(xmax <= 2 * n - 1, "ShortConstantMod only works for x <= 2 * n - 1")
+    require(xmax > 0)
+    // TODO: Add back in when ranges exist
+    // require(BigInt(xmax).bitLength >= x.getWidth, "x must not be bigger than xmax")
+    if (xmax < n) x
+    else {
+      // Let x fill up to xmax width (or only take non-zero part)
+      val longx = Wire(UInt(range"[0, $xmax]"))
+      longx := x
+      // No bit growth
+      val diff = longx - n
+      val out = Wire(UInt(range"[0, $n)"))
+      // MSB overflow -> negative -> x smaller than n -> mod is itself
+      // x >= n -> mod = x-n; else mod = x
+      val overflow = diff(diff.getWidth - 1)
+      out := Mux(overflow, x, diff)
+      out
+    }
+  }
+}

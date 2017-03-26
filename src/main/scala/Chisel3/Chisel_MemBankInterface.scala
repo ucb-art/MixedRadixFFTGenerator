@@ -12,7 +12,7 @@ class MemInputLane[T <: Data:Ring](dataType: => T, maxNumBanks: Int, maxDepth: I
   val we = Input(Bool())
   // Closed range: bank followed by addr
   // TODO: Make semantics consistent -- all use [)
-  val loc = Input(new BankAddressBundle(Seq(maxNumBanks - 1, maxDepth - 1)))
+  val loc = Flipped(new BankAddressBundle(Seq(maxNumBanks - 1, maxDepth - 1)))
   override def cloneType = (new MemInputLane(dataType, maxNumBanks, maxDepth)).asInstanceOf[this.type]
 }
 
@@ -20,7 +20,7 @@ class MemOutputLane[T <: Data:Ring](dataType: => T, maxNumBanks: Int, maxDepth: 
   val dout = Output(dataType)
   val re = Input(Bool())
   // Closed range: bank followed by addr
-  val loc = Input(new BankAddressBundle(Seq(maxNumBanks - 1, maxDepth - 1)))
+  val loc = Flipped(new BankAddressBundle(Seq(maxNumBanks - 1, maxDepth - 1)))
   override def cloneType = (new MemOutputLane(dataType, maxNumBanks, maxDepth)).asInstanceOf[this.type] 
 }
 
@@ -35,6 +35,7 @@ class MemBankInterfaceIO[T <: Data:Ring](dataType: T, maxNumBanks: Int, maxDepth
 class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) extends Module with DelayTracking {
   // Read data valid 1 clk cycle after read address
   // Have as many input ports as # of banks -- that then gets sorted
+  // TODO: Should get delay from sub-modules
   val moduleDelay = 1
   val io = IO(new MemBankInterfaceIO(dataType, maxNumBanks = bankLengths.length, maxDepth = bankLengths.max))
   val memBanks = Module(new MemBanks(dataType, bankLengths))

@@ -69,6 +69,7 @@ class BankAddressBundle(colMax: Seq[Int]) extends Bundle {
   // NOTE: NEEDS TO BE IN THIS ORDER
   val bankMax = colMax.head
   val addrMax = colMax.last
+  require(colMax.length == 2, "Seq(bank, addr) required!")
   val bank = Output(UInt(range"[0, $bankMax]"))
   val addr = Output(UInt(range"[0, $addrMax]"))
   override def cloneType = (new BankAddressBundle(colMax)).asInstanceOf[this.type]
