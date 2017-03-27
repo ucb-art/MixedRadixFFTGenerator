@@ -24,9 +24,10 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
   val we = Vec(maxNumBanks, Output(Bool()))
   // TODO: Better way to input! Differentiate between # of banks + # of FFT lanes
   // Banks/addresses for each lane
-  val locs = CustomIndexedBundle(
+  val rlocs = CustomIndexedBundle(
     Seq.fill(maxNumBanks)(new BankAddressBundle(Seq(maxNumBanks - 1, maxDepth - 1)))
   )
+  val wlocs = Output(rlocs.cloneType)
   // Not delayed
   val currentStageToTwiddle = Output(UInt(range"[0, $maxNumStages)"))
   val currentRadToBF = new CustomIndexedBundle(usedRads.map(r => r -> Output(Bool())): _*)
@@ -45,7 +46,8 @@ class CalcCtrlWrapper(val fftParams: FactorizationParams, val fftType: FFTType, 
   mod.io.stateInfo <> io.stateInfo
   io.re := mod.io.re 
   io.we := mod.io.we 
-  io.locs := mod.io.locs 
+  io.rlocs := mod.io.rlocs
+  io.wlocs := mod.io.wlocs 
   io.currentStageToTwiddle := mod.io.currentStageToTwiddle
   io.currentRadToBF := mod.io.currentRadToBF
   io.nNoDelay := mod.io.nNoDelay
@@ -74,7 +76,7 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
   // TODO: Don't hard code
   // Local to this current module
   val localDelay = 1
-  def moduleDelay = nToBankAddr.moduleDelay + localDelay
+  val moduleDelay = nToBankAddr.moduleDelay + localDelay
 
   withClockAndReset(io.clk, io.stateInfo.start) {
 
@@ -181,9 +183,10 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
     // TODO: State info shouldn't be necessary here?
     val calcCountsEnableLong = reachedMaxCounts.scanRight(stallMaxed & io.stateInfo.inState)((next, accum) => accum & next)
     val calcCountsEnable = calcCountsEnableLong.drop(1)
-    // Hold counts if reached max (until stage ends)
+    // Hold counts if all counts have reached max (until stage ends) ; otherwise, wrap
     val calcCountsNext = reachedMaxCounts.zipWithIndex.map { case (reachedMax, idx) => 
-      Mux(reachedMax, calcCounts(idx), calcCounts(idx) + 1.U)
+      // TODO: Probably redundant logic (with reset) -- fix
+      Mux(reachedMax, Mux(calcCountsEnableLong.head, calcCounts(idx), 0.U), calcCounts(idx) + 1.U)
     }
     // Reset has precedence
     val calcReset = stageCountEnable | io.stateInfo.start
@@ -227,7 +230,7 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
         ShiftRegister(addr, localDelay)
     }
     reScheduledCalcAddresses.zipWithIndex foreach { case (addr, idx) =>
-      io.locs(idx).addr := addr
+      io.rlocs(idx).addr := addr
     }
 
     // Bank is just (bank0 + i) % maxRadix for the ith input to the butterfly
@@ -239,7 +242,7 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
     )
     // TODO: Combine with the above foreach
     calcBanks.zipWithIndex foreach { case (bank, idx) =>
-      io.locs(idx).bank := bank
+      io.rlocs(idx).bank := bank
     }
 
 /////////////////////////////
@@ -283,6 +286,27 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
       resetData = Vec(Seq.fill(maxNumBanks)(false.B)),
       en = io.stateInfo.inState
     )
+
+    reScheduledCalcAddresses.zipWithIndex foreach { case (addr, idx) =>
+      // Don't care about reset value (since WE is low)
+      val out = ShiftRegister(
+        in = addr,
+        // Match timing to butterfly output
+        n = peAndMemOutDly,
+        en = io.stateInfo.inState
+      )
+      io.wlocs(idx).addr := out
+    }
+    calcBanks.zipWithIndex foreach { case (bank, idx) =>
+      // Don't care about reset value (since WE is low)
+      val out = ShiftRegister(
+        in = bank,
+        // Match timing to butterfly output
+        n = peAndMemOutDly,
+        en = io.stateInfo.inState
+      )
+      io.wlocs(idx).bank := out
+    }
 
     // DEBUG
     io.nNoDelay.elements foreach { case (idxS, port) =>  
@@ -372,47 +396,152 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
     row.copy(bank = banks, addr = addrsNew)
   }
 
+  val simTime = testVectors.length + stages.length * c.mod.peAndMemOutDly + c.mod.moduleDelay + 5   // buffer
+
+  // Start state
+  reset(10)
+  poke(c.io.stateInfo.start, true.B)
+  step(1)
+  poke(c.io.stateInfo.inState, true.B)
+  poke(c.io.stateInfo.start, false.B)
+
+  var weCount = 0
+  var reCount = 0
+  var stallCount = 0
+  var prevRE = false
+  var stallStartTime = 0
+  var prevDone = false
+
+  // TODO: Better way to input! Differentiate between # of banks + # of FFT lanes (Angie: not sure why I wrote this)
+ 
+  // Note: Didn't check currentStageToTwiddle & currentRadToBF
 
 
 
 
-
-
-
-
-
-
-
-// record time of re
-// should not be done until after
-
-
-
-
-
-
-
-
-
-testVectors foreach { row => println(row.toString)}
 
 
 
   
-  // no we immediately before/after are same
+
+
+
+
+
+
+
+
+
+
+  for (time <- (0 until simTime)) {
+
+    // Counts are updated after the fact
+    val done = peek(c.io.stateInfo.done)
+    if (weCount == testVectors.length) 
+      expect(done == true, "Done!")
+    else
+      expect(done == false, "Not done!")
+
+    // First n should be valid
+    val re0 = updatableDspVerbose.withValue(false) { peek(c.io.re(0)) }
+    val we0 = updatableDspVerbose.withValue(false) { peek(c.io.we(0)) }
+    // Start stall
+    if (prevRE && !re0) {
+      println(" ********** Started stalling!")
+      stallStartTime = t
+      stallCount += 1
+    }
+    // Finish stall
+    // Stalling only happens after some amount of reading
+    if (!prevRE && (re0 || (done && !prevDone)) && reCount != 0) {
+      val stallTime = t - stallStartTime
+      expect(stallTime == c.mod.peAndMemOutDly, s"Stall time: $stallTime")
+    }
+    prevRE = re0
+    prevDone = done
+
+    if (re0) {
+      val currentTestVector = testVectors(reCount)
+      val currRad = currentTestVector.rad
+      val currRadNew = 
+        if (currRad == 2 && stages.contains(4) && !stages.contains(5)) 4
+        else currRad
+      currentTestVector.addr.zipWithIndex foreach { case (addr, idx) =>
+        expect(c.io.rlocs(idx).addr, addr)
+        expect(c.io.rlocs(idx).bank, currentTestVector.bank(idx))
+      }
+      c.io.re.zipWithIndex foreach { case (re, idx) =>
+        if (idx < currRadNew) expect(c.io.re(idx), true.B)
+        else expect(c.io.re(idx), false.B)
+      }
+      reCount += 1 
+    }
+    if (we0) {
+      val currentTestVector = testVectors(weCount)
+      val currRad = currentTestVector.rad
+      val currRadNew = 
+        if (currRad == 2 && stages.contains(4) && !stages.contains(5)) 4
+        else currRad
+      currentTestVector.addr.zipWithIndex foreach { case (addr, idx) =>
+        expect(c.io.wlocs(idx).addr, addr)
+        expect(c.io.wlocs(idx).bank, currentTestVector.bank(idx))
+      }
+      c.io.we.zipWithIndex foreach { case (we, idx) =>
+        if (idx < currRadNew) expect(c.io.we(idx), true.B)
+        else expect(c.io.we(idx), false.B)
+      }
+      weCount += 1 
+    }
+    
+    // val x = updatableDspVerbose.withValue(false) { peek(c.io.nNoDelay) }
+    step(1)
+
+  }
+
+  require(reCount == testVectors.length, "Read addresses should be complete")
+  require(weCount == testVectors.length, "Write addresses should be complete")
+  require(stallCount == stages.length, 
+    s"Should stall after every stage. Stalled $stallCount times.")
+  
+
+
+
+
+
+
+
+
+
+
+  
+
+
+  
+ 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
 
 }
 
-
-
-
-
-
-
 // TODO: Try DIT
-
-// we per lane depends on r
-
-
-
-// global: wait until all counts end for all FFTs
