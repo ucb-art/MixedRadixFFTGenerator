@@ -126,7 +126,8 @@ case class FactorizationParams(
     calc: CalcParams,
     io: IOParams,
     // Populated later in "firmware" steps
-    mem: MemoryAccessParams = MemoryAccessParams()) {
+    mem: MemoryAccessParams = MemoryAccessParams(),
+    twiddle: TwiddleParams = TwiddleParams()) {
 }
 
 // TODO: Rename to FFTParams

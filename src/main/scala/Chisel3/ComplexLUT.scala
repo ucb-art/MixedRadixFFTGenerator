@@ -1,3 +1,5 @@
+/*
+
 package barstools.modules
 import chisel3._
 import chisel3.util.ShiftRegister
@@ -51,6 +53,11 @@ class UIntLUT2DTester(c: UIntLUT2DWrapper) extends DspTester(c) {
     expect(peekedVals == row, s"Peeked LUT value must match for ${c.blackBoxName}")
   }
 }
+
+
+
+
+
 
 
 
@@ -150,3 +157,5 @@ class ComplexLUT[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String
     }
   }
 }
+
+*/
