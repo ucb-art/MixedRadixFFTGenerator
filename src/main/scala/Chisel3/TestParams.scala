@@ -21,6 +21,14 @@ object TestParams {
     testerOptions = testerOptionsGlobal
   }
 
+  val options0TolQuiet = new DspTesterOptionsManager {
+    dspTesterOptions = DspTesterOptions(
+        fixTolLSBs = 0,
+        genVerilogTb = false,
+        isVerbose = false)
+    testerOptions = testerOptionsGlobal
+  }
+
   val options1Tol = new DspTesterOptionsManager {
     dspTesterOptions = DspTesterOptions(
         fixTolLSBs = 1,

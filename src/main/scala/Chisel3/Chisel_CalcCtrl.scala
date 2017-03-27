@@ -320,17 +320,23 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
 class CalcCtrlSpec extends FlatSpec with Matchers {
   behavior of "CalcCtrl"
   it should "generate correct calculation banks + addresses" in {
-    // TODO: Change name of PeelingScheduling
-    dsptools.Driver.execute(() =>
-      new CalcCtrlWrapper(
-        fftParams = PeelingScheduling.getFFTParams(24),
-        fftType = DIF, 
-        memOutDelay = 1, 
-        peDelay = 3                 // in + 1 constant multiply + 1 twiddle multiply
-      ), TestParams.options0Tol
-    ) { c =>
-      new CalcCtrlTester(c)
-    } should be (true)
+
+    // TODO: Fix concurrency bug
+    val ffts = Seq(864)
+
+    for (fft <- ffts) {
+      // TODO: Change name of PeelingScheduling
+      dsptools.Driver.execute(() =>
+        new CalcCtrlWrapper(
+          fftParams = PeelingScheduling.getFFTParams(fft),
+          fftType = DIF, 
+          memOutDelay = 1, 
+          peDelay = 3                                                   // in + 1 constant multiply + 1 twiddle multiply
+        ), TestParams.options0TolQuiet
+      ) { c =>
+        new CalcCtrlTester(c)
+      } should be (true)
+    }
   }
 }
 
@@ -416,23 +422,6 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
  
   // Note: Didn't check currentStageToTwiddle & currentRadToBF
 
-
-
-
-
-
-
-  
-
-
-
-
-
-
-
-
-
-
   for (time <- (0 until simTime)) {
 
     // Counts are updated after the fact
@@ -442,6 +431,7 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
     else
       expect(done == false, "Not done!")
 
+    // TODO: Reduce copy + paste
     // First n should be valid
     val re0 = updatableDspVerbose.withValue(false) { peek(c.io.re(0)) }
     val we0 = updatableDspVerbose.withValue(false) { peek(c.io.we(0)) }
@@ -463,6 +453,7 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
     if (re0) {
       val currentTestVector = testVectors(reCount)
       val currRad = currentTestVector.rad
+      // Hack
       val currRadNew = 
         if (currRad == 2 && stages.contains(4) && !stages.contains(5)) 4
         else currRad
@@ -502,45 +493,6 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
   require(weCount == testVectors.length, "Write addresses should be complete")
   require(stallCount == stages.length, 
     s"Should stall after every stage. Stalled $stallCount times.")
-  
-
-
-
-
-
-
-
-
-
-
-  
-
-
-  
- 
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
-
 
 }
 
