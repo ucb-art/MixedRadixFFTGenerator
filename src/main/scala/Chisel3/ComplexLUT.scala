@@ -28,7 +28,9 @@ class ComplexLUTSpec extends FlatSpec with Matchers {
         FixedPoint(16.W, 14.BP),
         "TwiddleLUT", 
         lut
-      ), TestParams.options1TolWaveform) { c =>
+      ), 
+      TestParams.options1TolWaveform
+    ) { c =>
       new ComplexLUTTester(c)
     } should be (true)
   }
@@ -125,7 +127,7 @@ class ComplexLUT[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String
           out.node := bb.io.dout(high, low)
           out
         case f: FixedPoint =>
-          bb.io.dout(high, low).asSInt.asFixedPoint(f.binaryPoint)
+          bb.io.dout(high, low).asFixedPoint(f.binaryPoint)
       }
       out := ShiftRegister(interpretOutput, moduleDelay)
     }
