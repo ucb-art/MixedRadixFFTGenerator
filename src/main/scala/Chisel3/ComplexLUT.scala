@@ -1,5 +1,3 @@
-/*
-
 package barstools.modules
 import chisel3._
 import chisel3.util.ShiftRegister
@@ -11,70 +9,45 @@ import barstools.tapeout.TestParams
 import dsptools.{DspTester, DspTesterOptionsManager}
 import dspblocks.fft._
 import dsptools._
+import breeze.math.Complex
+import dsptools.numbers._
+import dsptools.numbers.implicits._
 
-class UIntLUT2DSpec extends FlatSpec with Matchers {
-  behavior of "2D UInt LUT"
+class ComplexLUTSpec extends FlatSpec with Matchers {
+  behavior of "Complex LUT"
   it should "store the right Lit values and output them in the correct order" in {
-    val testLUT = Seq(
-      Seq(1, 7, 3),
-      Seq(34, 768, 2033),
-      Seq(155, 680, 9)
-    )
-    val opt = new DspTesterOptionsManager {
-      dspTesterOptions = TestParams.options0Tol.dspTesterOptions
-      testerOptions = TestParams.options0Tol.testerOptions
-      commonOptions = TestParams.options0Tol.commonOptions.copy(targetDirName = s"test_run_dir/UIntLUT2D")
-    }
-    dsptools.Driver.execute(() => new UIntLUT2DWrapper("TestLUT", testLUT), opt) { c =>
-      new UIntLUT2DTester(c)
+    
+    val lut = PeelingScheduling.getFFTParams(675).twiddle.twiddles.map { 
+      // First lane of first coprime
+      case (coprime, luts) => luts.map(row => row.head) 
+    }.toSeq.head    
+
+    dsptools.Driver.execute(() => 
+      new ComplexLUTWrapper(
+        //DspReal(),
+        FixedPoint(16.W, 14.BP),
+        "TwiddleLUT", 
+        lut
+      ), TestParams.options1TolWaveform) { c =>
+      new ComplexLUTTester(c)
     } should be (true)
   }
-  it should "get bank, address for FFT bins" in {
-    val fftns = Seq(675, 800, 864)
-    fftns foreach { n => 
-      val lutName = s"DITBankAddr$n"
-      val opt = new DspTesterOptionsManager {
-        dspTesterOptions = TestParams.options0Tol.dspTesterOptions
-        testerOptions = TestParams.options0Tol.testerOptions
-        commonOptions = TestParams.options0Tol.commonOptions.copy(targetDirName = s"test_run_dir/$lutName")
-      }
-      val lut = dspblocks.fft.PeelingScheduling.getIOMemBankAddr(n, dspblocks.fft.DIT).map(x => x.getBankAddr)
-      dsptools.Driver.execute(() => new UIntLUT2DWrapper(lutName, lut), opt) { c =>
-        new UIntLUT2DTester(c)
-      } should be (true)
-    }
-  }
 }
 
-class UIntLUT2DTester(c: UIntLUT2DWrapper) extends DspTester(c) {
+class ComplexLUTTester[T <: Data:RealBits](c: ComplexLUTWrapper[T]) extends DspTester(c) {
   c.tableIn.zipWithIndex foreach { case (row, idx) =>
     poke(c.io.addr, idx)
-    val peekedVals = c.io.dout.elements.map { case (key, value) => peek(value) }
-    expect(peekedVals == row, s"Peeked LUT value must match for ${c.blackBoxName}")
+    expect(c.io.dout, row)
+    step(1)
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 class ComplexLUTIO[T <: Data:RealBits](dspDataType: => T, depth: Int) extends Bundle {
   val clk = Input(Clock())
   val addr = Input(UInt(range"[0, $depth)"))
   val dout = Output(DspComplex(dspDataType))
 
-  override def cloneType = (new ComplexLUTDIO(dspDataType)).asInstanceOf[this.type]
+  override def cloneType = (new ComplexLUTIO(dspDataType, depth)).asInstanceOf[this.type]
 }
 
 class ComplexLUTWrapper[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String, val tableIn: Seq[Complex], outputReg: Boolean = false)  
@@ -101,8 +74,8 @@ class ComplexLUT[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String
     dspDataType match {
       case r: DspReal => 
         r.node.getWidth
-      case _ => 
-        require(dspDataType.widthKnown, "Width must be defined!")
+      case b: Bits => 
+        require(b.widthKnown, "Width must be defined!")
         dspDataType.getWidth
     }
   )
@@ -113,7 +86,7 @@ class ComplexLUT[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String
   // Inclusive bit extraction (highest, lowest)
   val colRange = colStart.init.map(x => x - 1).zip(colBitShift)
 
-  val io = IO(new ComplexLUTIO(depth))
+  val io = IO(new ComplexLUTIO(dspDataType, depth))
 
   withClock(io.clk) {
 
@@ -122,14 +95,15 @@ class ComplexLUT[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String
     val lutRows = table map { case rowComplex => 
       val row = Seq(rowComplex.real, rowComplex.imag)
       val rowWithColBitShift = row.zip(colBitShift)
-      rowWithColBitShift.foldRight(0) { case ((append, shift), result) =>
+      rowWithColBitShift.foldRight(BigInt(0)) { case ((append, shift), result) =>
 
         val appendBits = dspDataType match {
           case r: DspReal =>
             DspTesterUtilities.doubleToBigIntBits(append)
           case f: FixedPoint =>
             require(f.binaryPoint.known, "Binary point must be known!")
-            DspTesterUtilities.toBigIntUnsigned(append, r.getWidth, r.binaryPoint.get)
+            // TODO: Turn into function
+            FixedPoint.toBigInt(append, f.binaryPoint.get) & BigInt((1 << f.getWidth) - 1)
           // TODO: Support UInt, SInt
           case _ => throw new Exception("Currently, only FixedPoint and DspReal are supported")
         }
@@ -138,7 +112,7 @@ class ComplexLUT[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String
       }
     }
 
-    val bb = Module(new LUTBlackBox(blackBoxName, lutRows))
+    val bb = Module(new LUTBlackBox(blackBoxName, lutRows, widthOverride = Some(rowWidth)))
     bb.io.addr := io.addr
 
     // TODO: Don't need to do it the LUT2D way
@@ -151,11 +125,9 @@ class ComplexLUT[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String
           out.node := bb.io.dout(high, low)
           out
         case f: FixedPoint =>
-          bb.io.dout(high, low).asFixedPoint(f.binaryPoint.get)
+          bb.io.dout(high, low).asSInt.asFixedPoint(f.binaryPoint)
       }
       out := ShiftRegister(interpretOutput, moduleDelay)
     }
   }
 }
-
-*/

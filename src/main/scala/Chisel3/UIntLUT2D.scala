@@ -103,9 +103,9 @@ class UIntLUT2D(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: 
     // Concatenate data
     val lutRows = table map { case row => 
       val rowWithColBitShift = row.zip(colBitShift)
-      rowWithColBitShift.foldRight(0) { case ((append, shift), result) => 
+      BigInt(rowWithColBitShift.foldRight(0) { case ((append, shift), result) => 
         result + (append << shift)
-      }
+      })
     }
 
     val bb = Module(new LUTBlackBox(blackBoxName, lutRows))
@@ -127,11 +127,17 @@ class BlackBoxLUTIO(addressWidth: Int, dataWidth: Int) extends Bundle {
   val dout = Output(UInt(dataWidth.W))
 }
 
-class LUTBlackBox(blackBoxName: String, table: Seq[Int]) extends HasBlackBoxInline {
+class LUTBlackBox(blackBoxName: String, table: Seq[BigInt], widthOverride: Option[Int] = None) extends HasBlackBoxInline {
 
   require(blackBoxName != "", "LUT name must be provided!")
 
-  val dataWidth = BigInt(table.max).bitLength
+  val dataWidth = widthOverride match {
+    case Some(w) => 
+      require(w >= table.max.bitLength)
+      w
+    case _ => 
+      table.max.bitLength
+  }
   val addrWidth = BigInt(table.length - 1).bitLength
 
   // WARNING: No uniqueness check (user has to guarantee!!)
@@ -141,7 +147,7 @@ class LUTBlackBox(blackBoxName: String, table: Seq[Int]) extends HasBlackBoxInli
 
   // Dumps in hex
   val tableString = table.zipWithIndex.map { 
-    case (data, idx) => s"    $idx: dout = $dataWidth'h${BigInt(data).toString(16)};" }.mkString("\n")
+    case (data, idx) => s"    $idx: dout = $dataWidth'h${data.toString(16)};" }.mkString("\n")
 
   val verilog = s"""
     |module $blackBoxName(
