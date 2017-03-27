@@ -10,6 +10,10 @@ case class TwiddleParams(
   // Coprime --> LUT --> Twiddle Lane (col) 
   twiddles: Map[Int, Seq[Seq[Complex]]] = Map(0 -> Seq(Seq.empty)),
   twiddleSubcountMax: Seq[Seq[Int]] = Seq(Seq.empty)
+  // For DEBUG or single FFT use primarily
+  // Fills across all stages
+  twiddleSubcountMaxPerStage: Seq[Seq[Int]] = Seq(Seq.empty),
+  twiddleCountMulPerStage: Seq[Seq[Int]] = Seq(Seq.empty)
 )
 /*
 twiddleCountMax main twiddle count max for each calculation stage (CTA)
@@ -89,7 +93,40 @@ object Twiddles {
       (0 until nextCoprimes.length).map(idx => nextCoprimes.drop(idx).map(col => col.coprime).product - 1) 
     }
 
-    TwiddleParams(twiddleCountMax, twiddleLUTScale, twiddles, twiddleSubcountMax)
+    // Original # of counts per row = # of coprimes; want to fill across all stages
+    def fillStageCounts(counts: Seq[Seq[Int]]): Seq[Seq[Int]] = {
+      counts.zip(coprimes).zip(stagesInfo).map { case ((countRow, coprimeRow), stageRow) => 
+        countRow.zip(coprimeRow).map { case (countCol, CoprimeInfo(_, prime, _)) => 
+          val fillAmount = stageRow.getStagesCorrespondingTo(prime).length
+          Seq.fill(fillAmount)(countCol)
+        }.flatten
+      }
+    }
+
+    // Note: twiddleCountMax is already across all stages
+    // This repeats counts across all stages (all stages associated with a specific 
+    // coprime have the same counts)
+    val twiddleSubcountMaxPerStage = fillStageCounts(twiddleSubcountMax)
+    val twiddleCountMulBasePerStage = fillStageCounts(twiddleLUTScale)
+
+    // For DIF: base renormalization due to scaling max coprime to corresponding coprime required for FFTN
+    // Subsequent stages associated with the same coprime are renormalized by that base *R1 for stage 2,
+    // *R1*R2 for stage 3, etc. (product of previous stages with the same coprime)
+    val twiddleCountMulPerStage = twiddleCountMulBasePerState.zip(stagesInfo).map { case (baseRow, stageRow) =>
+      val renormalization = stageRow.stages.zip(stageRow.prevStages).tail.scanLeft(1) { 
+        case (accum, (stage, prevStage)) =>
+          // Reset when radix changes
+          // TODO: Currently 4 -> 2 is OK because the radix 2 stage is always last for 2^N and
+          // it doesn't need twiddles
+          // TODO: Get rid of hack (currently ok b/c only 4 and 2 differ for the same coprime -- stage != prevStage) 
+          if (stage == 2) 0  
+          else if (stage != prevStage) 1
+          else accum * prevStage
+      } 
+      renormalization.zip(baseRow).map(_ * _)
+    }
+
+    TwiddleParams(twiddleCountMax, twiddleLUTScale, twiddles, twiddleSubcountMax, twiddleSubcountMaxPerStage, twiddleCountMulPerStage)
   }
 
   // Calculates twiddles associated with each coprime set
