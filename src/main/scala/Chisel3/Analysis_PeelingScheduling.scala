@@ -158,7 +158,7 @@ object PeelingScheduling {
     val fftns = FFTNs(fftn)
     // Parameters sequentially calculated/updated
     // TODO: Rename to UpdateFFTParamsWithMemoryAccessParams, etc.
-    MemoryAccessParams(IOQ(FactorizationParams(fftns)))
+    Twiddles(MemoryAccessParams(IOQ(FactorizationParams(fftns))))
   }
 
   // Can convert to LUT for IO (single FFT) since you map bin to memory bank + address

@@ -75,11 +75,24 @@ object Params {
     Status("# memory banks: 2x" + numBanks)
     Status("Memory bank lengths: " + memLengths.mkString(","))
 
+    val fftns = dspblocks.fft.FFTNs(getFFT.sizes: _*)
+    // Parameters sequentially calculated/updated
+    // TODO: Rename to UpdateFFTParamsWithMemoryAccessParams, etc.
+    val twOut = dspblocks.fft.Twiddles(dspblocks.fft.MemoryAccessParams(dspblocks.fft.IOQ(dspblocks.fft.FactorizationParams(fftns))))
+    val twiddleCountMax = twOut.twiddle.twiddleCountMax.map(row => row.toList).toList
+    val twiddleLUTScale = twOut.twiddle.twiddleLUTScale.map(row => row.toList).toList
+    val twiddles = twOut.twiddle.twiddles.map { case (key, value) => value.map(row => row.map(col => new ChiselDSP.ScalaComplex(col.real, col.imag)).toList).toList }.toList
+    val twiddleSubcountMax = twOut.twiddle.twiddleSubcountMax.map(row => row.toList).toList
+
+
+    /*
     val (twiddleCountMax,twiddleLUTScale,twiddles,twiddleSubcountMax) = Twiddles(io.coprimes,
                                                                                  io.global,
                                                                                  calc.radPow,
                                                                                  calc.radOrder,
                                                                                  calc.maxStages)
+    */
+
     twiddle.countMax = twiddleCountMax
     twiddle.LUTScale = twiddleLUTScale
     twiddle.vals = twiddles
