@@ -9,6 +9,9 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
                                          normalized:Boolean, genOffset:Boolean)
                                         extends DSPTester(c) {
 
+  val fftns = dspblocks.fft.FFTNs(Params.getFFT.sizes.toSeq: _*)                                        
+  val testParams = dspblocks.fft.Twiddles(dspblocks.fft.MemoryAccessParams(dspblocks.fft.IOQ(dspblocks.fft.FactorizationParams(fftns))))
+                                          
   traceOn = false
   val randomDisabling = false//true
 
@@ -359,6 +362,26 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
   def setupDebug(): Unit = {
     val temp = traceOn
     traceOn = true
+    val fftnidx = testParams.fftns.get.indexOf(Tracker.FFTN)
+
+    val twiddleCount = peek(c.TwiddleGen.twiddleSetup.twiddleCounts).map(x => x.intValue).toSeq
+    val expectedTwiddleCount = testParams.twiddle.twiddleCountMax(fftnidx)
+    val fill = Seq.fill(twiddleCount.length - expectedTwiddleCount.length)(0)
+    val expectedTwiddleCountLong = expectedTwiddleCount ++ fill
+    // println(expectedTwiddleCountLong.mkString(","))
+    require(twiddleCount == expectedTwiddleCountLong)
+    val twiddleSubCount = peek(c.TwiddleGen.twiddleSetup.twiddleSubCounts).map(x => x.intValue).toSeq
+    val expectedTwiddleSubCount = testParams.twiddle.twiddleSubcountMaxPerStage(fftnidx)
+    val fill2 = Seq.fill(twiddleSubCount.length - expectedTwiddleSubCount.length)(0)
+    val expectedTwiddleSubCountLong = expectedTwiddleSubCount ++ fill2
+    // println(expectedTwiddleSubCountLong.mkString(","))
+    require(twiddleSubCount == expectedTwiddleSubCountLong)
+    val twiddleMuls = peek(c.TwiddleGen.twiddleSetup.twiddleMuls).map(x => x.intValue).toSeq
+    val expectedTwiddleMuls = testParams.twiddle.twiddleCountMulPerStage(fftnidx)
+    val fill3 = Seq.fill(twiddleMuls.length - expectedTwiddleMuls.length)(0)
+    val expectedTwiddleMulsLong = expectedTwiddleMuls ++ fill3
+    // println(expectedTwiddleMulsLong.mkString(","))
+    require(twiddleMuls == expectedTwiddleMulsLong)
     // if (!a.toList.sameElements(b.toList)) Error(":(")
     traceOn = temp
   }

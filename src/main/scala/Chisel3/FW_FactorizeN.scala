@@ -90,7 +90,7 @@ case class FFTNStageInfo(stages: Seq[Int]) {
   stages foreach { s => require(s >= 0, "Stage must be non-negative") }
   def getStagesCorrespondingTo(prime: Int): Seq[Int] = {
     require(WFTA.getValidRad.contains(prime), "Prime must be valid!")
-    val out = stages.filter(_ % prime == 0)
+    val out = stages.filter(_ % prime == 0).filterNot(_ == 0)
     require(out.sorted.reverse == out, "Left to right must be in descending value")
     out
   }

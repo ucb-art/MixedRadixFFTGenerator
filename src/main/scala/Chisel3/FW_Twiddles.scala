@@ -9,7 +9,7 @@ case class TwiddleParams(
   twiddleLUTScale: Seq[Seq[Int]] = Seq(Seq.empty),
   // Coprime --> LUT --> Twiddle Lane (col) 
   twiddles: Map[Int, Seq[Seq[Complex]]] = Map(0 -> Seq(Seq.empty)),
-  twiddleSubcountMax: Seq[Seq[Int]] = Seq(Seq.empty)
+  twiddleSubcountMax: Seq[Seq[Int]] = Seq(Seq.empty),
   // For DEBUG or single FFT use primarily
   // Fills across all stages
   twiddleSubcountMaxPerStage: Seq[Seq[Int]] = Seq(Seq.empty),
@@ -97,8 +97,12 @@ object Twiddles {
     def fillStageCounts(counts: Seq[Seq[Int]]): Seq[Seq[Int]] = {
       counts.zip(coprimes).zip(stagesInfo).map { case ((countRow, coprimeRow), stageRow) => 
         countRow.zip(coprimeRow).map { case (countCol, CoprimeInfo(_, prime, _)) => 
-          val fillAmount = stageRow.getStagesCorrespondingTo(prime).length
-          Seq.fill(fillAmount)(countCol)
+          // Prime unused
+          if (prime == 1) Seq.empty
+          else {
+            val fillAmount = stageRow.getStagesCorrespondingTo(prime).length
+            Seq.fill(fillAmount)(countCol)
+          }
         }.flatten
       }
     }
@@ -112,7 +116,7 @@ object Twiddles {
     // For DIF: base renormalization due to scaling max coprime to corresponding coprime required for FFTN
     // Subsequent stages associated with the same coprime are renormalized by that base *R1 for stage 2,
     // *R1*R2 for stage 3, etc. (product of previous stages with the same coprime)
-    val twiddleCountMulPerStage = twiddleCountMulBasePerState.zip(stagesInfo).map { case (baseRow, stageRow) =>
+    val twiddleCountMulPerStage = twiddleCountMulBasePerStage.zip(stagesInfo).map { case (baseRow, stageRow) =>
       val renormalization = stageRow.stages.zip(stageRow.prevStages).tail.scanLeft(1) { 
         case (accum, (stage, prevStage)) =>
           // Reset when radix changes
@@ -123,7 +127,7 @@ object Twiddles {
           else if (stage != prevStage) 1
           else accum * prevStage
       } 
-      renormalization.zip(baseRow).map(_ * _)
+      renormalization.zip(baseRow).map { case (a, b) => a * b }
     }
 
     TwiddleParams(twiddleCountMax, twiddleLUTScale, twiddles, twiddleSubcountMax, twiddleSubcountMaxPerStage, twiddleCountMulPerStage)
