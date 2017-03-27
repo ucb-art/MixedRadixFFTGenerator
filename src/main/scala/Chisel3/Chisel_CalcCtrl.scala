@@ -29,7 +29,8 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
   )
   val wlocs = Output(rlocs.cloneType)
   // Not delayed
-  val currentStageToTwiddle = Output(UInt(range"[0, $maxNumStages)"))
+  val currentStageToTwiddle = Vec(maxNumStages, Output(Bool()))
+  val twiddleCountEnable = Output(Bool())
   val currentRadToBF = new CustomIndexedBundle(usedRads.map(r => r -> Output(Bool())): _*)
 
   override def cloneType = (new CalcCtrlIO(fftParams)).asInstanceOf[this.type]
@@ -269,7 +270,9 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
     )
     io.re := re
     // Not delayed
-    io.currentStageToTwiddle := stageCount
+    io.currentStageToTwiddle.zipWithIndex.map { case (port, idx) => port := isStageBools(idx) }
+    io.twiddleCountEnable := reNoDelay
+
     io.currentRadToBF.elements foreach { case (rad, port) =>
       port := ShiftRegister(
         in = currentRadBools(rad.toInt),
@@ -329,7 +332,7 @@ class CalcCtrlSpec extends FlatSpec with Matchers {
       dsptools.Driver.execute(() =>
         new CalcCtrlWrapper(
           fftParams = PeelingScheduling.getFFTParams(fft),
-          fftType = DIF, 
+          fftType = DIT, 
           memOutDelay = 1, 
           peDelay = 3                                                   // in + 1 constant multiply + 1 twiddle multiply
         ), TestParams.options0TolQuiet
@@ -355,7 +358,13 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
     addr: Seq[Int] = Seq.empty
   )
 
-  val stagedNExpected = for ((srad, idx) <- stages.zipWithIndex) yield {
+  val stageVec = c.fftType match {
+    // DIT counts stages in reverse order
+    case DIT => stages.zipWithIndex.reverse
+    case DIF => stages.zipWithIndex
+  }
+
+  val stagedNExpected = for ((srad, idx) <- stageVec) yield {
     // Max stage count associated with current stage is zeroed
     val stagesNew = stages.updated(idx, 1)
     // TODO: Generalize! -- now assumes 4 is left-most
@@ -495,5 +504,3 @@ class CalcCtrlTester(c: CalcCtrlWrapper) extends DspTester(c) {
     s"Should stall after every stage. Stalled $stallCount times.")
 
 }
-
-// TODO: Try DIT
