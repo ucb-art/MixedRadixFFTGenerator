@@ -31,6 +31,8 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
   // Not delayed
   val currentStageToTwiddle = Vec(maxNumStages, Output(Bool()))
   val twiddleCountEnable = Output(Bool())
+
+  // Delayed
   val currentRadToBF = new CustomIndexedBundle(usedRads.map(r => r -> Output(Bool())): _*)
 
   override def cloneType = (new CalcCtrlIO(fftParams)).asInstanceOf[this.type]
@@ -40,8 +42,8 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
 
 }
 
-class CalcCtrlWrapper(val fftParams: FactorizationParams, val fftType: FFTType, memOutDelay: Int, peDelay: Int) extends Module {
-  val mod = Module(new CalcCtrl(fftParams, fftType, memOutDelay, peDelay))
+class CalcCtrlWrapper(val fftParams: FactorizationParams, val fftType: FFTType, memOutDelay: Int, wftaDly: Int, twDly: Int) extends Module {
+  val mod = Module(new CalcCtrl(fftParams, fftType, memOutDelay, wftaDly, twDly))
   val io = IO(mod.io.cloneType)
   mod.io.clk := clock
   mod.io.stateInfo <> io.stateInfo
@@ -55,8 +57,9 @@ class CalcCtrlWrapper(val fftParams: FactorizationParams, val fftType: FFTType, 
 }
 
 @chiselName
-class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: Int, peDelay: Int) extends Module with DelayTracking {
+class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: Int, wftaDly: Int, twDly: Int) extends Module with DelayTracking {
 
+  val peDelay = wftaDly + twDly
   val peAndMemOutDly = peDelay + memOutDelay
 
   val maxDepth = fftParams.mem.bankLengths.max
@@ -274,10 +277,15 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
     io.twiddleCountEnable := reNoDelay
 
     io.currentRadToBF.elements foreach { case (rad, port) =>
+      // Goes to WFTA
+      val additionalDelay = fftType match {
+        case DIT => twDly
+        case DIF => 0
+      }
       port := ShiftRegister(
         in = currentRadBools(rad.toInt),
         // Match timing to butterfly input
-        n = moduleDelay + memOutDelay,
+        n = moduleDelay + memOutDelay + additionalDelay,
         resetData = false.B,
         en = io.stateInfo.inState
       )
@@ -334,7 +342,8 @@ class CalcCtrlSpec extends FlatSpec with Matchers {
           fftParams = PeelingScheduling.getFFTParams(fft),
           fftType = DIT, 
           memOutDelay = 1, 
-          peDelay = 3                                                   // in + 1 constant multiply + 1 twiddle multiply
+          wftaDly = 2,
+          twDly = 1                                                   // in + 1 constant multiply + 1 twiddle multiply
         ), TestParams.options0TolQuiet
       ) { c =>
         new CalcCtrlTester(c)

@@ -16,7 +16,7 @@ class TwiddleGenIO[T <: Data:RealBits](dspDataType: => T, fftParams: Factorizati
 
   // Not delayed
   val currentStageToTwiddle = Vec(maxNumStages, Input(Bool()))
-  val twiddleCountEnable = Enable(Bool())
+  val twiddleCountEnable = Input(Bool())
   // stateInfo.start
   val startState = Input(Bool())
   val clk = Input(Clock())
@@ -120,6 +120,7 @@ class TwiddleGen[T <: Data:RealBits](
       // Multiplication occurs before WFTA
       case DIT => twiddleAddr
       // Multiplication occurs after WFTA
+      // TODO: Be consistent on spelling
       case DIF => ShiftRegister(twiddleAddr, wftaDelay)
     }
 
@@ -128,10 +129,16 @@ class TwiddleGen[T <: Data:RealBits](
       case DIF => ShiftRegister(currentPrimeIdx, wftaDelay)
     }
 
+    // All twiddle LUTs associated with a particular coprime share the same address
+    // (Already delayed version)
+    val primeIdxBools = twiddleLUTs.zipWithIndex.map { case (_, primeIdx) =>
+      currentPrimeIdxAlignedWithTwiddleAddr === primeIdx.U
+    }
+
     // TODO: Better way to do this?
-    twiddleLUTs foreach { case (associatedPrime, twiddles) => 
+    twiddleLUTs.zipWithIndex foreach { case ((associatedPrime, twiddles), primeIdx) => 
       twiddles foreach { case (laneIdx, laneLUT) =>
-        laneLUT.io.addr := assignedTwiddleAddr
+        laneLUT.io.addr := Mux(primeIdxBools(primeIdx), assignedTwiddleAddr, 0.U)
       }
     }
 
@@ -144,7 +151,7 @@ class TwiddleGen[T <: Data:RealBits](
       val numColsLanes = twiddles.toSeq.length
       val pad = maxNumBanks - numColsLanes
       twiddles.map { case (laneIdx, laneLUT) =>
-       laneLUT.io.dout
+        laneLUT.io.dout
       } ++ Seq.fill(pad)(zero)
     }.transpose
 
@@ -153,7 +160,7 @@ class TwiddleGen[T <: Data:RealBits](
       Mux1H(
         // laneCols correspond to prime
         laneCols.zipWithIndex.map { case (primeTwOption, primeIdx) => 
-          (primeIdx.U === currentPrimeIdxAlignedWithTwiddleAddr) -> primeTwOption 
+          primeIdxBools(primeIdx) -> primeTwOption 
         }
       )
     }

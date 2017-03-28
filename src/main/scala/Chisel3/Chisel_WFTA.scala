@@ -44,9 +44,9 @@ case object WFTAAdd extends WFTAStageType
 // TODO: Already stated -- rename FactorizationParams
 class WFTAIO[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams) extends Bundle {
   val usedRads = fftParams.butterfly.rad 
-  // TODO: Less hacky
+  // TODO: Less hacky -- Only go to 4 if it contains both 2 and 4 (which is always true?)
   // Radix-2: Perform 2 in parallel to decrease cycle count
-  val maxRad = Seq(fftParams.butterfly.maxRad, (if (usedRads.contains(2)) 4 else 0)).max
+  val maxRad = Seq(fftParams.butterfly.maxRad, (if (usedRads.contains(2) && usedRads.contains(4)) 4 else 0)).max
   
   val currRad = new CustomIndexedBundle(usedRads.map(r => r -> Input(Bool())): _*)
   val currRadOut = Flipped(currRad.cloneType)
