@@ -63,11 +63,13 @@ class FFASTTopIO[T <: Data:RealBits](
 */
 }
 
+@chiselName
 class FFASTTop[T <: Data:RealBits](
   adcDataType: => T, 
   dspDataType: => T, 
   ffastParams: FFASTParams, 
-  maxNumPeels: Int = 10) extends Module {
+  maxNumPeels: Int = 10,
+  useBlackBox: Boolean = false) extends Module {
 
 ////////////////// STATE MACHINE
 
@@ -108,7 +110,8 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
       dspDataType = dspDataType, 
       ffastParams, 
       ffastParams.inputType, 
-      subFFTnsColMaxs)
+      subFFTnsColMaxs,
+      useBlackBox = useBlackBox)
   )
   collectADCSamplesBlock.io.resetClk := io.resetClk
   collectADCSamplesBlock.io.inClk := io.inClk
@@ -155,9 +158,9 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   val dataMems = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
     // TODO: Should dspDataType be complex?
     val memBankLengths = ffastParams.subFFTBankLengths(n)
-    val mem = Module(new MemBankInterface(DspComplex(dspDataType), memBankLengths))
+    val mem = Module(new MemBankInterface(DspComplex(dspDataType), memBankLengths, name = s"ffastDataSRAM_${n}_${ph}"))
     mem.io.clk := globalClk
-    mem.suggestName(s"ffastDataMem_${n}_${ph}")
+    mem.suggestName(s"ffastDataMemInterface_${n}_${ph}")
     (n, ph) -> mem
   }.toMap
 
@@ -335,9 +338,10 @@ class FFASTTopWrapper[T <: Data:RealBits](
     val adcDataType: T, 
     val dspDataType: T, 
     val ffastParams: FFASTParams, 
-    maxNumPeels: Int = 10) extends TopModule(usePads = false) {
+    maxNumPeels: Int = 10,
+    useBlackBox: Boolean = false) extends TopModule(usePads = false) {
   // Need to annotate top-level clk when using clk div
-  val mod = Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels))
+  val mod = Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
   
   val io = IO(new Bundle {
     val resetClk = Input(Bool())
@@ -412,6 +416,8 @@ class FFASTTopSpec extends FlatSpec with Matchers {
         //dspDataType = DspReal(),
         adcDataType = FixedPoint(23.W, 8.BP), 
         dspDataType = FixedPoint(27.W, 12.BP),
+        //adcDataType = FixedPoint(9.W, 8.BP), 
+        //dspDataType = FixedPoint(20.W, 10.BP),
         ffastParams = FFASTParams(
           // fftn = 20,
           // subFFTns = Seq(4, 5),
@@ -436,8 +442,10 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
       new FFASTTopWrapper(
         // adcDataType = DspReal(),
         // dspDataType = DspReal(),
-        adcDataType = FixedPoint(23.W, 8.BP), 
-        dspDataType = FixedPoint(27.W, 12.BP),
+        // adcDataType = FixedPoint(23.W, 8.BP), 
+        // dspDataType = FixedPoint(27.W, 12.BP),
+        adcDataType = FixedPoint(9.W, 8.BP), 
+        dspDataType = FixedPoint(20.W, 10.BP),
         ffastParams = FFASTParams(
           // fftn = 20,
           // subFFTns = Seq(4, 5),
@@ -447,7 +455,8 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
           delays = Seq(Seq(0, 1, 3, 23)),
           inputType = DIF
         ),
-        maxNumPeels = 0
+        maxNumPeels = 0,
+        useBlackBox = true
         /*
         adcDataType = FixedPoint(16.W, 8.BP), 
         dspDataType = FixedPoint(22.W, 12.BP),

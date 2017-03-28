@@ -9,6 +9,8 @@ import breeze.math.Complex
 import chisel3.experimental.FixedPoint
 import dsptools.numbers.implicits._
 
+// TODO: Write mask -- gradually enable across FFT stages!
+
 class WriteBeforeReadMemWrapper[T <: Data](dataType: => T, val depth: Int) extends Module {
   val mod = Module(new WriteBeforeReadMem(dataType, depth))
   val io = IO(new WriteBeforeReadMemIO(dataType, depth))
@@ -35,11 +37,13 @@ class WriteBeforeReadMemIO[T <: Data](dataType: => T, depth: Int) extends Bundle
 // Dual-ported memory
 // If memory is written and read at the same time (same address),
 // the written memory is passed through to read
-class WriteBeforeReadMem[T <: Data](dataType: => T, val depth: Int) extends Module {
+@chiselName
+class WriteBeforeReadMem[T <: Data](dataType: => T, val depth: Int, name: String = "") extends Module {
   // TODO: Save power by using write mask, read enable
   val io = IO(new WriteBeforeReadMemIO(dataType, depth))
   withClock(io.clk) {
     val mem = SyncReadMem(depth, dataType)
+    mem.suggestName(name)
     // Read always enabled
     // When read, write happen at the same time, pass write through
     // Note: Need to match delays!

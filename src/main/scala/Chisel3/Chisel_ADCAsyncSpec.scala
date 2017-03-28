@@ -179,7 +179,8 @@ class CollectADCSamples[T <: Data:RealBits](
     ffastParams: FFASTParams, 
     fftType: FFTType, 
     // TODO: Consider moving into FFASTParams?
-    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
+    subFFTnsColMaxs: Map[Int, Seq[Int]],
+    useBlackBox: Boolean = false) extends Module {
 
   val io = IO(new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs))
 
@@ -191,7 +192,12 @@ class CollectADCSamples[T <: Data:RealBits](
   FFASTMemOutputLanes.connectToDefault(io.dataFromMemory, ffastParams)
   FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
 
-  val analogBlock = Module(new AnalogModel(adcDataType, ffastParams))
+  val analogBlock = 
+    if (useBlackBox)
+      Module(new AnalogModelBlackBox(adcDataType, ffastParams))
+    else
+      Module(new AnalogModel(adcDataType, ffastParams))
+
   analogBlock.io.resetClk := io.resetClk
   analogBlock.io.inClk := io.inClk
   analogBlock.io.analogIn := io.analogIn

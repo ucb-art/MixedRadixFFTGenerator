@@ -23,6 +23,43 @@ class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
   val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
     Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelIO(adcDataType, ffastParams)).asInstanceOf[this.type]
+
+
+
+
+
+
+
+
+
+
+
+
+  // TODO: Less hack-ish SDC generation
+  println(s"create_clock -name clk10GHz -period 0.1 [get_pins inClk]")
+
+  ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
+
+    val phases = ffastParams.clkDelays
+    val referenceEdges = phases.map(p => Seq(2 * p, 2 * (p + 1), 2 * (p + divBy)))
+    phases.zip(referenceEdges) foreach { case (adcDelay, edges) =>
+      println(s"create_generated_clock -name adcClks_${subFFT}_${adcDelay} -source [get_pins inClk] -edges { ${edges.mkString(" ")} } [get_pins adcClks_${subFFT}_${adcDelay}]")
+      println(s"set_input_delay -clock adcClks_${subFFT}_${adcDelay} 0.02 [get_pins adcDigitalOut_${subFFT}_${adcDelay}]")
+    }
+    
+
+  }
+
+
+
+
+
+
+
+}
+
+class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends BlackBox {
+  val io = IO(new AnalogModelIO(adcDataType, ffastParams))
 }
 
 class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module {

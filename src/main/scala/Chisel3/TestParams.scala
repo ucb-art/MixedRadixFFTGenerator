@@ -84,7 +84,7 @@ object TestParams {
 
   val buildWithMemories = new ExecutionOptionsManager("BuildWithMemories") with HasChiselExecutionOptions with HasFirrtlOptions {
     commonOptions = CommonOptions(
-      globalLogLevel = LogLevel.Info,
+      //globalLogLevel = LogLevel.Info,
       targetDirName = s"test_run_dir/BuildWithMemories"
     )
     firrtlOptions = FirrtlExecutionOptions(

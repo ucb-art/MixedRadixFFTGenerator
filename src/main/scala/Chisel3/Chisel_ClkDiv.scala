@@ -7,6 +7,7 @@ import org.scalatest.{FlatSpec, Matchers}
 import dsptools.{DspTester, DspTesterOptionsManager}
 import barstools.tapeout.TestParams
 import barstools.tapeout.transforms.pads._
+import chisel3.experimental._
 
 // WARNING: WILL FAILL IF TOP MODULE USES PADS!
 
@@ -43,6 +44,7 @@ class FFASTClkDivIO(delays: Seq[Int], subFFTns: Seq[Int]) extends Bundle {
   override def cloneType = (new FFASTClkDivIO(delays, subFFTns)).asInstanceOf[this.type]
 }
 
+@chiselName
 class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
 
   val delays = ffastParams.clkDelays
@@ -51,6 +53,7 @@ class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
 
   val clkDivMods = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
     val mod = Module(new SEClkDivider(divBy = divBy, phases = delays))
+    mod.suggestName(s"clkDiv_${subFFT}_${divBy}")
     mod.io.inClk := io.inClk
     mod.io.reset := io.resetClk
     delays foreach { case d => 

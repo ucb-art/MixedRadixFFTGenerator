@@ -32,13 +32,13 @@ class MemBankInterfaceIO[T <: Data:Ring](dataType: T, maxNumBanks: Int, maxDepth
 }
 
 @chiselName
-class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int]) extends Module with DelayTracking {
+class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int], name: String = "") extends Module with DelayTracking {
   // Read data valid 1 clk cycle after read address
   // Have as many input ports as # of banks -- that then gets sorted
   // TODO: Should get delay from sub-modules
   val moduleDelay = 1
   val io = IO(new MemBankInterfaceIO(dataType, maxNumBanks = bankLengths.length, maxDepth = bankLengths.max))
-  val memBanks = Module(new MemBanks(dataType, bankLengths))
+  val memBanks = Module(new MemBanks(dataType, bankLengths, name = name))
   withClock(io.clk) {
 
     // Wire to give a better name :\
