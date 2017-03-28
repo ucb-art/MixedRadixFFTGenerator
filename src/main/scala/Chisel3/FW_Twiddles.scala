@@ -1,5 +1,6 @@
 package dspblocks.fft
 import breeze.math.Complex
+import chisel3.experimental._
 
 // TODO: There's actually overlap between 675, 800, 864 twiddles -- could theoretically reuse(?)
 // TODO: Convert 2D Seq into Map (more informative)
@@ -7,14 +8,28 @@ case class TwiddleParams(
   // Row = per FFT
   twiddleCountMax: Seq[Seq[Int]] = Seq(Seq.empty),
   twiddleLUTScale: Seq[Seq[Int]] = Seq(Seq.empty),
-  // Coprime --> LUT --> Twiddle Lane (col) 
+  // Prime --> LUT --> Twiddle Lane (col) 
   twiddles: Map[Int, Seq[Seq[Complex]]] = Map(0 -> Seq(Seq.empty)),
   twiddleSubcountMax: Seq[Seq[Int]] = Seq(Seq.empty),
   // For DEBUG or single FFT use primarily
   // Fills across all stages
   twiddleSubcountMaxPerStage: Seq[Seq[Int]] = Seq(Seq.empty),
   twiddleCountMulPerStage: Seq[Seq[Int]] = Seq(Seq.empty)
-)
+) {
+  // TODO: Do different lanes have different twiddle min/max?
+  def getTwiddleWidth(fractionalWidth: Int): Int = { 
+    val allTwiddles = twiddles.map { case (coprime, lut2d) => lut2d.flatten }.flatten
+    val allTwiddleScalars = allTwiddles.map(t => t.real) ++ allTwiddles.map(t => t.imag)
+    val minBigInt = FixedPoint.toBigInt(allTwiddleScalars.min, fractionalWidth)
+    val maxBigInt = FixedPoint.toBigInt(allTwiddleScalars.max, fractionalWidth)
+    // + 1 for sign bit
+    minBigInt.bitLength.max(maxBigInt.bitLength) + 1
+  }
+
+  def maxTwiddleROMDepth: Int = {
+    twiddles.map { case (coprime, lut2d) => lut2d.length }.max
+  }
+}
 /*
 twiddleCountMax main twiddle count max for each calculation stage (CTA)
 twiddleLUTScale base multiply amount to scale range of twiddle counts to full twiddle LUT size
@@ -80,8 +95,8 @@ object Twiddles {
     val (twiddlesTemp, twiddleLUTDepths) = global.map { case GlobalPrimeInfo(_, maxRadix, maxCoprime) => 
       twiddleN(maxRadix, maxCoprime)
     }.unzip
-    val twiddles = twiddlesTemp.zip(global).map { case (tw, GlobalPrimeInfo(_, _, maxCoprime)) => 
-      maxCoprime -> tw
+    val twiddles = twiddlesTemp.zip(global).map { case (tw, GlobalPrimeInfo(prime, _, _)) => 
+      prime -> tw
     }.toMap
 
     println("Twiddle Memory Size: " + twiddleLUTDepths.sum)

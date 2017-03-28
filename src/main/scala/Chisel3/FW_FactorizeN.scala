@@ -94,6 +94,9 @@ case class FFTNStageInfo(stages: Seq[Int]) {
     require(out.sorted.reverse == out, "Left to right must be in descending value")
     out
   }
+  def stagePrimes = stages.map { rad =>
+    WFTA.groupedValidRad.find(_.contains(rad)).getOrElse(Seq(1)).min
+  }
 }
 
 case class IOParams(
