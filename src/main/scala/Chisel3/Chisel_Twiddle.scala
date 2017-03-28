@@ -146,7 +146,8 @@ class TwiddleGen[T <: Data:RealBits](
 
     val twiddleOutsColsLanes = twiddleLUTs.map { case (associatedPrime, twiddles) => 
       val numColsLanes = twiddles.toSeq.length
-      val pad = maxNumBanks - numColsLanes
+      // One less non-trivial twiddle lane than radix
+      val pad = (maxNumBanks - 1) - numColsLanes
       twiddles.map { case (laneIdx, laneLUT) =>
         laneLUT.io.dout
       } ++ Seq.fill(pad)(zero)

@@ -67,7 +67,7 @@ class SubFFT[T <: Data:RealBits](
     "Twiddle gen and (Calc + Mem) delays must match to reach BF @ the same time!")
 
   calcCtrl.io.clk := io.clk
-  calcCtrl.io.stateInfo := io.stateInfo
+  calcCtrl.io.stateInfo <> io.stateInfo
 
   twiddleGen.io.clk := io.clk
   twiddleGen.io.startState := io.stateInfo.start
@@ -87,7 +87,7 @@ class SubFFT[T <: Data:RealBits](
       io.dataToMemory(fftLabel)(lane).din := pe(fftLabel).io.y(lane)
       io.dataToMemory(fftLabel)(lane).we := calcCtrl.io.we(lane)
       io.dataToMemory(fftLabel)(lane).loc := calcCtrl.io.wlocs(lane)
-      pe(fftLabel).io.x(lane) := io.dataFromMemory(fftLabel)(lane)
+      pe(fftLabel).io.x(lane) := io.dataFromMemory(fftLabel)(lane).dout
       io.dataFromMemory(fftLabel)(lane).re := calcCtrl.io.re(lane)
       io.dataFromMemory(fftLabel)(lane).loc := calcCtrl.io.rlocs(lane)
     }
