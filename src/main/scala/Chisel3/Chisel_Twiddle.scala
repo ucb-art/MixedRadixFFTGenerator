@@ -90,11 +90,12 @@ class TwiddleGen[T <: Data:RealBits](
     // !@#$
     twiddleAddr := ShiftRegister(twiddleCount * twiddleCountMulsUsed, 1)
 
-    val primeIdx = stagePrimes.map { case p => 
+    val primeIdxInt = stagePrimes.map { case p => 
       val idx = globalPrime.indexOf(p) 
       if (idx == -1) globalPrime.length
       else idx
-    }.map(p => p.U)
+    }
+    val primeIdx = primeIdxInt.map(p => p.U)
     // !@#$
     val currentPrimeIdx = ShiftRegister(Mux1H(io.currentStageToTwiddle.zip(primeIdx)), 1)
 
@@ -127,14 +128,14 @@ class TwiddleGen[T <: Data:RealBits](
 
     // All twiddle LUTs associated with a particular coprime share the same address
     // (Already delayed version)
-    val primeIdxBools = twiddleLUTs.zipWithIndex.map { case (_, primeIdx) =>
-      currentPrimeIdxAlignedWithTwiddleAddr === primeIdx.U
-    }
+    val primeIdxBools = twiddleLUTs.zipWithIndex.map { case (_, primeIdxInt) =>
+      currentPrimeIdxAlignedWithTwiddleAddr === primeIdxInt.U
+    }.toSeq
 
     // TODO: Better way to do this?
-    twiddleLUTs.zipWithIndex foreach { case ((associatedPrime, twiddles), primeIdx) => 
+    twiddleLUTs.zipWithIndex foreach { case ((associatedPrime, twiddles), primeIdxInt) => 
       twiddles foreach { case (laneIdx, laneLUT) =>
-        laneLUT.io.addr := Mux(primeIdxBools(primeIdx), assignedTwiddleAddr, 0.U)
+        laneLUT.io.addr := Mux(primeIdxBools(primeIdxInt), assignedTwiddleAddr, 0.U)
       }
     }
 
@@ -155,8 +156,8 @@ class TwiddleGen[T <: Data:RealBits](
     val outInternal = twiddleOutsColsLanes.map { case laneCols => 
       Mux1H(
         // laneCols correspond to prime
-        laneCols.zipWithIndex.map { case (primeTwOption, primeIdx) => 
-          primeIdxBools(primeIdx) -> primeTwOption 
+        laneCols.zipWithIndex.map { case (primeTwOption, primeIdxInt) => 
+          primeIdxBools(primeIdxInt) -> primeTwOption 
         }
       )
     }

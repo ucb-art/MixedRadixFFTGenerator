@@ -1,6 +1,9 @@
 package dspblocks.fft
 import breeze.math.Complex
 import chisel3.experimental._
+import chisel3._
+import chisel3.experimental._
+import dsptools.numbers._
 
 // TODO: There's actually overlap between 675, 800, 864 twiddles -- could theoretically reuse(?)
 // TODO: Convert 2D Seq into Map (more informative)
@@ -27,7 +30,7 @@ case class TwiddleParams(
   }
 
   // TODO: Is here the best place?
-  def getTwiddleType[T <: RealBits](dspDataType: T): T = {
+  def getTwiddleType[T <: Data:RealBits](dspDataType: T): T = {
     val out = dspDataType match {
       case r: DspReal => r
       case f: FixedPoint =>

@@ -3,6 +3,7 @@ import chisel3._
 import barstools.tapeout.transforms._
 import dsptools.numbers._
 import dsptools.numbers.implicits._
+import chisel3.experimental._
 
 class SubFFTIO[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams, parallelPELabels: Seq[Int]) extends Bundle {
 
@@ -28,7 +29,7 @@ class SubFFTIO[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationPa
 @chiselName
 class SubFFT[T <: Data:RealBits](
     dspDataType: => T, 
-    fftParams: FactorizationParmams, 
+    fftParams: FactorizationParams, 
     parallelPELabels: Seq[Int], 
     fftType: FFTType, 
     memOutDelay: Int) extends Module {
@@ -62,7 +63,8 @@ class SubFFT[T <: Data:RealBits](
     twDly = pe0Ref.twDelay
   ))
 
-  require(twiddleGen.moduleDelay == calcCtrl.moduleDelay + memOutDelay, "Twiddle gen and (Calc + Mem) delays must match!")
+  require(twiddleGen.moduleDelay == (calcCtrl.moduleDelay + memOutDelay), 
+    "Twiddle gen and (Calc + Mem) delays must match to reach BF @ the same time!")
 
   calcCtrl.io.clk := io.clk
   calcCtrl.io.stateInfo := io.stateInfo
@@ -72,22 +74,22 @@ class SubFFT[T <: Data:RealBits](
   twiddleGen.io.currentStageToTwiddle := calcCtrl.io.currentStageToTwiddle
   twiddleGen.io.twiddleCountEnable := calcCtrl.io.twiddleCountEnable
 
-  pe foreach {mod =>
+  pe foreach { case (label, mod) =>
     mod.io.clk := io.clk
     mod.io.twiddles := twiddleGen.io.twiddles
-    // TODO: Constistant name!!
+    // TODO: Constistant name!! ; also this bit is redundant across PE's
     mod.io.currRad := calcCtrl.io.currentRadToBF
   }
     
   parallelPELabels foreach { case fftLabel => 
-    (0 until maxNumBanks) fpreach { case lane =>
+    (0 until maxNumBanks) foreach { case lane =>
       // TODO: Less copy paste
-      dataToMemory(fftLabel)(lane).din := pe(fftLabel).io.y(lane)
-      dataToMemory(fftLabel)(lane).we := calcCtrl.io.we(lane)
-      dataToMemory(fftLabel)(lane).loc := calcCtrl.io.wlocs(lane)
-      pe(fftLabel).io.x(lane) := dataFromMemory(fftLabel)(lane)
-      dataFromMemory(fftLabel)(lane).re := calcCtrl.io.re(lane)
-      dataFromMemory(fftLabel)(lane).loc := calcCtrl.io.rlocs(lane)
+      io.dataToMemory(fftLabel)(lane).din := pe(fftLabel).io.y(lane)
+      io.dataToMemory(fftLabel)(lane).we := calcCtrl.io.we(lane)
+      io.dataToMemory(fftLabel)(lane).loc := calcCtrl.io.wlocs(lane)
+      pe(fftLabel).io.x(lane) := io.dataFromMemory(fftLabel)(lane)
+      io.dataFromMemory(fftLabel)(lane).re := calcCtrl.io.re(lane)
+      io.dataFromMemory(fftLabel)(lane).loc := calcCtrl.io.rlocs(lane)
     }
   }
 
