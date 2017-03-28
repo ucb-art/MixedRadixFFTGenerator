@@ -15,8 +15,8 @@ class TwiddleGenIO[T <: Data:RealBits](dspDataType: => T, fftParams: Factorizati
   val maxNumBanks = fftParams.mem.maxNumBanks
 
   // Not delayed
-  val currentStageToTwiddle = Vec(maxNumStages, Output(Bool()))
-  val twiddleCountEnable = Output(Bool())
+  val currentStageToTwiddle = Vec(maxNumStages, Input(Bool()))
+  val twiddleCountEnable = Enable(Bool())
   // stateInfo.start
   val startState = Input(Bool())
   val clk = Input(Clock())
@@ -73,14 +73,14 @@ class TwiddleGen[T <: Data:RealBits](
     val twiddleCountMax = twiddleCountsInt.max
     val twiddleCount = Wire(UInt(range"[0, $twiddleCountMax]"))
     val twiddleCountNext = Mux(twiddleCount === twiddleCountMaxUsed, 0.U, twiddleCount +& 1.U)
-    val twiddleCountEnable = Wire(Bool())
-    twiddleCount := RegEnable(twiddleCountNext, init = 0.U, enable = twiddleCountEnable)
+    val twiddleCountEnableInt = Wire(Bool())
+    twiddleCount := RegEnable(twiddleCountNext, init = 0.U, enable = twiddleCountEnableInt)
 
     val twiddleSubCountMax = twiddleSubCountsInt.max
 
     if (twiddleSubCountMax == 0) {
       // Only 1 coprime -> don't need sub counter
-      twiddleCountEnable := io.twiddleCountEnable
+      twiddleCountEnableInt := io.twiddleCountEnable
     }
     else {
       val twiddleSubCount = Wire(UInt(range"[0, $twiddleSubCountMax]"))
@@ -88,7 +88,7 @@ class TwiddleGen[T <: Data:RealBits](
       val twiddleSubCountIsMax = twiddleSubCount === twiddleSubCountMaxUsed
       val twiddleSubCountNext = Mux(twiddleSubCountIsMax, 0.U, twiddleSubCount +& 1.U)
       twiddleSubCount := RegEnable(twiddleSubCountNext, init = 0.U, enable = io.twiddleCountEnable)
-      twiddleCountEnable := io.twiddleCountEnable & twiddleSubCountIsMax
+      twiddleCountEnableInt := io.twiddleCountEnable & twiddleSubCountIsMax
     }
 
     val maxTwiddleROMDepth = fftParams.twiddle.maxTwiddleROMDepth
@@ -106,6 +106,8 @@ class TwiddleGen[T <: Data:RealBits](
     val twiddleList = fftParams.twiddle.twiddles.map { case (associatedPrime, twiddles) => 
       associatedPrime -> twiddles.transpose 
     } 
+    // TODO: Transposing is confusing
+
     val twiddleLUTs = twiddleList.map { case (associatedPrime, twiddles) => 
       val laneLUTs = twiddles.zip((1 to twiddles.length)).map { case (laneLUT, laneIdx) => 
         laneIdx -> Module(new ComplexLUT(twiddleType, s"twiddles_${associatedPrime}_${laneIdx}", laneLUT))
@@ -139,19 +141,18 @@ class TwiddleGen[T <: Data:RealBits](
     zero.imag := Ring[T].zero
 
     val twiddleOutsColsLanes = twiddleLUTs.map { case (associatedPrime, twiddles) => 
-      val numCols = twiddles.toSeq.length
-      val pad = maxNumBanks - numCols
+      val numColsLanes = twiddles.toSeq.length
+      val pad = maxNumBanks - numColsLanes
       twiddles.map { case (laneIdx, laneLUT) =>
        laneLUT.io.dout
       } ++ Seq.fill(pad)(zero)
     }.transpose
 
-
-
     // Lanes indexed first
-    val outInternal = twiddleOutsColsLanes.map { case lane => 
+    val outInternal = twiddleOutsColsLanes.map { case laneCols => 
       Mux1H(
-        lane.zipWithIndex.map { case (primeTwOption, primeIdx) => 
+        // laneCols correspond to prime
+        laneCols.zipWithIndex.map { case (primeTwOption, primeIdx) => 
           (primeIdx.U === currentPrimeIdxAlignedWithTwiddleAddr) -> primeTwOption 
         }
       )
@@ -167,3 +168,5 @@ class TwiddleGen[T <: Data:RealBits](
   }
 
 }
+
+// TODO: UNIT TEST!!!
