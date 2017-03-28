@@ -72,8 +72,8 @@ class FFASTTop[T <: Data:RealBits](
 ////////////////// STATE MACHINE
 
   val basicStateNames = Seq(
-    "ADCCollect" //,
-    //"FFT",
+    "ADCCollect",
+    "FFT" //,
     //"PopulateNonZerotons"
   ) ++ (if (maxNumPeels == 0) Seq.empty else Seq(0 until maxNumPeels).map(n => s"Peel$n"))
   val stateNames = basicStateNames.map(state => Seq(state, s"${state}Debug")).flatten ++ Seq("reset")
@@ -138,6 +138,20 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   debugBlock.io.adcIdxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
   debugBlock.io.postFFTIdxToBankAddr.bankAddrs := outputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
 
+  val subFFTs = ffastParams.subFFTns.map { case fft =>
+    val fftParams = PeelingScheduling.getFFTParams(fft)
+    val mod = Module(new SubFFT(
+      dspDataType = dspDataType,
+      fftParams = fftParams,
+      parallelPELabels = ffastParams.adcDelays,
+      fftType = ffastParams.inputType,
+      // TODO: DON'T HARD CODE!!!
+      memOutDelay = 1
+    ))
+    mod.io.clk := globalClk
+    fft -> mod
+  }.toMap
+
   val dataMems = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
     // TODO: Should dspDataType be complex?
     val memBankLengths = ffastParams.subFFTBankLengths(n)
@@ -161,6 +175,11 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   // TODO: Add more!
   when(currentState === states("ADCCollect")) {
     connectToMem(dataMems, collectADCSamplesBlock.io.dataToMemory, collectADCSamplesBlock.io.dataFromMemory)
+  } .elsewhen(currentState === states("FFT")) {
+    ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+      dataMems(n, ph).io.i := subFFTs(n).io.dataToMemory(ph)
+      subFFTs(n).io.dataFromMemory(ph) <> dataMems(n, ph).io.o
+    }
   } .otherwise {
     connectToMem(dataMems, debugBlock.io.dataToMemory, debugBlock.io.dataFromMemory)
   }
@@ -201,13 +220,15 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   val nextStateWithoutSkipToEnd = Wire(UInt(range"[0, $numStates)"))
 
   // TODO: Should be last debug
-  when(currentStateBools("reset") | currentStateBools("ADCCollectDebug")) {
+  val lastState = basicStateNames.last + "Debug"
+  when(currentStateBools("reset") | currentStateBools(lastState)) {
     nextStateWithoutSkipToEnd := states("ADCCollect")
   } .otherwise {
     nextStateWithoutSkipToEnd := currentState +& 1.U
   }
 
   // TODO: When done + skip to end (peel only), nextState is different
+  // TODO: Convert to enable?
   val nextState = nextStateWithoutSkipToEnd
   currentState := Mux(done, nextState, currentState)
 
@@ -220,6 +241,11 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
     collectADCSamplesBlock.io.stateInfo.inState := false.B 
     debugBlock.io.stateInfo.start := false.B
     debugBlock.io.stateInfo.inState := false.B 
+    // TODO: Make sub ADC wrapper?
+    subFFTs foreach { case (name, mod) => 
+      mod.io.stateInfo.start := false.B
+      mod.io.stateInfo.inState := false.B 
+    }
 
   } .elsewhen (currentStateBools("ADCCollect")) {
 
@@ -228,15 +254,48 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
     collectADCSamplesBlock.io.stateInfo.inState := true.B 
     debugBlock.io.stateInfo.start := done
     debugBlock.io.stateInfo.inState := false.B 
+    subFFTs foreach { case (name, mod) => 
+      mod.io.stateInfo.start := false.B
+      mod.io.stateInfo.inState := false.B 
+    }
 
   } .elsewhen (currentStateBools("ADCCollectDebug")) {
 
     done := debugBlock.io.stateInfo.done 
-    // TODO: Change -- here we assume this is the last state
-    collectADCSamplesBlock.io.stateInfo.start := done 
+    collectADCSamplesBlock.io.stateInfo.start := false.B
     collectADCSamplesBlock.io.stateInfo.inState := false.B 
     debugBlock.io.stateInfo.start := false.B
     debugBlock.io.stateInfo.inState := true.B 
+    subFFTs foreach { case (name, mod) => 
+      mod.io.stateInfo.start := done
+      mod.io.stateInfo.inState := false.B 
+    }
+
+  } .elsewhen (currentStateBools("FFT")) {
+
+    // Done when ALL sub-FFTs finish
+    done := subFFTs.map { case (name, mod) => mod.io.stateInfo.done }.reduce(_ & _)
+    collectADCSamplesBlock.io.stateInfo.start := false.B
+    collectADCSamplesBlock.io.stateInfo.inState := false.B 
+    debugBlock.io.stateInfo.start := done
+    debugBlock.io.stateInfo.inState := false.B 
+    subFFTs foreach { case (name, mod) => 
+      mod.io.stateInfo.start := false.B
+      mod.io.stateInfo.inState := true.B 
+    }
+
+  } .elsewhen (currentStateBools("FFTDebug")) {
+
+    done := debugBlock.io.stateInfo.done 
+    // TODO: Change -- here we assume this is the last state
+    collectADCSamplesBlock.io.stateInfo.start := done
+    collectADCSamplesBlock.io.stateInfo.inState := false.B 
+    debugBlock.io.stateInfo.start := false.B
+    debugBlock.io.stateInfo.inState := true.B 
+    subFFTs foreach { case (name, mod) => 
+      mod.io.stateInfo.start := false.B
+      mod.io.stateInfo.inState := false.B 
+    }
 
   } .otherwise { // SHOULD NEVER GET HERE
 
@@ -245,6 +304,10 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
     collectADCSamplesBlock.io.stateInfo.inState := false.B
     debugBlock.io.stateInfo.start := false.B
     debugBlock.io.stateInfo.inState := false.B
+    subFFTs foreach { case (name, mod) => 
+      mod.io.stateInfo.start := false.B
+      mod.io.stateInfo.inState := false.B 
+    }
 
   }
 
