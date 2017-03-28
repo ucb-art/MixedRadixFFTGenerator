@@ -26,6 +26,18 @@ case class TwiddleParams(
     minBigInt.bitLength.max(maxBigInt.bitLength) + 1
   }
 
+  // TODO: Is here the best place?
+  def getTwiddleType[T <: RealBits](dspDataType: T): T = {
+    val out = dspDataType match {
+      case r: DspReal => r
+      case f: FixedPoint =>
+        require(f.binaryPoint.known, "Binary point must be known!")
+        val fixedWidth = getTwiddleWidth(f.binaryPoint.get)
+        FixedPoint(fixedWidth.W, f.binaryPoint)
+    }
+    out.asInstanceOf[T]
+  }
+
   def maxTwiddleROMDepth: Int = {
     twiddles.map { case (coprime, lut2d) => lut2d.length }.max
   }

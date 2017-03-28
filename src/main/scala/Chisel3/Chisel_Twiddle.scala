@@ -42,16 +42,10 @@ class TwiddleGen[T <: Data:RealBits](
   // TODO: Don't hard code
   // CalcCtrl (2) + Mem Read Delay (1)
   // Delayed @ TwiddleAddr + final out (x2) -- Look for shift register
+  // See !@#$
   val moduleDelay = 3
 
-  val twiddleTypeTemp = dspDataType match {
-    case r: DspReal => r
-    case f: FixedPoint =>
-      require(f.binaryPoint.known, "Binary point must be known!")
-      val fixedWidth = fftParams.twiddle.getTwiddleWidth(f.binaryPoint.get)
-      FixedPoint(fixedWidth.W, f.binaryPoint)
-  }
-  val twiddleType = twiddleTypeTemp.asInstanceOf[T]
+  val twiddleType = fftParams.twiddle.getTwiddleType(dspDataType)
 
   val io = IO(new TwiddleGenIO(twiddleType, fftParams))
 
@@ -93,6 +87,7 @@ class TwiddleGen[T <: Data:RealBits](
 
     val maxTwiddleROMDepth = fftParams.twiddle.maxTwiddleROMDepth
     val twiddleAddr = Wire(UInt(range"[0, $maxTwiddleROMDepth)"))
+    // !@#$
     twiddleAddr := ShiftRegister(twiddleCount * twiddleCountMulsUsed, 1)
 
     val primeIdx = stagePrimes.map { case p => 
@@ -100,6 +95,7 @@ class TwiddleGen[T <: Data:RealBits](
       if (idx == -1) globalPrime.length
       else idx
     }.map(p => p.U)
+    // !@#$
     val currentPrimeIdx = ShiftRegister(Mux1H(io.currentStageToTwiddle.zip(primeIdx)), 1)
 
     // Parameters: columns associated with twiddles for 1 until radix, but want to address column first
@@ -169,6 +165,7 @@ class TwiddleGen[T <: Data:RealBits](
     // Note that non-trivial twiddles start at lane 1
     outInternal.zipWithIndex foreach { case (outLane, idx) =>
       val laneIdx = idx + 1
+      // !@#$
       io.twiddles(laneIdx) := ShiftRegister(outLane, 2) 
     }
 
