@@ -800,6 +800,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           // No good reason for choosing the min
           val outValsSeq = outVals.toSeq.take(n)
 
+
+
+          // save starting index!!! -- for fft
+
 */
     
 

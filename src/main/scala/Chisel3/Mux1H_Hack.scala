@@ -42,11 +42,6 @@ object Mux1H {
 
 
 
-// custom mux, custom mux1h
-
-
-
-
 
 
 
@@ -59,7 +54,7 @@ object Mux1H {
 
 
     else {
-      val (sels, possibleOuts) = in.unzip
+      val (sels, possibleOuts) = in.toSeq.unzip
       val out = possibleOuts.head match {
         case _: DspComplex[_] =>
           val cmplxs = scala.collection.mutable.ArrayBuffer[DspComplex[_]]()
@@ -68,14 +63,33 @@ object Mux1H {
             case _ => throw new Exception("Iterable elements should all be DspComplex")
           }
           val (possibleReals, possibleImags) = cmplxs.toSeq.map(c => (c.real, c.imag)).unzip
-          val realOut = chisel3.util.Mux1H(sels.zip(possibleReals.map(x => x.asInstanceOf[Data])))
-          val imagOut = chisel3.util.Mux1H(sels.zip(possibleImags.map(x => x.asInstanceOf[Data]))) 
+          val realOut = Mux1H(sels.zip(possibleReals.map(x => x.asInstanceOf[Data])))
+          val imagOut = Mux1H(sels.zip(possibleImags.map(x => x.asInstanceOf[Data]))) 
           (realOut, imagOut) match {
             case (r: FixedPoint, i: FixedPoint) => DspComplex.wire(r, i)
             case (r: DspReal, i: DspReal) => DspComplex.wire(r, i)
             case (r: SInt, i: SInt) => DspComplex.wire(r, i)
             case _ => throw new Exception("Illegal complex real/imag types for Mux1H")
           }
+        // Mux1H signed stuff super derpy!
+        // TODO: Add SInt
+        case s: SInt => throw new Exception("SInt not supported yet!")
+        case f: FixedPoint =>
+          val (widths, binaryPoints) = possibleOuts.map { case o =>
+            val fo = o.asInstanceOf[FixedPoint]
+            require(fo.widthKnown && fo.binaryPoint.known, "Mux1H requires width/binary points to be defined")
+            (fo.getWidth, fo.binaryPoint.get)
+          }.unzip
+          // All the same
+          if (widths.distinct.length == 1 && binaryPoints.distinct.length == 1)
+            chisel3.util.Mux1H(in)
+          else {
+            val maxWidth = widths.max
+            val maxBP = binaryPoints.max
+            val inWidthMatched = Seq.fill(possibleOuts.length)(Wire(FixedPoint(maxWidth.W, maxBP.BP)))
+            inWidthMatched.zipWithIndex foreach { case (e, idx) => e := possibleOuts(idx).asInstanceOf[FixedPoint] }
+            chisel3.util.Mux1H(sels.zip(inWidthMatched))
+          } 
         case _ => chisel3.util.Mux1H(in)
       }
       out.asInstanceOf[T]

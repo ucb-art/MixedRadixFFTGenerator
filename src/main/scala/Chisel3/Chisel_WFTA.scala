@@ -11,7 +11,6 @@ import breeze.math.Complex
 import dsptools.{DspTester, DspTesterOptionsManager}
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
-import chisel3.util._
 import dsptools._
 import breeze.signal._
 import breeze.linalg.DenseVector

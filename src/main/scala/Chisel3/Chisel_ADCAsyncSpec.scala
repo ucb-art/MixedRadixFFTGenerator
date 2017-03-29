@@ -7,7 +7,6 @@ import barstools.tapeout.transforms._
 import chisel3.experimental.{withClockAndReset, withClock, withReset}
 import chisel3.experimental._
 import chisel3.util._
-import barstools.modules._
 
 // WARNING ******** Maybe it's better to have separate LUTs so I don't need to guarantee timing!? THINK MORE!!!
 
