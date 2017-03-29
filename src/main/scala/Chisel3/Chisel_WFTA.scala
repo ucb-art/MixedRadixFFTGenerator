@@ -241,6 +241,35 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
   val maxRad = io.maxRad
   val usedRads = io.usedRads
 
+  val c1 = -2 * Pi / 3
+  val C30 = dspDataType.fromDouble(cos(c1) - 1)
+  val C31 = dspDataType.fromDouble(sin(c1))
+  val C41 = dspDataType.fromDouble(-1.0)
+
+  val c2 = -2 * Pi / 5
+  val C50 = dspDataType.fromDouble((cos(c2) + cos(2 * c2)) / 2 - 1)
+  val C51 = dspDataType.fromDouble((cos(c2) - cos(2 * c2)) / 2)
+  val C52 = dspDataType.fromDouble((sin(c2) + sin(2 * c2)))
+  val C53 = dspDataType.fromDouble(sin(c2))
+  val C54 = dspDataType.fromDouble(-1 * (sin(c2) - sin(2 * c2)))
+
+  val c3 = -2 * Pi / 7
+  val C70 = dspDataType.fromDouble((cos(c3) + cos(2 * c3) + cos(3 * c3)) / 3 - 1)
+  val C71 = dspDataType.fromDouble((2 * cos(c3) - cos(2 * c3) - cos(3 * c3)) / 3)
+  // TODO: Does forcing with prevent optimization? What on earth is up with Chisel and undeeclared reference?
+  // WithFixedWidth guarantees you can fully contain the constant
+  val C72 = dspDataType.fromDouble((cos(c3) + cos(2 * c3) - 2 * cos(3 * c3)) / 3)
+  val C73 = dspDataType.fromDouble((cos(c3) - 2 * cos(2 * c3) + cos(3 * c3)) / 3)
+  val C74 = dspDataType.fromDouble((sin(c3) + sin(2 * c3) - sin(3 * c3)) / 3)
+  val C75 = dspDataType.fromDouble((2 * sin(c3) - sin(2 * c3) + sin(3 * c3)) / 3)
+  val C76 = dspDataType.fromDouble((sin(c3) + sin(2 * c3) + 2 * sin(3 * c3)) / 3)
+  val C77 = dspDataType.fromDouble((sin(c3) - 2 * sin(2 * c3) - sin(3 * c3)) / 3)
+
+  // TODO: Does using Ring[T].one vs. dspDataType.fromDouble(1.0) affect anything?
+  val one = dspDataType.fromDouble(1.0)
+  // TODO: What the heck is going on? keeps saying "Reference C72 is not declared", etc.
+  val scalarZero = Ring[T].zero
+
   // TODO: Fix name with @chiselName elsewhere
   withClock(io.clk) {
 
@@ -278,6 +307,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val zero = Wire(DspComplex(dspDataType))
     zero.real := Ring[T].zero
     zero.imag := Ring[T].zero
+
     // Assign internal "inputs" to 0 if >= max used radix
     val xp = Wire(Vec(WFTA.getValidRad.max, DspComplex(dspDataType)))
     xp.zipWithIndex foreach { case (x, idx) =>
@@ -340,53 +370,6 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val r5r7r3m = r5m | r7m | r3m 
     val r2r4m = r2m | r4m 
 
-    val c1 = -2 * Pi / 3
-    val C30 = Wire(dspDataType)
-    C30 := dspDataType.fromDoubleWithFixedWidth(cos(c1) - 1)
-    val C31 = Wire(dspDataType)
-    C31 := dspDataType.fromDoubleWithFixedWidth(sin(c1))
-    val C41 = Wire(dspDataType)
-    C41 := dspDataType.fromDoubleWithFixedWidth(-1.0)
-
-    val c2 = -2 * Pi / 5
-    val C50 = Wire(dspDataType)
-    C50 := dspDataType.fromDoubleWithFixedWidth((cos(c2) + cos(2 * c2)) / 2 - 1)
-    val C51 = Wire(dspDataType)
-    C51 := dspDataType.fromDoubleWithFixedWidth((cos(c2) - cos(2 * c2)) / 2)
-    val C52 = Wire(dspDataType)
-    C52 := dspDataType.fromDoubleWithFixedWidth((sin(c2) + sin(2 * c2)))
-    val C53 = Wire(dspDataType)
-    C53 := dspDataType.fromDoubleWithFixedWidth(sin(c2))
-    val C54 = Wire(dspDataType)
-    C54 := dspDataType.fromDoubleWithFixedWidth(-1 * (sin(c2) - sin(2 * c2)))
-
-    val c3 = -2 * Pi / 7
-    val C70 = Wire(dspDataType)
-    C70 := dspDataType.fromDoubleWithFixedWidth((cos(c3) + cos(2 * c3) + cos(3 * c3)) / 3 - 1)
-    val C71 = Wire(dspDataType)
-    C71 := dspDataType.fromDoubleWithFixedWidth((2 * cos(c3) - cos(2 * c3) - cos(3 * c3)) / 3)
-    // TODO: Does forcing with prevent optimization? What on earth is up with Chisel and undeeclared reference?
-    // WithFixedWidth guarantees you can fully contain the constant
-    val C72 = Wire(dspDataType)
-    C72 := dspDataType.fromDoubleWithFixedWidth((cos(c3) + cos(2 * c3) - 2 * cos(3 * c3)) / 3)
-    val C73 = Wire(dspDataType)
-    C73 := dspDataType.fromDoubleWithFixedWidth((cos(c3) - 2 * cos(2 * c3) + cos(3 * c3)) / 3)
-    val C74 = Wire(dspDataType)
-    C74 := dspDataType.fromDoubleWithFixedWidth((sin(c3) + sin(2 * c3) - sin(3 * c3)) / 3)
-    val C75 = Wire(dspDataType)
-    C75 := dspDataType.fromDoubleWithFixedWidth((2 * sin(c3) - sin(2 * c3) + sin(3 * c3)) / 3)
-    val C76 = Wire(dspDataType)
-    C76 := dspDataType.fromDoubleWithFixedWidth((sin(c3) + sin(2 * c3) + 2 * sin(3 * c3)) / 3)
-    val C77 = Wire(dspDataType)
-    C77 := dspDataType.fromDoubleWithFixedWidth((sin(c3) - 2 * sin(2 * c3) - sin(3 * c3)) / 3)
-
-    // TODO: Does using Ring[T].one vs. dspDataType.fromDouble(1.0) affect anything?
-    val one = Wire(dspDataType)
-    one := dspDataType.fromDoubleWithFixedWidth(1.0)
-    // TODO: What the heck is going on? keeps saying "Reference C72 is not declared", etc.
-    val scalarZero = Wire(dspDataType)
-    scalarZero := dspDataType.fromDouble(0.0)
-
     // TODO: Should this be a Vec?
 
     val maxConstantWidth = 
@@ -405,8 +388,8 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       r5m -> C51,
       r7m -> C71
     ))
-    val A2 = Mux(r7m, C72, scalarZero)
-    val A3 = Mux(r7m, C73, scalarZero) 
+    val A2 = Mux1H(Seq(r7m -> C72))
+    val A3 = Mux1H(Seq(r7m -> C73))
     val A4 = Mux1H(Seq(
       r3m -> C31,
       r4m -> C41,
@@ -419,7 +402,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       r7m -> C75,
       r2m -> one
     ))
-    val A6 = Mux(r7m, C76, scalarZero)
+    val A6 = Mux1H(Seq(r7m -> C76))
     val A7 = Mux1H(Seq(
       r4m -> one,
       r5m -> C54, 
@@ -431,11 +414,12 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
     val MulI7 = ~r4m
     val MulI5 = ~r2r4m
 
+    // TODO: Consolidate w/ hack
     def Mux1H0[T <: Data:RealBits](sel: Bool, in: DspComplex[T]): DspComplex[T] = {
       val zeroR = Wire(in.real.cloneType)
-      zeroR := zeroR.fromDoubleWithFixedWidth(0.0)
+      zeroR := zeroR.fromDouble(0.0)
       val zeroI = Wire(in.imag.cloneType)
-      zeroI := zeroI.fromDoubleWithFixedWidth(0.0)
+      zeroI := zeroI.fromDouble(0.0)
       val out = Wire(in.cloneType)
       out.real := Mux(sel, in.real, zeroR)
       out.imag := Mux(sel, in.imag, zeroI)
@@ -578,9 +562,12 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       val n5f = Mux1H0(s1_5, n4e) context_- n4h
       //val n5g = ShiftRegister(Mux(s1_5, n4h, n4g), internalDelays(5))
       // TODO: ... sketchy
-      val temp3 = Wire(if (n4h.getWidth > n4g.getWidth) n4h.cloneType else n4g.cloneType)
-      temp3.real := Mux(s1_5, n4h.real, n4g.real)
-      temp3.imag := Mux(s1_5, n4h.imag, n4g.imag)
+      //val temp3 = Wire(if (n4h.getWidth > n4g.getWidth) n4h.cloneType else n4g.cloneType)
+      val temp3Real = Mux(s1_5, n4h.real, n4g.real)
+      val temp3Imag = Mux(s1_5, n4h.imag, n4g.imag)
+      val temp3 = Wire(DspComplex(temp3Real.cloneType, temp3Imag.cloneType))
+      temp3.real := temp3Real
+      temp3.imag := temp3Imag
       val n5g = ShiftRegister(temp3, internalDelays(5))
       val n5h = ShiftRegister(n4d, internalDelays(5)) 
       val n5i = ShiftRegister(n4c, internalDelays(5))

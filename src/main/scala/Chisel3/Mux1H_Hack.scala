@@ -9,14 +9,12 @@ import chisel3.experimental._
 // To get Verilator to actually do something correct, hopefully
 // There was a horrible bug where when it cat the real and imaginary parts together,
 // the VCD waveform would be wrong and PeekPoketTester would give garbage data for positive real
-// WARNING: Mux1H with Seq of length 1 returns the input instead of zero!
+// WARNING: Chisel Mux1H with Seq of length 1 returns the input instead of zero!
 object Mux1H {
   def apply[T <: Data](sel: Seq[Bool], in: Seq[T]): T =
     apply(sel zip in)
   def apply[T <: Data](in: Iterable[(Bool, T)]): T = {
     // require(in.toSeq.length > 1, "Double check that Mux1H behavior is right! When in length = 1, it'll return in...")
-    
-
     if (in.toSeq.length == 1) {
       val inX = in.toSeq.head
       val cond = inX._1
@@ -24,37 +22,7 @@ object Mux1H {
       // UInt zero is minimum width
       val out = Mux(cond, sig.asUInt, 0.U)
       sig.fromBits(out)
-
-
-
-
-// 30db + delay
-// fix wrapper stuff
-
-      
- 
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     else {
       val (sels, possibleOuts) = in.toSeq.unzip
       val out = possibleOuts.head match {
@@ -77,18 +45,19 @@ object Mux1H {
         // TODO: Add SInt
         case s: SInt => throw new Exception("SInt not supported yet!")
         case f: FixedPoint =>
-          val (widths, binaryPoints) = possibleOuts.map { case o =>
+          val (intWidths, binaryPoints) = possibleOuts.map { case o =>
             val fo = o.asInstanceOf[FixedPoint]
             require(fo.widthKnown && fo.binaryPoint.known, "Mux1H requires width/binary points to be defined")
-            (fo.getWidth, fo.binaryPoint.get)
+            (fo.getWidth - fo.binaryPoint.get, fo.binaryPoint.get)
           }.unzip
           // All the same
-          if (widths.distinct.length == 1 && binaryPoints.distinct.length == 1)
+          // TODO: Don't unzip?
+          if (intWidths.distinct.length == 1 && binaryPoints.distinct.length == 1)
             chisel3.util.Mux1H(in)
           else {
-            val maxWidth = widths.max
+            val maxIntWidth = intWidths.max
             val maxBP = binaryPoints.max
-            val inWidthMatched = Seq.fill(possibleOuts.length)(Wire(FixedPoint(maxWidth.W, maxBP.BP)))
+            val inWidthMatched = Seq.fill(possibleOuts.length)(Wire(FixedPoint((maxIntWidth + maxBP).W, maxBP.BP)))
             inWidthMatched.zipWithIndex foreach { case (e, idx) => e := possibleOuts(idx).asInstanceOf[FixedPoint] }
             chisel3.util.Mux1H(sels.zip(inWidthMatched))
           } 

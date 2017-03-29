@@ -524,6 +524,53 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     (n, ph) -> Array.fill(c.ffastParams.subFFTns.max)(Complex(0.0, 0.0))
   }.toMap
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // TODO: Combine with dsptools' checkDecimal
+  def compare(exp: Seq[Complex], out: Seq[Complex]) = {
+    def toMax(w: Int): BigInt = (BigInt(1) << w) - 1
+    val floTolDec = math.pow(10, -realTolDecPts.value)
+    val fixTolInt = toMax(fixTolLSBs.value)
+    exp.zip(out).zipWithIndex foreach { case ((e, o), i) =>
+      val realDelta = math.abs(e.real - o.real)
+      val imagDelta = math.abs(e.imag - o.imag)
+      c.dspDataType match {
+        case r: DspReal => 
+          expect(realDelta < floTolDec && imagDelta < floTolDec, 
+            s"Expected: $e \t Actual: $o")
+        case f: FixedPoint =>
+          require(f.binaryPoint.known, "Binary point must be known!")
+          val fixTolDec = FixedPoint.toDouble(fixTolInt, f.binaryPoint.get)
+          expect(realDelta < fixTolDec && imagDelta < fixTolDec,
+            s"Expected: $e \t Actual: $o")
+      } 
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   def clearResults() = {
     c.ffastParams.getSubFFTDelayKeys foreach { case (n, ph) => 
       // TODO: There has to be a better way to reset!
@@ -786,9 +833,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   peekedResults.toSeq foreach { case ((n, ph), outVals) =>
     println("xxx " + n)
-      outVals.toSeq.take(n).zip(FFTTestVectors.createOutput(fft675In)). foreach { case (o, e) =>
+    compare(exp = FFTTestVectors.createOutput(fft675In), out = outVals.toSeq.take(n))
+     /* outVals.toSeq.take(n).zip(FFTTestVectors.createOutput(fft675In)). foreach { case (o, e) =>
         println("act   " + o + "   exp   " + e)
-      }
+      }*/
   }
 
 /*
@@ -803,7 +851,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
 
 
-          // save starting index!!! -- for fft
+          // save starting index (more useful than value) !!! -- for fft
 
 */
     
