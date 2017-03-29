@@ -45,7 +45,7 @@ object ModuleHierarchy {
 }
 
 // TODO: Don't use BBInline to print stuff...
-class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends BlackBox {
+class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, name : String) extends BlackBox {
   val io = IO(new AnalogModelIO(adcDataType, ffastParams))
 
   // TODO: Don't hard code
@@ -54,7 +54,7 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
   // This module = 1, then goes up
   val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
-  val sdcRegExpr = Seq.fill(level)("*/").mkString("")
+  val sdcRegExpr = (Seq.fill(level - 1)("*/") ++ Seq(s"${name}*/")).mkString("")
 
   // TODO: Less hack-ish SDC generation -- DON'T HARD CODE
   val topClkSDC = s"create_clock -name IOFASTCLK -period ${fastClk} [get_pins ${sdcRegExpr}inClk]"

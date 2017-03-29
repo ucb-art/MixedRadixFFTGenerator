@@ -193,8 +193,13 @@ class CollectADCSamples[T <: Data:RealBits](
   FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
 
   val analogBlock = 
-    if (useBlackBox)
-      Module(new AnalogModelBlackBox(adcDataType, ffastParams))
+    if (useBlackBox) {
+      // TODO: WARNING: Should only exist once!
+      val analogBlockName = "analogBlock"
+      val m = Module(new AnalogModelBlackBox(adcDataType, ffastParams, name = analogBlockName))
+      m.suggestName(analogBlockName)
+      m
+    }
     else
       Module(new AnalogModel(adcDataType, ffastParams))
 
