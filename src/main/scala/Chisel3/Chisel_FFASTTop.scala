@@ -414,10 +414,10 @@ class FFASTTopSpec extends FlatSpec with Matchers {
       new FFASTTopWrapper(
         //adcDataType = DspReal(),
         //dspDataType = DspReal(),
-        adcDataType = FixedPoint(23.W, 8.BP), 
-        dspDataType = FixedPoint(27.W, 12.BP),
-        //adcDataType = FixedPoint(9.W, 8.BP), 
-        //dspDataType = FixedPoint(20.W, 10.BP),
+        // adcDataType = FixedPoint(23.W, 8.BP), 
+        // dspDataType = FixedPoint(27.W, 12.BP),
+        adcDataType = FixedPoint(9.W, 8.BP), 
+        dspDataType = FixedPoint(20.W, 10.BP),
         ffastParams = FFASTParams(
           // fftn = 20,
           // subFFTns = Seq(4, 5),
@@ -479,10 +479,11 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   val usedDebugStates = Seq("ADCCollectDebug")
   val numLoops = 3
-  val adcInInc = 1.0 / (1 << 8) + 1.0 / (1 << 5)
+  // TODO: Don't hard code! (fix by width)
+  val adcInInc = 1.0 / (1 << 8) //1.0 / (1 << 8) + 1.0 / (1 << 5)
   // Fastest clk
   val subsamplingT = c.ffastParams.subSamplingFactors.map(_._2).min
-  val adcInStart = -10000.0
+  val adcInStart = -1.0 //-10000.0
   val checksPerformed = scala.collection.mutable.ArrayBuffer[String]()
 
   case class DebugNext(idx: Int, done: Boolean)
@@ -562,12 +563,21 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           if (c.ffastParams.subFFTns.min == n && ph == 0)
             headAtPh0 = outValsSeq.head
           else {
-            require(expect(outValsSeq.head == headAtPh0 + Complex(ph * adcInInc, 0.0), 
+            val headAtPhXTemp = headAtPh0 + Complex(ph * adcInInc, 0.0)
+            val headAtPhX = {
+              if (headAtPhXTemp.real >= math.abs(adcInStart)) Complex(headAtPhXTemp.real + 2 * adcInStart, 0.0)
+              else headAtPhXTemp
+            }
+            require(expect(outValsSeq.head == headAtPhX, 
               s"Relative samples must be right across sub-ADCs. Head @ ${outValsSeq.head}"))
           }
           val subsamplingFactor = c.ffastParams.subSamplingFactors(n)
           val expectedAdd = Seq.fill(outValsSeq.length - 1)(Complex(subsamplingFactor * adcInInc, 0.0))
-          val expected = expectedAdd.scanLeft(outValsSeq.head)((accum, next) => accum + next)
+          val expected = expectedAdd.scanLeft(outValsSeq.head) { (accum, next) => 
+            val unmoddedOut = accum + next 
+            if (unmoddedOut.real >= math.abs(adcInStart)) Complex(unmoddedOut.real + 2 * adcInStart, 0.0)
+            else unmoddedOut
+          }
           // println(s"Loop $loop, SubFFT $n, Phase $ph : \t" + outValsSeq.mkString(","))
           val pass = expect(outValsSeq == expected, "Subsampled values should be spaced correctly!")
           if (!pass) {
@@ -599,6 +609,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         poke(c.io.analogIn, adcIn) 
         step(1)
         adcIn += adcInInc
+        if (adcIn >= math.abs(adcInStart)) adcIn = adcIn + 2 * adcInStart
       }  
     }
   }
