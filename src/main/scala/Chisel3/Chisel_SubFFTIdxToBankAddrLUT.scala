@@ -2,7 +2,6 @@ package dspblocks.fft
 import chisel3._
 import barstools.tapeout.transforms._
 import chisel3.experimental._
-import barstools.modules.{UIntLUT2D}
 
 // Only ever used in debug mode + ADC input (also peeling)
 // Seq = (bank, addr)

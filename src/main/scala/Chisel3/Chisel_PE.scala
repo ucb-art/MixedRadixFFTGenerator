@@ -37,6 +37,8 @@ class ProcessingElement[T <: Data:RealBits](
   val io = IO(new ProcessingElementIO(twiddleType, dataType, fftParams))
   val wfta = Module(new WFTA(dataType, fftParams))
 
+  wfta.io.clk := io.clk
+
   // TODO: Consistent naming
   val twDelay = context.complexMulPipe
   val moduleDelay = wfta.moduleDelay + twDelay

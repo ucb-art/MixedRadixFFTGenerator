@@ -10,7 +10,6 @@ import barstools.tapeout.transforms._
 import org.scalatest.{FlatSpec, Matchers}
 import dsptools.{DspTester, DspTesterOptionsManager}
 import barstools.tapeout.TestParams
-import barstools.modules.{UIntLUT2D}
 
 class BinToSubFFTIdxIO(fftBinMax: Int, subFFTns: Seq[Int]) extends Bundle {
   val clk = Input(Clock())

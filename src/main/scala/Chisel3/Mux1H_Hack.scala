@@ -14,27 +14,72 @@ object Mux1H {
   def apply[T <: Data](sel: Seq[Bool], in: Seq[T]): T =
     apply(sel zip in)
   def apply[T <: Data](in: Iterable[(Bool, T)]): T = {
-    require(in.toSeq.length > 1, "Double check that Mux1H behavior is right! When in length = 1, it'll return in...")
-    val (sels, possibleOuts) = in.unzip
-    val out = possibleOuts.head match {
-      case _: DspComplex[_] =>
-        val cmplxs = scala.collection.mutable.ArrayBuffer[DspComplex[_]]()
-        possibleOuts foreach { 
-          case cx: DspComplex[_] => cmplxs += cx
-          case _ => throw new Exception("Iterable elements should all be DspComplex")
-        }
-        val (possibleReals, possibleImags) = cmplxs.toSeq.map(c => (c.real, c.imag)).unzip
-        val realOut = chisel3.util.Mux1H(sels.zip(possibleReals.map(x => x.asInstanceOf[Data])))
-        val imagOut = chisel3.util.Mux1H(sels.zip(possibleImags.map(x => x.asInstanceOf[Data]))) 
-        (realOut, imagOut) match {
-          case (r: FixedPoint, i: FixedPoint) => DspComplex.wire(r, i)
-          case (r: DspReal, i: DspReal) => DspComplex.wire(r, i)
-          case (r: SInt, i: SInt) => DspComplex.wire(r, i)
-          case _ => throw new Exception("Illegal complex real/imag types for Mux1H")
-        }
-      case _ => chisel3.util.Mux1H(in)
+    // require(in.toSeq.length > 1, "Double check that Mux1H behavior is right! When in length = 1, it'll return in...")
+    
+
+    if (in.toSeq.length == 1) {
+      val inX = in.toSeq.head
+      val cond = inX._1
+      val sig = inX._2
+      // UInt zero is minimum width
+      val out = Mux(cond, sig.asUInt, 0.U)
+      sig.fromBits(out)
+
+
+
+
+
+      
+ 
     }
-    out.asInstanceOf[T]
+
+
+
+
+
+
+
+
+
+
+// custom mux, custom mux1h
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    else {
+      val (sels, possibleOuts) = in.unzip
+      val out = possibleOuts.head match {
+        case _: DspComplex[_] =>
+          val cmplxs = scala.collection.mutable.ArrayBuffer[DspComplex[_]]()
+          possibleOuts foreach { 
+            case cx: DspComplex[_] => cmplxs += cx
+            case _ => throw new Exception("Iterable elements should all be DspComplex")
+          }
+          val (possibleReals, possibleImags) = cmplxs.toSeq.map(c => (c.real, c.imag)).unzip
+          val realOut = chisel3.util.Mux1H(sels.zip(possibleReals.map(x => x.asInstanceOf[Data])))
+          val imagOut = chisel3.util.Mux1H(sels.zip(possibleImags.map(x => x.asInstanceOf[Data]))) 
+          (realOut, imagOut) match {
+            case (r: FixedPoint, i: FixedPoint) => DspComplex.wire(r, i)
+            case (r: DspReal, i: DspReal) => DspComplex.wire(r, i)
+            case (r: SInt, i: SInt) => DspComplex.wire(r, i)
+            case _ => throw new Exception("Illegal complex real/imag types for Mux1H")
+          }
+        case _ => chisel3.util.Mux1H(in)
+      }
+      out.asInstanceOf[T]
+    }
   }
   def apply[T <: Data](sel: UInt, in: Seq[T]): T =
     apply((0 until in.size).map(sel(_)), in)

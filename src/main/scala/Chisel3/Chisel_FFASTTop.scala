@@ -400,6 +400,25 @@ class FFASTTopWrapper[T <: Data:RealBits](
   )
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class FFASTTopSpec extends FlatSpec with Matchers {
   behavior of "FFASTTop"
   it should "read in ADC inputs" in {
@@ -412,19 +431,20 @@ class FFASTTopSpec extends FlatSpec with Matchers {
 
     dsptools.Driver.execute(() => 
       new FFASTTopWrapper(
-        //adcDataType = DspReal(),
-        //dspDataType = DspReal(),
+        adcDataType = DspReal(),
+        dspDataType = DspReal(),
         // adcDataType = FixedPoint(23.W, 8.BP), 
         // dspDataType = FixedPoint(27.W, 12.BP),
-        adcDataType = FixedPoint(9.W, 8.BP), 
-        dspDataType = FixedPoint(20.W, 10.BP),
+        //adcDataType = FixedPoint(9.W, 8.BP), 
+        // Must support bit growth!
+        //dspDataType = FixedPoint(20.W, 10.BP),
         ffastParams = FFASTParams(
-          // fftn = 20,
-          // subFFTns = Seq(4, 5),
-          // delays = Seq(Seq(0, 1)),
-          fftn = 21600,
-          subFFTns = Seq(675, 800, 864),
-          delays = Seq(Seq(0, 1, 3, 23)),
+           fftn = 21600,
+           subFFTns = Seq(675),
+           delays = Seq(Seq(0)),
+          //fftn = 21600,
+          //subFFTns = Seq(675),
+          //delays = Seq(Seq(0, 1)),
           inputType = DIF
         ),
         maxNumPeels = 0
@@ -473,12 +493,22 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
   }
 }
 
+
+
+
+
+
+
+
+
+
+
 //////////////
 
 class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
 
   val usedDebugStates = Seq("ADCCollectDebug")
-  val numLoops = 3
+  val numLoops = 2
   // TODO: Don't hard code! (fix by width)
   val adcInInc = 1.0 / (1 << 8) //1.0 / (1 << 8) + 1.0 / (1 << 5)
   // Fastest clk
@@ -531,7 +561,6 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
         rIdxOut
       }.min
-
       val stopCond = (stopIdx != -1 && rIdxOutMin == stopIdx) || 
         (stopIdx == -1 && rIdxOutMin == c.ffastParams.subFFTns.max - 1)
 
@@ -629,7 +658,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     }
   }
 
-  def writeInDebug(debugNext: DebugNext, flipInput: Boolean): DebugNext = {
+  def writeInDebug(debugNext: DebugNext, flipInput: Boolean, customInput: Option[Seq[Complex]]): DebugNext = {
     val done = DebugNext(0, true)
     val incInput = DebugNext(debugNext.idx + 1, false)
     updatableDspVerbose.withValue(false) {
@@ -638,10 +667,16 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         if (debugNext.idx == n)
           poke(c.io.scr.ctrlMemWrite.we(n)(ph), false.B)
       }
-      poke(c.io.scr.ctrlMemWrite.wIdx, debugNext.idx)
-      val input = 
-        if (flipInput) Complex(-debugNext.idx.toDouble * adcInInc, debugNext.idx.toDouble * adcInInc)
-        else Complex(debugNext.idx.toDouble * adcInInc, -debugNext.idx.toDouble * adcInInc)
+      if (BigInt(debugNext.idx).bitLength <= c.io.scr.ctrlMemWrite.wIdx.getWidth) 
+        poke(c.io.scr.ctrlMemWrite.wIdx, debugNext.idx)
+      val input = customInput match {
+        case Some(seq) => 
+          if (debugNext.idx >= seq.length) Complex(0.0, 0.0)
+          else seq(debugNext.idx)
+        case None => 
+          if (flipInput) Complex(-debugNext.idx.toDouble * adcInInc, debugNext.idx.toDouble * adcInInc)
+          else Complex(debugNext.idx.toDouble * adcInInc, -debugNext.idx.toDouble * adcInInc)
+      }
       poke(c.io.scr.ctrlMemWrite.din, input)
       // Some margin to actually finish writing (theoretically, should read back the value...)
       if (debugNext.idx == c.ffastParams.subFFTns.max + 5) {
@@ -651,7 +686,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     }
   }
 
-  def runWriteDebug(state: String, flipInput: Boolean): Boolean = {
+  def runWriteDebug(state: String, flipInput: Boolean = true, customInput: Option[Seq[Complex]] = None, wantToEscape: Boolean = false): Boolean = {
     updatableDspVerbose.withValue(false) { 
       poke(c.io.scr.cpuDone, false.B)
       // Uses slow clock
@@ -663,9 +698,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       }
       var debugNext = DebugNext(idx = 0, done = false)
       while (!debugNext.done) {
-        debugNext = writeInDebug(debugNext, flipInput)
+        debugNext = writeInDebug(debugNext, flipInput, customInput)
         step(subsamplingT)
       }
+      poke(c.io.scr.cpuDone, wantToEscape)
     }  
     // What the next one should do
     !flipInput
@@ -721,6 +757,68 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   runWriteDebug("ADCCollectDebug", flipInput = true)
   runDebug("ADCCollectDebug")
   checkWriteResults("ADCCollectDebug", flipInput = true)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // Real sine input
+  // TODO: Don't hard code bits
+  //setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
+
+  val fft675In = FFTTestVectors.createInput(c.ffastParams.subFFTns(0), fracBits = 8)
+  runADC()
+  runWriteDebug("ADCCollectDebug", customInput = Some(fft675In))
+  setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
+  runDebug("ADCCollectDebug")
+  clearResults()
+  runDebug("FFTDebug")
+
+  peekedResults.toSeq foreach { case ((n, ph), outVals) =>
+    println("xxx " + n)
+      outVals.toSeq.take(n).zip(FFTTestVectors.createOutput(fft675In)). foreach { case (o, e) =>
+        println("act   " + o + "   exp   " + e)
+      }
+  }
+
+/*
+  peekedResults.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) } foreach { case ((n, ph), outVals) =>
+          val testRef = s"ADC RESULTS: Loop $loop, SubFFT $n, Phase $ph"
+          checksPerformed += testRef
+
+          println(s" ***** $testRef ***** ")
+
+          // No good reason for choosing the min
+          val outValsSeq = outVals.toSeq.take(n)
+
+*/
+    
+
+
+
+
+
+ 
+  
+
+
+
+
+
+
+
+
+
+
 
   println("\n\n *************************************************** ")
   checksPerformed.toSeq foreach { x => println(x) }

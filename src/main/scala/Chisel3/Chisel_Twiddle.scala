@@ -5,7 +5,6 @@ import dsptools.numbers._
 import dsptools.numbers.implicits._
 import barstools.tapeout.transforms._
 import chisel3.util._
-import barstools.modules._
 
 // TODO: Do all twiddle outputs need to be the same length?
 class TwiddleGenIO[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams) extends Bundle {
@@ -59,9 +58,9 @@ class TwiddleGen[T <: Data:RealBits](
   val twiddleCountMuls = twiddleCountMulsInt.map(c => c.U)
 
   // Get counter maxes associated with each stage
-  val twiddleCountMaxUsed = Mux1H(io.currentStageToTwiddle.zip(twiddleCounts))
-  val twiddleSubCountMaxUsed = Mux1H(io.currentStageToTwiddle.zip(twiddleSubCounts))
-  val twiddleCountMulsUsed = Mux1H(io.currentStageToTwiddle.zip(twiddleCountMuls))
+  val twiddleCountMaxUsed = if (twiddleCounts.length == 0) 0.U else Mux1H(io.currentStageToTwiddle.zip(twiddleCounts))
+  val twiddleSubCountMaxUsed = if (twiddleSubCounts.length == 0) 0.U else Mux1H(io.currentStageToTwiddle.zip(twiddleSubCounts))
+  val twiddleCountMulsUsed = if (twiddleCountMuls.length == 0) 0.U else Mux1H(io.currentStageToTwiddle.zip(twiddleCountMuls))
 
   withClockAndReset(io.clk, io.startState) {
     val twiddleCountMax = twiddleCountsInt.max
@@ -70,7 +69,7 @@ class TwiddleGen[T <: Data:RealBits](
     val twiddleCountEnableInt = Wire(Bool())
     twiddleCount := RegEnable(twiddleCountNext, init = 0.U, enable = twiddleCountEnableInt)
 
-    val twiddleSubCountMax = twiddleSubCountsInt.max
+    val twiddleSubCountMax = if (twiddleSubCountsInt.isEmpty) 0 else twiddleSubCountsInt.max
 
     if (twiddleSubCountMax == 0) {
       // Only 1 coprime -> don't need sub counter

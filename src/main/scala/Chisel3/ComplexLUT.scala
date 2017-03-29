@@ -1,4 +1,4 @@
-package barstools.modules
+package dspblocks.fft
 import chisel3._
 import chisel3.util.ShiftRegister
 import chisel3.experimental._

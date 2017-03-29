@@ -1,4 +1,4 @@
-package barstools.modules
+package dspblocks.fft
 import chisel3._
 import chisel3.util.ShiftRegister
 import chisel3.experimental._
@@ -7,7 +7,6 @@ import chisel3.util.HasBlackBoxInline
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
 import dsptools.{DspTester, DspTesterOptionsManager}
-import dspblocks.fft._
 
 class UIntLUT2DSpec extends FlatSpec with Matchers {
   behavior of "2D UInt LUT"
@@ -69,7 +68,8 @@ class UIntLUT2DIO(depth: Int, colMax: Seq[Int], colNames: Seq[String]) extends B
 }
 
 class UIntLUT2DWrapper(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
-    extends Module {
+    extends dspblocks.fft.Module {
+    // TODO: Point to correct module!
   val mod = Module(new UIntLUT2D(blackBoxName, tableIn, colNames, outputReg))
   val io = IO(new UIntLUT2DIO(mod.depth, mod.colMax, colNames))
   mod.io.clk := clock
@@ -78,7 +78,7 @@ class UIntLUT2DWrapper(val blackBoxName: String, val tableIn: Seq[Seq[Int]], col
 }
 
 class UIntLUT2D(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
-    extends Module with DelayTracking {
+    extends dspblocks.fft.Module with DelayTracking {
 
   def moduleDelay = if (outputReg) 1 else 0
 
@@ -127,7 +127,8 @@ class BlackBoxLUTIO(addressWidth: Int, dataWidth: Int) extends Bundle {
   val dout = Output(UInt(dataWidth.W))
 }
 
-class LUTBlackBox(blackBoxName: String, table: Seq[BigInt], widthOverride: Option[Int] = None) extends HasBlackBoxInline {
+// TODO: Clarify black box
+class LUTBlackBox(blackBoxName: String, table: Seq[BigInt], widthOverride: Option[Int] = None) extends dspblocks.fft.BlackBox {
 
   require(blackBoxName != "", "LUT name must be provided!")
 
@@ -138,7 +139,7 @@ class LUTBlackBox(blackBoxName: String, table: Seq[BigInt], widthOverride: Optio
     case _ => 
       table.max.bitLength
   }
-  val addrWidth = BigInt(table.length - 1).bitLength
+  val addrWidth = BigInt(table.length - 1).bitLength.max(1)
 
   // WARNING: No uniqueness check (user has to guarantee!!)
   override def desiredName = blackBoxName

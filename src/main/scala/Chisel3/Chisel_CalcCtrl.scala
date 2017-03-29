@@ -6,6 +6,8 @@ import chisel3.util._
 import dsptools.{DspTester, DspTesterOptionsManager}
 import org.scalatest.{FlatSpec, Matchers}
 import barstools.tapeout.TestParams
+import dsptools.numbers._
+import dsptools.numbers.implicits._
 
 // TODO: Make runtime reconfigurable
 
