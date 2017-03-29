@@ -201,7 +201,10 @@ class CollectADCSamples[T <: Data:RealBits](
   analogBlock.io.resetClk := io.resetClk
   analogBlock.io.inClk := io.inClk
   analogBlock.io.analogIn := io.analogIn
-  io.globalClk := analogBlock.io.globalClk
+
+  // Global clock = fastest clk, phase 0
+  val globalClk = analogBlock.io.adcClks(ffastParams.subFFTns.max)(0) 
+  io.globalClk := globalClk
 
   val deqReady = io.stateInfo.start || io.stateInfo.inState
 
@@ -221,7 +224,7 @@ class CollectADCSamples[T <: Data:RealBits](
 
     // Uses ph 0 of fastest clk on other side!
     // TODO: Maybe external clk?
-    async.io.deq_clock := analogBlock.io.globalClk
+    async.io.deq_clock := globalClk
     async.io.deq_reset := io.stateInfo.start
     async.io.deq.ready := deqReady
 
@@ -232,7 +235,7 @@ class CollectADCSamples[T <: Data:RealBits](
   // TODO: RESET BEFORE PREVIOUS STATE DONE TO MINIMIZE LATENCY
   // Queue takes many cycles to reset -- should not feed data in until all queues are reset
   val collectAsyncEnqReady = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => asyncs(n, ph).io.enq.ready }
-  val asyncEnqsAllReady = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
+  val asyncEnqsAllReady = withClockAndReset(globalClk, io.stateInfo.start) {
     RegEnable(true.B, enable = collectAsyncEnqReady.reduce(_ & _), init = false.B)
   }
   // Don't synchronize enq_valids until the queues are all ready
@@ -242,7 +245,7 @@ class CollectADCSamples[T <: Data:RealBits](
   // Eventually, calibration blocks will be here
   // Also, the idx -> bank, addr LUT takes 1 cycle (outputs registered)
   ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-    withClock(analogBlock.io.globalClk) {
+    withClock(globalClk) {
       // Only write to memory on valid
       // Only first lane is ever active in this block
       // NOTE: ADC output has much fewer bits than memory (due to growing during DSP ops)
@@ -258,7 +261,7 @@ class CollectADCSamples[T <: Data:RealBits](
 
   // TODO: Can I use only 1 counter per stage associated w/ last phase? b/c I assume that always comes last?
   // Or do I need multiple? Minor optimization...
-  val (memIdxCountsTemp, isMaxCounts) = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
+  val (memIdxCountsTemp, isMaxCounts) = withClockAndReset(globalClk, io.stateInfo.start) {
     ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
       // @ count n, hold
       val count = Wire(UInt(range"[0, $n]"))
@@ -280,7 +283,7 @@ class CollectADCSamples[T <: Data:RealBits](
   val done = isMaxCounts.reduce(_ & _)
   // Reset enq valid
   analogBlock.io.stopCollectingADCSamples := done
-  io.stateInfo.done := withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) { RegNext(done, init = false.B) }
+  io.stateInfo.done := withClockAndReset(globalClk, io.stateInfo.start) { RegNext(done, init = false.B) }
 
   // TODO: Are all ADC outputs @ the same relative data index? If they're not, I don't think they'll differ by too many
 
@@ -289,7 +292,7 @@ class CollectADCSamples[T <: Data:RealBits](
     val countsPerSubFFT = ffastParams.adcDelays.map { case ph => memIdxCounts(n, ph) }
     val max = countsPerSubFFT.tail.foldLeft(countsPerSubFFT.head)((accum, count) => Mux(count > accum, count, accum))
     // TODO: Don't hard-code
-    val delayedMax = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
+    val delayedMax = withClockAndReset(globalClk, io.stateInfo.start) {
       val maxDly = RegNext(next = max, init = 0.U)
       val maxDly2 = RegNext(next = maxDly, init = 0.U)
       Seq(maxDly, maxDly2)
@@ -304,7 +307,7 @@ class CollectADCSamples[T <: Data:RealBits](
     // Delay 1 (LUT outputs registered)
     val bankAddr = io.idxToBankAddr.bankAddrs(n)
     // TODO: Have withClockAndReset only once
-    val delayedBankAddr = withClockAndReset(analogBlock.io.globalClk, io.stateInfo.start) {
+    val delayedBankAddr = withClockAndReset(globalClk, io.stateInfo.start) {
       // TODO: Is RegInit not necessary? -- it's OK to write garbage and then write over it
       val bankAddrDly = RegNext(bankAddr)
       val bankAddrDly2 = RegNext(bankAddrDly)
@@ -316,7 +319,7 @@ class CollectADCSamples[T <: Data:RealBits](
   // TODO: I'm being silly for the sake of time
   // Match LUT output delay
   val countMaxPerSubFFTDelayed = countMaxPerSubFFT.map { case (n, seq) =>
-    n -> seq.map { case x => withClock(analogBlock.io.globalClk) { RegNext(x) } }
+    n -> seq.map { case x => withClock(globalClk) { RegNext(x) } }
   }
  
   // Point of this code is to not have repeated LUTs for each Phase
@@ -325,7 +328,7 @@ class CollectADCSamples[T <: Data:RealBits](
   // and translate as necessary by matching to older results.
   ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
     // Need to delay idxCount, countMaxCurrentSubFFT to match bankAddrs latency
-    val idxCount = withClock(analogBlock.io.globalClk) { RegNext(memIdxCounts(n, ph)) }
+    val idxCount = withClock(globalClk) { RegNext(memIdxCounts(n, ph)) }
     val countMaxCurrentSubFFT = countMaxPerSubFFTDelayed(n)
     val bankAddrsCurrentSubFFT = bankAddrs(n)
     val correctBankAddr = Mux1H(

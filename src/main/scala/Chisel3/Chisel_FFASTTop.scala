@@ -37,8 +37,8 @@ class FFASTTopIO[T <: Data:RealBits](
   val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, numStates)
 
   // The following IO are for debug purposes only (removed for real tapeout)
-  val adc = new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs)
-  val debug = new DebugIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)
+  // val adc = new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs)
+  // val debug = new DebugIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)
 
   override def cloneType = 
     (new FFASTTopIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]

@@ -19,47 +19,64 @@ class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
   // Full rate ADC in
   val analogIn = Input(DspReal())
   val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
-  val globalClk = Output(Clock())
   val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
     Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelIO(adcDataType, ffastParams)).asInstanceOf[this.type]
-
-
-
-
-
-
-
-
-
-
-
-
-  // TODO: Less hack-ish SDC generation
-  println(s"create_clock -name clk10GHz -period 0.1 [get_pins inClk]")
-
-  ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
-
-    val phases = ffastParams.clkDelays
-    val referenceEdges = phases.map(p => Seq(2 * p, 2 * (p + 1), 2 * (p + divBy)))
-    phases.zip(referenceEdges) foreach { case (adcDelay, edges) =>
-      println(s"create_generated_clock -name adcClks_${subFFT}_${adcDelay} -source [get_pins inClk] -edges { ${edges.mkString(" ")} } [get_pins adcClks_${subFFT}_${adcDelay}]")
-      println(s"set_input_delay -clock adcClks_${subFFT}_${adcDelay} 0.02 [get_pins adcDigitalOut_${subFFT}_${adcDelay}]")
-    }
-    
-
-  }
-
-
-
-
-
-
-
 }
 
+object ModuleHierarchy {
+  // TODO: Clean up
+  // Doesn't count top level
+  def getHierarchyLevel(level: Int, mod: Option[ModuleWithParentInfo]): (Int, Option[ModuleWithParentInfo]) = {
+    mod match {
+      case Some(inst) =>
+        val parent = inst.getParent
+        parent match {
+          case Some(parentMod) => 
+            parentMod match {
+              case t: barstools.tapeout.transforms.pads.TopModule => (level, mod)
+              case _ => getHierarchyLevel(level + 1, Some(parentMod.asInstanceOf[ModuleWithParentInfo]))
+            }
+          case None => (level - 1, mod)
+        }
+      case None => throw new Exception("Shouldn't ever get here")
+    }
+  }
+}
+
+// TODO: Don't use BBInline to print stuff...
 class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends BlackBox {
   val io = IO(new AnalogModelIO(adcDataType, ffastParams))
+
+  // TODO: Don't hard code
+  val fastClk = 0.1
+  val inputDelay = 0.02
+
+  // This module = 1, then goes up
+  val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
+  val sdcRegExpr = Seq.fill(level)("*/").mkString("")
+
+  // TODO: Less hack-ish SDC generation -- DON'T HARD CODE
+  val topClkSDC = s"create_clock -name IOFASTCLK -period ${fastClk} [get_pins ${sdcRegExpr}inClk]"
+  val resetSDC = s"set_input_delay -clock IOFASTCLK ${inputDelay} [get_pins ${sdcRegExpr}resetClk]"
+  val adcSDC = s"set_input_delay -clock IOFASTCLK ${inputDelay} [get_pins ${sdcRegExpr}analogIn]"
+
+  val outConstraints = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
+
+    val phases = ffastParams.adcDelays
+    // SDC starts at edge 1, not 0
+    val referenceEdges = phases.map(p => Seq(2 * p, 2 * (p + 1), 2 * (p + divBy)).map(_ + 1))
+    phases.zip(referenceEdges).map { case (adcDelay, edges) =>
+      Seq(s"create_generated_clock -name adcClks_${subFFT}_${adcDelay} -source [get_pins ${sdcRegExpr}inClk] -edges {${edges.mkString(" ")}} [get_pins ${sdcRegExpr}adcClks_${subFFT}_${adcDelay}]") ++
+      Seq(s"set_input_delay -clock adcClks_${subFFT}_${adcDelay} ${inputDelay} [get_pins ${sdcRegExpr}adcDigitalOut_${subFFT}_${adcDelay}*]")
+    }.flatten
+
+  }.flatten
+
+  val constraints = Seq(topClkSDC, resetSDC, adcSDC) ++ outConstraints
+
+  setInline(s"analog.sdc", constraints.toSeq.mkString("\n"))
+
 }
 
 class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module {
@@ -67,8 +84,6 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
   val ffastClkDiv = Module(new FFASTClkDiv(ffastParams))
   ffastClkDiv.io.inClk := io.inClk
   ffastClkDiv.io.resetClk := io.resetClk
-  // Global clock = fastest clk, phase 0
-  io.globalClk := ffastClkDiv.io.outClks(ffastParams.subFFTns.max)(0)
   // Valid data only in CollectADCSamplesState, should be aligned to when all PH0's are aligned
   // Asynchronously reset when done
   val frameAligned1 = AsyncResetReg(true.B, 
