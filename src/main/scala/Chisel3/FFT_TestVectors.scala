@@ -9,6 +9,7 @@ object FFTTestVectors {
   val fixedRealFreq = Seq(0.2, 0.3, 0.4, 0.25)
   val fixedRealAmp = Seq(0.25, 0.15, 0.2, 0.03)
 
+  // I'm not really quantizing here... just limiting input range
   def createInput(fftn: Int, numTones: Int = -1, fracBits: Int): Seq[Complex] = {
     for (i <- 0 until fftn) yield {
       val tones = fixedRealAmp.zip(fixedRealFreq).map { case (a, f) => a * math.cos(2 * math.Pi * f * i) }

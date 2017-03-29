@@ -424,24 +424,23 @@ class FFASTTopSpec extends FlatSpec with Matchers {
   behavior of "FFASTTop"
   it should "read in ADC inputs" in {
 
-    val opt = new DspTesterOptionsManager {
-      dspTesterOptions = TestParams.options1TolWaveformTB.dspTesterOptions
-      testerOptions = TestParams.options1TolWaveformTB.testerOptions
-      commonOptions = TestParams.options1TolWaveformTB.commonOptions.copy(targetDirName = s"test_run_dir/FFASTTopTB")
-    }
+    val opt = TestParams.optionsBTolWaveformTB(lsbs = 9, outDir = "test_run_dir/FFASTTopTB")
+
+
+
 
     dsptools.Driver.execute(() => 
       new FFASTTopWrapper(
-        adcDataType = DspReal(),
-        dspDataType = DspReal(),
-        // adcDataType = FixedPoint(23.W, 8.BP), 
-        // dspDataType = FixedPoint(27.W, 12.BP),
-        //adcDataType = FixedPoint(9.W, 8.BP), 
+        //adcDataType = DspReal(),
+        //dspDataType = DspReal(),
+         //adcDataType = FixedPoint(23.W, 8.BP), 
+         //dspDataType = FixedPoint(27.W, 12.BP),
+        adcDataType = FixedPoint(9.W, 8.BP), 
         // Must support bit growth!
-        //dspDataType = FixedPoint(20.W, 10.BP),
+        dspDataType = FixedPoint(20.W, 10.BP),
         ffastParams = FFASTParams(
            fftn = 21600,
-           subFFTns = Seq(675),
+           subFFTns = Seq(864),
            delays = Seq(Seq(0)),
           //fftn = 21600,
           //subFFTns = Seq(675),
@@ -504,6 +503,9 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
 
 
+
+
+
 //////////////
 
 class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTester(c) {
@@ -537,24 +539,51 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
 
 
+
+
   // TODO: Combine with dsptools' checkDecimal
   def compare(exp: Seq[Complex], out: Seq[Complex]) = {
+
+    import breeze.linalg._
+import breeze.plot._
+
+val f = Figure()
+val p = f.subplot(0)
+
+
+p += plot((0 until exp.length).map(e => e.toDouble).toSeq.toArray, exp.map(c => 20 * math.log10(c.abs)).toSeq.toArray)
+p += plot((0 until exp.length).map(e => e.toDouble).toSeq.toArray, out.map(c => 20 * math.log10(c.abs)).toSeq.toArray)
+
+
+
+p.xlabel = "x axis"
+p.ylabel = "y axis"
+f.saveas("test_run_dir/FFASTTopTB/lines.png") // save current figure as a .png, eps and pdf also supported
+
+
+
+
+// make tol function here!!! pass in as compare param
+// also pass in FFT + delay
+
     def toMax(w: Int): BigInt = (BigInt(1) << w) - 1
     val floTolDec = math.pow(10, -realTolDecPts.value)
     val fixTolInt = toMax(fixTolLSBs.value)
     exp.zip(out).zipWithIndex foreach { case ((e, o), i) =>
       val realDelta = math.abs(e.real - o.real)
       val imagDelta = math.abs(e.imag - o.imag)
-      c.dspDataType match {
-        case r: DspReal => 
-          expect(realDelta < floTolDec && imagDelta < floTolDec, 
-            s"Expected: $e \t Actual: $o")
-        case f: FixedPoint =>
-          require(f.binaryPoint.known, "Binary point must be known!")
-          val fixTolDec = FixedPoint.toDouble(fixTolInt, f.binaryPoint.get)
-          expect(realDelta < fixTolDec && imagDelta < fixTolDec,
-            s"Expected: $e \t Actual: $o")
-      } 
+      updatableDspVerbose.withValue(false) {
+        c.dspDataType match {
+          case r: DspReal => 
+            expect(realDelta < floTolDec && imagDelta < floTolDec, 
+              s"Expected: $e \t Actual: $o")
+          case f: FixedPoint =>
+            require(f.binaryPoint.known, "Binary point must be known!")
+            val fixTolDec = FixedPoint.toDouble(fixTolInt, f.binaryPoint.get)
+            expect(realDelta < fixTolDec && imagDelta < fixTolDec,
+              s"Expected: $e \t Actual: $o")
+        } 
+      }
     }
   }
 
@@ -818,10 +847,11 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
 
 
-
+  // why does ordering the below ops matter?
   // Real sine input
   // TODO: Don't hard code bits
   //setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
+  // not quantizing
 
   val fft675In = FFTTestVectors.createInput(c.ffastParams.subFFTns(0), fracBits = 8)
   runADC()

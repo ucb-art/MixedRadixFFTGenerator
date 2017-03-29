@@ -7,6 +7,8 @@ import chisel3._
 
 object TestParams {
 
+  // TODO: CONSOLIDATE with functions!
+
   val testerOptionsGlobal = TesterOptions(
       isVerbose = false,
       displayBase = 16,
@@ -61,6 +63,20 @@ object TestParams {
         genVerilogTb = true,
         isVerbose = true)
     testerOptions = testerOptionsGlobal.copy(waveform = Some(new java.io.File("test_run_dir/waveform.vcd")))
+  }
+
+  def optionsBTolWaveformTB(lsbs: Int, outDir: String = "") = {
+    new DspTesterOptionsManager {
+      dspTesterOptions = DspTesterOptions(
+          fixTolLSBs = lsbs,
+          genVerilogTb = true,
+          isVerbose = true)
+      testerOptions = testerOptionsGlobal.copy(waveform = Some(new java.io.File("test_run_dir/waveform.vcd")))
+      commonOptions = CommonOptions(
+        // globalLogLevel = LogLevel.Info,
+        targetDirName = outDir
+      )
+    }
   }
 
   val options1TolWaveformTBVCS = new DspTesterOptionsManager {
