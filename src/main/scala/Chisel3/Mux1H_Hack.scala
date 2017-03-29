@@ -28,6 +28,8 @@ object Mux1H {
 
 
 
+// 30db + delay
+// fix wrapper stuff
 
       
  

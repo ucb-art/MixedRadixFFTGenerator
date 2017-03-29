@@ -190,7 +190,7 @@ class WFTASpec extends FlatSpec with Matchers {
   }
 }
 
-class WFTAWrapper[T <: Data:RealBits](dspDataType: => T, val fftParams: FactorizationParams) extends Module {
+class WFTAWrapper[T <: Data:RealBits](dspDataType: => T, val fftParams: FactorizationParams) extends chisel3.Module {
   val mod = Module(new WFTA(dspDataType, fftParams))
   val usedRads = mod.usedRads
   val moduleDelay = mod.moduleDelay

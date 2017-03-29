@@ -53,7 +53,7 @@ class ComplexLUTIO[T <: Data:RealBits](dspDataType: => T, depth: Int) extends Bu
 }
 
 class ComplexLUTWrapper[T <: Data:RealBits](dspDataType: => T, val blackBoxName: String, val tableIn: Seq[Complex], outputReg: Boolean = false)  
-    extends Module {
+    extends chisel3.Module {
   val mod = Module(new ComplexLUT(dspDataType, blackBoxName, tableIn, outputReg))
   val io = IO(mod.io.cloneType)
   mod.io.clk := clock

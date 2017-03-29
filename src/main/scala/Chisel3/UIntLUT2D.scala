@@ -68,7 +68,7 @@ class UIntLUT2DIO(depth: Int, colMax: Seq[Int], colNames: Seq[String]) extends B
 }
 
 class UIntLUT2DWrapper(val blackBoxName: String, val tableIn: Seq[Seq[Int]], colNames: Seq[String] = Seq(), outputReg: Boolean = false) 
-    extends dspblocks.fft.Module {
+    extends chisel3.Module {
     // TODO: Point to correct module!
   val mod = Module(new UIntLUT2D(blackBoxName, tableIn, colNames, outputReg))
   val io = IO(new UIntLUT2DIO(mod.depth, mod.colMax, colNames))

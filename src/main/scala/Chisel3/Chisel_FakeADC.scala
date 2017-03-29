@@ -31,7 +31,7 @@ class FakeADC[T <: Data:RealBits](gen: => T) extends Module {
   }
 }
 
-class FakeADCWrapper[T <: Data:RealBits](gen: => T) extends Module {
+class FakeADCWrapper[T <: Data:RealBits](gen: => T) extends chisel3.Module {
   val mod = Module(new FakeADC(gen))
   val io = IO(new FakeADCIO(gen))
   mod.io.clk := clock 

@@ -11,7 +11,7 @@ import dsptools.numbers.implicits._
 
 // TODO: Write mask -- gradually enable across FFT stages!
 
-class WriteBeforeReadMemWrapper[T <: Data](dataType: => T, val depth: Int) extends Module {
+class WriteBeforeReadMemWrapper[T <: Data](dataType: => T, val depth: Int) extends chisel3.Module {
   val mod = Module(new WriteBeforeReadMem(dataType, depth))
   val io = IO(new WriteBeforeReadMemIO(dataType, depth))
   mod.io.waddr := io.waddr

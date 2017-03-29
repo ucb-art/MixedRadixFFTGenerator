@@ -341,7 +341,8 @@ class FFASTTopWrapper[T <: Data:RealBits](
     maxNumPeels: Int = 10,
     useBlackBox: Boolean = false) extends TopModule(usePads = false) {
   // Need to annotate top-level clk when using clk div
-  val mod = Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
+  val mod = 
+    Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
   
   val io = IO(new Bundle {
     val resetClk = Input(Bool())

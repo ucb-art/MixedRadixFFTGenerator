@@ -44,7 +44,7 @@ class CalcCtrlIO(fftParams: FactorizationParams) extends Bundle {
 
 }
 
-class CalcCtrlWrapper(val fftParams: FactorizationParams, val fftType: FFTType, memOutDelay: Int, wftaDly: Int, twDly: Int) extends Module {
+class CalcCtrlWrapper(val fftParams: FactorizationParams, val fftType: FFTType, memOutDelay: Int, wftaDly: Int, twDly: Int) extends chisel3.Module {
   val mod = Module(new CalcCtrl(fftParams, fftType, memOutDelay, wftaDly, twDly))
   val io = IO(mod.io.cloneType)
   mod.io.clk := clock

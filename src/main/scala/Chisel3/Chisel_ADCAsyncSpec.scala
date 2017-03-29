@@ -217,7 +217,7 @@ class CollectADCSamples[T <: Data:RealBits](
     // Only need depth 2 b/c clk to the right of async is always fastest clk -- add for margin
     // NOTE: Async queue has weird power of 2 requirement
     // Sync 3 is safe enough for metastability
-    val async = Module(new AsyncQueue(adcDataType, depth = 16, sync = 3, safe = true))
+    val async = chisel3.Module(new AsyncQueue(adcDataType, depth = 16, sync = 3, safe = true))
     async.io.enq_clock := analogBlock.io.adcClks(n)(ph)
     // 1 cycle before state starts
     async.io.enq_reset := io.stateInfo.start

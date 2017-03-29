@@ -36,7 +36,7 @@ class BinToSubFFTIdx(val ffastParams: FFASTParams) extends Module with DelayTrac
 
 }
 
-class BinToSubFFTIdxWrapper(val ffastParams: FFASTParams) extends Module {
+class BinToSubFFTIdxWrapper(val ffastParams: FFASTParams) extends chisel3.Module {
   val mod = Module(new BinToSubFFTIdx(ffastParams))
   val io = IO(new BinToSubFFTIdxIO(mod.fftBinMax, ffastParams.subFFTns))
   mod.io.clk := clock
@@ -112,7 +112,7 @@ class BinToSubFFTBankAddr(val ffastParams: FFASTParams, val fftType: FFTType) ex
 
 }
 
-class BinToSubFFTBankAddrWrapper(val ffastParams: FFASTParams, val fftType: FFTType) extends Module {
+class BinToSubFFTBankAddrWrapper(val ffastParams: FFASTParams, val fftType: FFTType) extends chisel3.Module {
   val mod = Module(new BinToSubFFTBankAddr(ffastParams, fftType))
   val io = IO(new BinToSubFFTBankAddrIO(mod.io.fftBin, ffastParams.subFFTns, mod.colMaxs))
   mod.io.fftBin := io.fftBin
