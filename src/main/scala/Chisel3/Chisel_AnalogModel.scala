@@ -59,7 +59,7 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   // TODO: Less hack-ish SDC generation -- DON'T HARD CODE
   val topClkSDC = s"create_clock -name IOFASTCLK -period ${fastClk} [get_pins ${sdcRegExpr}inClk]"
   val resetSDC = s"set_input_delay -clock IOFASTCLK ${inputDelay} [get_pins ${sdcRegExpr}resetClk]"
-  val adcSDC = s"set_input_delay -clock IOFASTCLK ${inputDelay} [get_pins ${sdcRegExpr}analogIn]"
+  val adcSDC = s"set_input_delay -clock IOFASTCLK ${inputDelay} [get_pins ${sdcRegExpr}analogIn_node*]"
 
   val outConstraints = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
 

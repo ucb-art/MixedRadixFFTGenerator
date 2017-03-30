@@ -152,6 +152,7 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
       memOutDelay = 1
     ))
     mod.io.clk := globalClk
+    mod.suggestName(s"subFFT$fft")
     fft -> mod
   }.toMap
 
