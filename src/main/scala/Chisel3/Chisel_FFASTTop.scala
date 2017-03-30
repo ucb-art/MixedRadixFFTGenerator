@@ -428,6 +428,7 @@ class FFASTTopSpec extends FlatSpec with Matchers {
           fftn = 21600,
           subFFTns = Seq(675, 800, 864),
           delays = Seq(Seq(0, 1)),
+          // Interestingly, DIF, DIT doesn't seem to matter much with this architecture...
           inputType = DIF
         ),
         maxNumPeels = 0
@@ -488,7 +489,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     val fft = tag._1
     val ph = tag._2
 
-    println(s"Checking results for FFT: $fft, Phase: $ph")
+    val testRef = s"$test RESULTS: SubFFT $fft, Phase $ph"
+    checksPerformed += testRef
+
+    println(s" ***** $testRef ***** ")
 
     import breeze.linalg._
     import breeze.plot._
@@ -521,23 +525,23 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
     val floTolDec = math.pow(10, -realTolDecPts.value)   
     val fixTolInt = toMax(if (fixTolOverride == -1) fixTolLSBs.value else fixTolOverride)
+    val tol = c.dspDataType match {
+      case r: DspReal => floTolDec
+      case f: FixedPoint =>
+        require(f.binaryPoint.known, "Binary point must be known!")
+        FixedPoint.toDouble(fixTolInt, f.binaryPoint.get)
+    }
 
-    exp.zip(out).zipWithIndex foreach { case ((e, o), i) =>
+    val (expectPasses, maxErrors) = exp.zip(out).zipWithIndex.map { case ((e, o), i) =>
       val realDelta = math.abs(e.real - o.real)
       val imagDelta = math.abs(e.imag - o.imag)
-      updatableDspVerbose.withValue(false) {
-        c.dspDataType match {
-          case r: DspReal => 
-            expect(realDelta < floTolDec && imagDelta < floTolDec, 
-              s"Expected: $e \t Actual: $o")
-          case f: FixedPoint =>
-            require(f.binaryPoint.known, "Binary point must be known!")
-            val fixTolDec = FixedPoint.toDouble(fixTolInt, f.binaryPoint.get)
-            expect(realDelta < fixTolDec && imagDelta < fixTolDec,
-              s"Expected: $e \t Actual: $o")
-        } 
+      val pass = updatableDspVerbose.withValue(false) {
+        expect(realDelta < tol && imagDelta < tol, 
+          s"Expected: $e \t Actual: $o")
       }
-    }
+      (pass, Seq(realDelta, imagDelta).max)
+    }.unzip
+    expect(expectPasses.reduce(_ & _), s"$test should be right. Tolerance $tol. Worst error ${maxErrors.max}.")
   }
 
   def clearResults() = {
@@ -589,7 +593,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     }
   }
 
-  def checkADCResults(loop: Int, skip: Boolean = false, customInput: Option[Seq[Double]] = None): Complex = {
+  def checkADCResults(test: String, skip: Boolean = false, customInput: Option[Seq[Double]] = None): Complex = {
     import dspblocks.fft.FFASTTopParams._
     val startingValue = customInput match {
       case None if skip =>
@@ -617,10 +621,11 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         var headAtPh0Idx: Int = 0
         // Guarantee you look at PH0 first
         peekedResults.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) } foreach { case ((n, ph), outVals) =>
-          val testRef = s"ADC RESULTS: Loop $loop, SubFFT $n, Phase $ph"
+          val testRef = s"$test ADC RESULTS: SubFFT $n, Phase $ph"
           checksPerformed += testRef
 
           println(s" ***** $testRef ***** ")
+          // TODO: Turn above into function?
 
           // No good reason for choosing the min
           val outValsSeq = outVals.toSeq.take(n)
@@ -661,7 +666,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         var headAtPh0 = Complex(0.0, 0.0)
         // Guarantee you look at PH0 first
         peekedResults.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) } foreach { case ((n, ph), outVals) =>
-          val testRef = s"ADC RESULTS: Loop $loop, SubFFT $n, Phase $ph"
+          val testRef = s"$test ADC RESULTS: SubFFT $n, Phase $ph"
           checksPerformed += testRef
 
           println(s" ***** $testRef ***** ")
@@ -702,6 +707,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         headAtPh0
     }
     clearResults()
+    if (customInput == None) println(s"------- $test ADC In Initial Value: $startingValue")
+    else println(s"------- $test ADC In Initial Value: ${startingValue.real.toInt}")
     startingValue
   }
 
@@ -843,6 +850,9 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   }
 
   reset(10)
+
+  /*
+
   setupDebug(usedDebugStates)
 
   for (loopNum <- 0 until numLoops) {
@@ -850,8 +860,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     // Always run ADCCollectDebug -- gives you a sense of how to calculate stuff afterwards
     val stopIdx = if (usedDebugStates.contains("ADCCollectDebug")) -1 else 0
     runDebug("ADCCollectDebug", stopIdx)
-    val adcInInitialVal = checkADCResults(loopNum)
-    println(s"------- Loop $loopNum ADC In Initial Value: $adcInInitialVal")
+    checkADCResults(s"Loop $loopNum")
   }
 
   // Check that writing works
@@ -886,11 +895,14 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   // clearResults()
   // Should auto-escape from ADCCollectDebug
   runDebug("FFTDebug")
-
   peekedResults.toSeq foreach { case ((n, ph), outVals) =>
-    compare(exp = FFTTestVectors.createOutput(inFFT.take(n)), out = outVals.toSeq.take(n), tag = (n, ph), test = "Debug Write -> FFT")
+    compare(exp = FFTTestVectors.createOutput(inFFT.take(n)), out = outVals.toSeq.take(n), tag = (n, ph), test = "Debug Write to FFT")
   }
-  clearResults()
+  clearResults() 
+
+  */
+
+  setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
 
   // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
   val inLarge = FFTTestVectors.createInput(c.ffastParams.fftn, fracBits = adcBP)
@@ -898,51 +910,25 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   runADC(customInput = Some(inLargeReal))
   runDebug("ADCCollectDebug")
   // TODO: Don't use complex
-  val adcInInitialIdx = checkADCResults(numLoops, customInput = Some(inLargeReal)).real.toInt
+  val adcInInitialIdx = checkADCResults(s"FFTN ${c.ffastParams.fftn} In", customInput = Some(inLargeReal)).real.toInt
+  runDebug("FFTDebug")
 
+  peekedResults.toSeq foreach { case ((n, ph), outVals) =>
+    val subsamplingFactor = c.ffastParams.subSamplingFactors(n)
+    // TODO: Convert everything to this (easy to understand)
+    val rotatedIn = inLarge.drop(adcInInitialIdx) ++ inLarge.take(adcInInitialIdx)
+    val subsampledIn = rotatedIn.drop(ph).grouped(subsamplingFactor).map(_.head).toSeq
+    require(subsampledIn.length == n, s"# of subsampled inputs should be $n")
+    compare(
+      exp = FFTTestVectors.createOutput(subsampledIn), 
+      out = outVals.toSeq.take(n), 
+      tag = (n, ph), 
+      test = "Subsampled and Delayed FFTs", 
+      fixTolOverride = fpBP + 1)
+  }
+  clearResults()
 
-
-
-
- 
-
-
-
-
-
-
-
-/*
-  
-
-// random, using PFB?
-
-  // feed in 21600 pt
-          // save starting index (more useful than value) !!! -- for fft
-          -- still want to plot???fft esp 21600 fft
-          check that adc is right
-
-*/
-    
-
-
-
-
-
- 
-  
-
-
-
-
-
-
-
-
-
-
-
-  println("\n\n *************************************************** ")
+  println("\n\n *************************************************** \n\n")
   checksPerformed.toSeq foreach { x => println(x) }
 
 }

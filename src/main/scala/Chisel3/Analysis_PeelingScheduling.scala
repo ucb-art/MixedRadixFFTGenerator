@@ -15,7 +15,10 @@ case class FFASTParams(
   val adcDelays = delays.flatten
 
   // TODO: Switch over to using this everywhere!
-  def getSubFFTDelayKeys = for (n <- subFFTns; ph <- adcDelays) yield { (n, ph) }
+  def getSubFFTDelayKeys = {
+    val temp = for (n <- subFFTns; ph <- adcDelays) yield { (n, ph) }
+    temp.toSeq.sortBy { case (n, ph) => (n, ph) }
+  }
 
   require(adcDelays.contains(0), "Delay of 0 should always be used!")
 

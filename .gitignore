@@ -7,3 +7,4 @@ target/
 MatlabScratch/
 src/main/resources/Matlab/generated/
 *.gtkw
+analysis/
