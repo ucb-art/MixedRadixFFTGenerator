@@ -599,7 +599,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       case Some(ins) if skip =>
         // Need to quantize the input to get a good match
         val quantizedIns = c.dspDataType match {
-          case f: FixedPoint => ins.map(i => math.round(i * (1 << adcBP)) / (1 << adcBP))
+          case f: FixedPoint => ins.map(i => math.round(i * (1 << adcBP)).toDouble / (1 << adcBP))
           case r: DspReal => ins 
         }
         val idx = quantizedIns.indexOf(peekedResults(c.ffastParams.subFFTns.min, 0)(0).real)
@@ -610,10 +610,11 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         // TODO: Get rid of copy paste
         // Need to quantize the input to get a good match
         val quantizedIns = c.dspDataType match {
-          case f: FixedPoint => ins.map(i => math.round(i * (1 << adcBP)) / (1 << adcBP))
-          case r: DspReal => ins 
+          case f: FixedPoint => ins.map(i => math.round(i * (1 << adcBP)).toDouble / (1 << adcBP))
+          case r: DspReal => ins
         }
-        var headAtPh0Idx = 0
+
+        var headAtPh0Idx: Int = 0
         // Guarantee you look at PH0 first
         peekedResults.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) } foreach { case ((n, ph), outVals) =>
           val testRef = s"ADC RESULTS: Loop $loop, SubFFT $n, Phase $ph"
@@ -630,7 +631,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           else {
             // TODO: Copy pasta
             val headAtPhXIdx = (headAtPh0Idx + ph) % c.ffastParams.fftn
-            require(expect(outVals.head.real == quantizedIns(headAtPhXIdx), 
+            require(expect(outVals.head == Complex(quantizedIns(headAtPhXIdx), 0.0), 
               s"Relative samples must be right across sub-ADCs. Head @ ${outValsSeq.head}"))
           }
 
@@ -640,7 +641,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           val expectedIdx = expectedIdxAdd.scanLeft(headAtPhXIdx) { (accum, next) => 
             (accum + next) % c.ffastParams.fftn
           }
-          val expected = expectedIdx.map(i => quantizedIns(i))
+          val expected = expectedIdx.map(i => Complex(quantizedIns(i), 0.0))
           val pass = expect(outValsSeq == expected, "Subsampled values should be spaced correctly!")
           if (!pass) {
             val firstFailed = outValsSeq.zip(expected).find { case (out, exp) => out != exp }.get
@@ -877,32 +878,34 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   runADC()
 
   // Smaller FFTs will use a subset
-  val in = FFTTestVectors.createInput(c.ffastParams.subFFTns.max, fracBits = adcBP)
+  val inFFT = FFTTestVectors.createInput(c.ffastParams.subFFTns.max, fracBits = adcBP)
   // Writes to all memories simultaneously
-  runWriteDebug("ADCCollectDebug", customInput = Some(in))
+  runWriteDebug("ADCCollectDebug", customInput = Some(inFFT))
   // Collect data
   // runDebug("ADCCollectDebug")
   // clearResults()
   // Should auto-escape from ADCCollectDebug
   runDebug("FFTDebug")
 
+  peekedResults.toSeq foreach { case ((n, ph), outVals) =>
+    compare(exp = FFTTestVectors.createOutput(inFFT.take(n)), out = outVals.toSeq.take(n), tag = (n, ph), test = "Debug Write -> FFT")
+  }
+  clearResults()
 
-
-
-
-
-
-
+  // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
+  val inLarge = FFTTestVectors.createInput(c.ffastParams.fftn, fracBits = adcBP)
+  val inLargeReal = inLarge.map(x => x.real)
+  runADC(customInput = Some(inLargeReal))
+  runDebug("ADCCollectDebug")
+  // TODO: Don't use complex
+  val adcInInitialIdx = checkADCResults(numLoops, customInput = Some(inLargeReal)).real.toInt
 
 
 
 
 
  
- peekedResults.toSeq foreach { case ((n, ph), outVals) =>
-    compare(exp = FFTTestVectors.createOutput(in.take(n)), out = outVals.toSeq.take(n), tag = (n, ph), test = "Debug Write -> FFT")
-     }
-  
+
 
 
 
