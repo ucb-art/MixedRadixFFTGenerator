@@ -2,6 +2,7 @@ package dspblocks.fft
 import breeze.signal._
 import breeze.linalg.DenseVector
 import breeze.math.Complex
+import scala.util._
 
 // TODO: Make random tests, add noise
 object FFTTestVectors {
@@ -18,7 +19,9 @@ object FFTTestVectors {
         if (outR >= 1.0) 1.0 - 1.0 / math.pow(2, fracBits)
         else if (outR < -1.0) -1.0 
         else outR
-      Complex(complexR, 0.0)
+      // Complex(complexR, 0.0)
+      // Dither!
+      Complex(complexR + Random.nextGaussian / (1 << (fracBits + 2)), 0.0)
       // Random.nextGaussian
     }
   }

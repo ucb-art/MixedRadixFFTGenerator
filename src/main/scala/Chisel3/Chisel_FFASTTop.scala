@@ -593,6 +593,23 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     }
   }
 
+  def quantize(ins: Seq[Double]): Seq[Double] = {
+    import dspblocks.fft.FFASTTopParams._
+    c.dspDataType match {
+      case f: FixedPoint => 
+        ins.map { case i => 
+          // Quantization needs to match exactly
+          // FixedPoint.toDouble(FixedPoint.toBigInt(i, adcBP), adcBP)
+          // math.round(i * (1 << adcBP)).toDouble / (1 << adcBP)
+          val temp1 = i * (1 << adcBP).toDouble
+          // ADC uses round half up
+          val temp2 = math.floor(temp1 + 0.5).toDouble
+          temp2 / (1 << adcBP)
+        }
+      case r: DspReal => ins 
+    }
+  }
+
   def checkADCResults(test: String, skip: Boolean = false, customInput: Option[Seq[Double]] = None): Complex = {
     import dspblocks.fft.FFASTTopParams._
     val startingValue = customInput match {
@@ -602,22 +619,23 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         peekedResults(c.ffastParams.subFFTns.min, 0)(0)
       case Some(ins) if skip =>
         // Need to quantize the input to get a good match
-        val quantizedIns = c.dspDataType match {
-          case f: FixedPoint => ins.map(i => math.round(i * (1 << adcBP)).toDouble / (1 << adcBP))
-          case r: DspReal => ins 
+        // Patterns repeat a lot so need very specific (inefficient) search
+        val quantizedIns = quantize(ins)
+        val n = c.ffastParams.subFFTns.min
+        val outValsSeq = peekedResults(n, 0).toSeq.take(n)
+        val subsamplingFactor = c.ffastParams.subSamplingFactors(n)
+        val indicesThatMatchHead = quantizedIns.zipWithIndex.filter(_._1 == outValsSeq.head.real).map(_._2)
+        val possibleIdx = indicesThatMatchHead.find { case i => 
+          val possibleMatch = (0 until n).map(x => (i + x * subsamplingFactor) % c.ffastParams.fftn).map(x => Complex(quantizedIns(x), 0.0))
+          possibleMatch == outValsSeq
         }
-        val idx = quantizedIns.indexOf(peekedResults(c.ffastParams.subFFTns.min, 0)(0).real)
-        require(idx >= 0, "Idx must exist!")
+        require(possibleIdx != None, "Idx must exist!")
         // TODO: Don't fake this
-        Complex(idx.toDouble, 0.0)
+        Complex(possibleIdx.get.toDouble, 0.0)
       case Some(ins) if !skip =>
         // TODO: Get rid of copy paste
         // Need to quantize the input to get a good match
-        val quantizedIns = c.dspDataType match {
-          case f: FixedPoint => ins.map(i => math.round(i * (1 << adcBP)).toDouble / (1 << adcBP))
-          case r: DspReal => ins
-        }
-
+        val quantizedIns = quantize(ins)
         var headAtPh0Idx: Int = 0
         // Guarantee you look at PH0 first
         peekedResults.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) } foreach { case ((n, ph), outVals) =>
@@ -630,8 +648,14 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           // No good reason for choosing the min
           val outValsSeq = outVals.toSeq.take(n)
           if (c.ffastParams.subFFTns.min == n && ph == 0) {
-            headAtPh0Idx = quantizedIns.indexOf(outValsSeq.head.real)
-            require(headAtPh0Idx >= 0, "Idx must exist!")
+            val subsamplingFactor = c.ffastParams.subSamplingFactors(n)
+            val indicesThatMatchHead = quantizedIns.zipWithIndex.filter(_._1 == outValsSeq.head.real).map(_._2)
+            val possibleIdx = indicesThatMatchHead.find { case i => 
+              val possibleMatch = (0 until n).map(x => (i + x * subsamplingFactor) % c.ffastParams.fftn).map(x => Complex(quantizedIns(x), 0.0))
+              possibleMatch == outValsSeq
+            }
+            require(possibleIdx != None, "Idx must exist!")
+            headAtPh0Idx = possibleIdx.get
           }
           else {
             // TODO: Copy pasta
@@ -849,10 +873,11 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     clearResults()
   }
 
+  import dspblocks.fft.FFASTTopParams._
+  
   reset(10)
 
-  /*
-
+/*
   setupDebug(usedDebugStates)
 
   for (loopNum <- 0 until numLoops) {
@@ -877,8 +902,6 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   // WARNING: I'm NOT first quantizing the input -- so comparing with floating point
   // calculation (will be worse)
 
-  import dspblocks.fft.FFASTTopParams._
-
   ////////////////////////////////////////////////////////////////////////////////////
 
   // Warning: To exit out of debug, need to detect RISING EDGE
@@ -899,8 +922,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     compare(exp = FFTTestVectors.createOutput(inFFT.take(n)), out = outVals.toSeq.take(n), tag = (n, ph), test = "Debug Write to FFT")
   }
   clearResults() 
-
-  */
+*/
 
   setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
 
@@ -910,7 +932,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   runADC(customInput = Some(inLargeReal))
   runDebug("ADCCollectDebug")
   // TODO: Don't use complex
-  val adcInInitialIdx = checkADCResults(s"FFTN ${c.ffastParams.fftn} In", customInput = Some(inLargeReal)).real.toInt
+  val adcInInitialIdx = checkADCResults(s"FFTN ${c.ffastParams.fftn} In", customInput = Some(inLargeReal), skip = true).real.toInt
   runDebug("FFTDebug")
 
   peekedResults.toSeq foreach { case ((n, ph), outVals) =>
