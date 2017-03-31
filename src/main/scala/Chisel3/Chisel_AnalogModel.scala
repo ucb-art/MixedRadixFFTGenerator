@@ -20,7 +20,8 @@ class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
   val analogIn = Input(DspReal())
   val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
   val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
-    Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
+    Output(adcDataType), ffastParams.adcDelays), ffastParams.subFFTns)
+  val adcSubFFTValid = CustomIndexedBundle(Output(Bool), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
 
@@ -71,7 +72,7 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
 
 
-
+/*
   clkMux.io.sel := io.extSlowClkSel
   clkMux.io.clk0 := globalClkInternal
   clkMux.io.clk1 := io.extSlowClk 
@@ -88,19 +89,31 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   scr(other sigs)
 
 
+clk: async reset
+
+virtual clk
 
 
+**add another delay to the counter for lut
 
+set_false_path
 
+set_output_delay??
 
-enq_reset needs to be registered!
-
-change enq valid
-currentstate needs to be internally reg in analog (collectadcsamplesstate)
+set_max_delay
+**change enq valid
+**currentstate needs to be internally reg in analog (collectadcsamplesstate)
 // bits is synced but not valid -- for adcDigitalOut
-analogBlock.io.stopCollectingADCSamples := done
+**analogBlock.io.stopCollectingADCSamples := done
 
 
+
+valid: virtual clk
+set_input_delay of some clk to q
+max delay to clk is X
+via set_max_delay
+
+*/
 
 
 
@@ -134,9 +147,10 @@ analogBlock.io.stopCollectingADCSamples := done
 
 }
 
+
 class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module {
   val io = IO(new AnalogModelIO(adcDataType, ffastParams))
-  val ffastClkDiv = Module(new FFASTClkDiv(ffastParams))
+  val ffastClkDiv = Module(new FFASTClkDiv(ffastParams, syncReset = false))
   ffastClkDiv.io.inClk := io.inClk
   ffastClkDiv.io.resetClk := io.resetClk
   // Valid data only in CollectADCSamplesState, should be aligned to when all PH0's are aligned
@@ -148,10 +162,11 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
   // Make the data appear in order by waiting until all sub ADCs have collected their first data
   // (but not @ output of register)
   val frameAligned2 = ffastParams.subFFTns.map { n => 
-    n -> AsyncResetReg(frameAligned1,
-    clk = ffastClkDiv.io.outClks(n)(ffastParams.clkDelays.max),
-    // Reset should happen with lots of margin (async)
-    rst = io.stopCollectingADCSamples)
+    n -> AsyncResetReg(
+      frameAligned1,
+      clk = ffastClkDiv.io.outClks(n)(ffastParams.clkDelays.max),
+      // Reset should happen with lots of margin (async)
+      rst = io.stopCollectingADCSamples)
   }.toMap
 
   // TODO: Switch to this syntax everywhere
@@ -169,3 +184,50 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
     adc
   }
 }
+
+// Wrapper that handles some amount of synchronization
+
+class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Bundle {
+  // Chip startup
+  val resetClk = Input(Bool())
+  // Fast clk
+  val inClk = Input(Clock())
+  // HOLD -- indicates you're in the state where ADC inputs matter
+  val collectADCSamplesState = Input(Bool())
+  // PULSE -- for async reset of ADC out valid
+  val stopCollectingADCSamples = Input(Bool())
+  // Full rate ADC in
+  val analogIn = Input(DspReal())
+  val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
+  val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
+    Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
+  override def cloneType = (new AnalogModelWrapperIO(adcDataType, ffastParams)).asInstanceOf[this.type]
+}
+
+class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, useBlackBox: Boolean) extends Module {
+
+  val io = IO(new AnalogModelWrapperIO(adcDataType, ffastParams))
+
+  val analogModel = 
+    if (useBlackBox) {
+      // TODO: WARNING: Should only exist once!
+      val analogBlockName = "analogBlock"
+      val m = Module(new AnalogModelBlackBox(adcDataType, ffastParams, name = analogBlockName))
+      m.suggestName(analogBlockName)
+      m
+    }
+    else
+      Module(new AnalogModel(adcDataType, ffastParams))
+
+  analogModel.io.resetClk := io.resetClk
+  analogModel.io.inClk := io.inClk 
+
+  // NOTE: These two signals should be internally registered @ the 10GHz rate
+  analogModel.io.collectADCSamplesState := io.collectADCSamplesState
+  analogModel.io.stopCollectingADCSamples := io.stopCollectingADCSamples
+  
+
+
+
+
+

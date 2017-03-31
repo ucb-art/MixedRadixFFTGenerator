@@ -12,6 +12,8 @@ import breeze.math.Complex
 import dsptools.{DspTester, DspTesterOptionsManager}
 import barstools.tapeout.transforms._
 
+import chisel3.util.ShiftRegister
+
 // TODO: Suggest better names???
 // TODO: Use Array.range(), etc.
 
@@ -361,7 +363,7 @@ class FFASTTopWrapper[T <: Data:RealBits](
     // clock, reset used for Analog
 
     val stateMachineReset = Input(Bool())
-    val extSlowClk = Input(Clock())
+    val extSlowClk = Input(Bool())
     val extSlowClkSel = Input(Bool())
   })
     
@@ -371,7 +373,7 @@ class FFASTTopWrapper[T <: Data:RealBits](
   mod.io.analogIn := io.analogIn
   mod.io.scr <> io.scr
   mod.io.stateMachineReset := io.stateMachineReset
-  mod.io.extSlowClk := io.extSlowClk
+  mod.io.extSlowClk := io.extSlowClk.asClock
   mod.io.extSlowClkSel := io.extSlowClkSel
   
   annotateClkPort(clock, 
@@ -854,7 +856,23 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   import dspblocks.fft.FFASTTopParams._
   
+  // Clk gen reset
   reset(10)
+
+  updatableDspVerbose.withValue(false) { 
+
+    // Use internal clk for simulation
+    poke(c.io.extSlowClk, false.B)
+    poke(c.io.extSlowClkSel, false.B)
+
+    poke(c.io.stateMachineReset, true.B)
+    step(subsamplingT * 2)
+    poke(c.io.stateMachineReset, false.B)
+
+    // Takes 3 slow clk cycles to synchronize
+    step(subsamplingT * 4)
+
+  }
 
 /*
   setupDebug(usedDebugStates)

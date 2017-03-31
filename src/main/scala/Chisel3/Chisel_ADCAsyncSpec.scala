@@ -194,17 +194,8 @@ class CollectADCSamples[T <: Data:RealBits](
   FFASTMemOutputLanes.connectToDefault(io.dataFromMemory, ffastParams)
   FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
 
-  val analogBlock = 
-    if (useBlackBox) {
-      // TODO: WARNING: Should only exist once!
-      val analogBlockName = "analogBlock"
-      val m = Module(new AnalogModelBlackBox(adcDataType, ffastParams, name = analogBlockName))
-      m.suggestName(analogBlockName)
-      m
-    }
-    else
-      Module(new AnalogModel(adcDataType, ffastParams))
-
+  val analogBlock = Module(new AnalogModelWrapper(adcDataType, ffastParams, useBlackBox = useBlackBox))
+   
   analogBlock.io.resetClk := io.resetClk
   analogBlock.io.inClk := io.inClk
   analogBlock.io.analogIn := io.analogIn
@@ -230,28 +221,11 @@ class CollectADCSamples[T <: Data:RealBits](
     val thisClk = analogBlock.io.adcClks(n)(ph)
     async.io.enq_clock := thisClk
     
-
-
-
-
-
-
-
     val synchronizedReset = withClock(thisClk) {
-    ShiftRegister(~io.stateInfo.inState, 3)
-  }
-
-    // 1 cycle before state starts
+      ShiftRegister(~io.stateInfo.inState, 3)
+    }
+    // Synchronize to local clk domain
     async.io.enq_reset := synchronizedReset
-
-
-
-
-
-
-
-
-
 
     // Generally, RX always ready, but let's say it's not ready until it actually needs data
     // async.io.enq.ready
