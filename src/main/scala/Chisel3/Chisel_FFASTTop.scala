@@ -34,6 +34,12 @@ class FFASTTopIO[T <: Data:RealBits](
   val resetClk = Input(Bool())
   val inClk = Input(Clock())
   val analogIn = Input(DspReal())
+
+  // Top-level stuff
+  val stateMachineReset = Input(Bool())
+  val extSlowClk = Input(Clock())
+  val extSlowClkSel = Input(Bool())
+
   val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, numStates)
 
   // The following IO are for debug purposes only (removed for real tapeout)
@@ -118,10 +124,14 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   collectADCSamplesBlock.io.analogIn := io.analogIn
   collectADCSamplesBlock.io.idxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs
 
+  collectADCSamplesBlock.io.extSlowClk := io.extSlowClk 
+  collectADCSamplesBlock.io.extSlowClkSel := io.extSlowClkSel
+
   val globalClk = collectADCSamplesBlock.io.globalClk
 
   // Start @ reset state
-  val currentState = withClockAndReset(globalClk, io.resetClk) { RegInit(init = (numStates - 1).U) }
+  val synchronizedStateMachineReset = withClock(globalClk) { ShiftRegister(io.stateMachineReset, 3) }
+  val currentState = withClockAndReset(globalClk, synchronizedStateMachineReset) { RegInit(init = (numStates - 1).U) }
 
   // Clks for LUTs
   inputSubFFTIdxToBankAddrLUT.io.clk := globalClk
@@ -345,57 +355,25 @@ class FFASTTopWrapper[T <: Data:RealBits](
   val mod = 
     Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
   
-  val io = IO(new Bundle {
-    val resetClk = Input(Bool())
+  val io = IO(new Bundle { 
     val analogIn = Input(DspReal())
     val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, mod.numStates)
+    // clock, reset used for Analog
 
-    // DEBUG
-  /*
-    val asyncEnqValidMin = Output(Bool())
-    val asyncEnqDataMin = Output(dspDataType)
-    val asyncDeqValidMin = Output(Bool())
-    val asyncDeqDataMin = Output(dspDataType)
-
-    val asyncEnqValidMax = Output(Bool())
-    val asyncEnqDataMax = Output(dspDataType)
-    val asyncDeqValidMax = Output(Bool())
-    val asyncDeqDataMax = Output(dspDataType)
-
-    val subFFTMin = ffastParams.subFFTns.min 
-    val subFFTMax = ffastParams.subFFTns.max
-    val countMaxFFTMin = Output(UInt(range"[0, $subFFTMin]"))
-    val countMaxFFTMax = Output(UInt(range"[0, $subFFTMin]"))
-  */
-    // TODO: Option clk
-    // The following IO are for debug purposes only (removed for real tapeout)
-    // val adc = new CollectADCSamplesIO(dspDataType, ffastParams, mod.subFFTnsColMaxs)
-    // val debug = new DebugIO(dspDataType, ffastParams, mod.numStates, mod.subFFTnsColMaxs)
+    val stateMachineReset = Input(Bool())
+    val extSlowClk = Input(Clock())
+    val extSlowClkSel = Input(Bool())
   })
-
+    
+  // WARNING: SCARY: Fast clk + fast clk reset uses Chisel default clock, reset
   mod.io.resetClk := reset
   mod.io.inClk := clock
   mod.io.analogIn := io.analogIn
   mod.io.scr <> io.scr
-
-  // DEBUG
-/*
-  io.asyncEnqValidMin := mod.io.asyncEnqValidMin
-  io.asyncEnqDataMin := mod.io.asyncEnqDataMin
-  io.asyncDeqValidMin := mod.io.asyncDeqValidMin
-  io.asyncDeqDataMin := mod.io.asyncDeqDataMin
-
-  io.asyncEnqValidMax := mod.io.asyncEnqValidMax
-  io.asyncEnqDataMax := mod.io.asyncEnqDataMax
-  io.asyncDeqValidMax := mod.io.asyncDeqValidMax
-  io.asyncDeqDataMax := mod.io.asyncDeqDataMax
-
-  io.countMaxFFTMin := mod.io.countMaxFFTMin
-  io.countMaxFFTMax := mod.io.countMaxFFTMax
-*/
-  // mod.io.adc <> io.adc
-  // mod.io.debug <> io.debug
-
+  mod.io.stateMachineReset := io.stateMachineReset
+  mod.io.extSlowClk := io.extSlowClk
+  mod.io.extSlowClkSel := io.extSlowClkSel
+  
   annotateClkPort(clock, 
     id = "clock", // not in io bundle
     sink = Sink(Some(ClkSrc(period = 5.0)))

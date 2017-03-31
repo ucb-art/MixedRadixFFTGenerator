@@ -57,6 +57,9 @@ class CollectADCSamplesIO[T <: Data:RealBits](
   val stateInfo = new StateTransitionIO
   val analogIn = Input(DspReal())
 
+  val extSlowClk = Input(Clock())
+  val extSlowClkSel = Input(Bool())
+
   // TODO: Maybe move dataToMemory, dataFromMemory, stateInfo to separate bundle
 
   // Only 1 input at a time for each memory
@@ -207,7 +210,13 @@ class CollectADCSamples[T <: Data:RealBits](
   analogBlock.io.analogIn := io.analogIn
 
   // Global clock = fastest clk, phase 0
-  val globalClk = analogBlock.io.adcClks(ffastParams.subFFTns.max)(0) 
+  val globalClkInternal = analogBlock.io.adcClks(ffastParams.subFFTns.max)(0)
+  val clkMux = Module(new ClkMuxBlackBox(useBlackBox))
+  clkMux.io.sel := io.extSlowClkSel
+  clkMux.io.clk0 := globalClkInternal
+  clkMux.io.clk1 := io.extSlowClk 
+  val globalClk = clkMux.io.clkOut
+
   io.globalClk := globalClk
 
   val deqReady = io.stateInfo.start || io.stateInfo.inState
@@ -218,9 +227,32 @@ class CollectADCSamples[T <: Data:RealBits](
     // NOTE: Async queue has weird power of 2 requirement
     // Sync 3 is safe enough for metastability
     val async = chisel3.Module(new AsyncQueue(adcDataType, depth = 16, sync = 3, safe = true))
-    async.io.enq_clock := analogBlock.io.adcClks(n)(ph)
+    val thisClk = analogBlock.io.adcClks(n)(ph)
+    async.io.enq_clock := thisClk
+    
+
+
+
+
+
+
+
+    val synchronizedReset = withClock(thisClk) {
+    ShiftRegister(~io.stateInfo.inState, 3)
+  }
+
     // 1 cycle before state starts
-    async.io.enq_reset := io.stateInfo.start
+    async.io.enq_reset := synchronizedReset
+
+
+
+
+
+
+
+
+
+
     // Generally, RX always ready, but let's say it's not ready until it actually needs data
     // async.io.enq.ready
     async.io.enq.valid := analogBlock.io.adcDigitalOut(n)(ph).valid
@@ -229,7 +261,7 @@ class CollectADCSamples[T <: Data:RealBits](
     // Uses ph 0 of fastest clk on other side!
     // TODO: Maybe external clk?
     async.io.deq_clock := globalClk
-    async.io.deq_reset := io.stateInfo.start
+    async.io.deq_reset := ~io.stateInfo.inState
     async.io.deq.ready := deqReady
 
     (n, ph) -> async
@@ -239,9 +271,14 @@ class CollectADCSamples[T <: Data:RealBits](
   // TODO: RESET BEFORE PREVIOUS STATE DONE TO MINIMIZE LATENCY
   // Queue takes many cycles to reset -- should not feed data in until all queues are reset
   val collectAsyncEnqReady = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => asyncs(n, ph).io.enq.ready }
-  val asyncEnqsAllReady = withClockAndReset(globalClk, io.stateInfo.start) {
-    RegEnable(true.B, enable = collectAsyncEnqReady.reduce(_ & _), init = false.B)
+  val allAsyncEnqsReady = collectAsyncEnqReady.reduce(_ & _)
+  val synchronizedAllAsyncEnqsReady = withClockAndReset(globalClk, io.stateInfo.start) {
+    ShiftRegister(allAsyncEnqsReady, 3, resetData = false.B, en = io.stateInfo.inState)
   }
+  val asyncEnqsAllReady = withClockAndReset(globalClk, io.stateInfo.start) {
+    RegEnable(true.B, enable = synchronizedAllAsyncEnqsReady, init = false.B)
+  }
+
   // Don't synchronize enq_valids until the queues are all ready
   analogBlock.io.collectADCSamplesState := io.stateInfo.inState & asyncEnqsAllReady
 

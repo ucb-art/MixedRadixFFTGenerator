@@ -61,6 +61,61 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   val resetSDC = s"set_input_delay -clock IOFASTCLK ${inputDelay} [get_pins ${sdcRegExpr}resetClk]"
   val adcSDC = s"set_input_delay -clock IOFASTCLK ${inputDelay} [get_pins ${sdcRegExpr}analogIn_node*]"
 
+
+
+
+
+
+
+
+
+
+
+
+  clkMux.io.sel := io.extSlowClkSel
+  clkMux.io.clk0 := globalClkInternal
+  clkMux.io.clk1 := io.extSlowClk 
+  val globalClk = clkMux.io.clkOut
+  set_size_only on instance ClkMuxBlackBox / clkMux
+
+  set_false_path       -from  [get_port *reset]
+  stateMachineReset
+  resetClk
+  extSlowClkSel
+
+  extSlowClk async with everything
+
+  scr(other sigs)
+
+
+
+
+
+
+
+enq_reset needs to be registered!
+
+change enq valid
+currentstate needs to be internally reg in analog (collectadcsamplesstate)
+// bits is synced but not valid -- for adcDigitalOut
+analogBlock.io.stopCollectingADCSamples := done
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   val outConstraints = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
 
     val phases = ffastParams.adcDelays
