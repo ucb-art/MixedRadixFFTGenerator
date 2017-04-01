@@ -31,8 +31,9 @@ case class FFASTParams(
   def subSamplingFactors = subFFTns.map(n => n -> fftn / n).toMap
 
   def clkDelays = {
-    val maxAllowedDelay = subSamplingFactors.map(_._2).min - 1
-    require(!adcDelays.contains(maxAllowedDelay), 
+    // Don't code like this
+    val maxAllowedDelay = subSamplingFactors.map(_._2).min - FFASTTopParams.fastClkPeriodsBeforeMaxFFTPh0ForInternalValid
+    require(!adcDelays.contains(maxAllowedDelay) && adcDelays.max < maxAllowedDelay, 
       "If checkDelays is used, must reserve min subsampling factor - 1 (last delay) for synchronization")
     adcDelays ++ Seq(maxAllowedDelay)
   }

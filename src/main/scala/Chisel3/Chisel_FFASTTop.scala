@@ -397,43 +397,6 @@ class FFASTTopWrapper[T <: Data:RealBits](
 
 }
 
-object FFASTTopParams {
-  
-  // Must support bit growth!
-  val adcDataType = FixedPoint(9.W, 8.BP)
-  val dspDataType = FixedPoint(20.W, 10.BP)
-  val delays = Seq(Seq(0, 3), Seq(7, 12), Seq(16, 23))
-  val maxNumPeels = 0
-
-  val ffastParams = FFASTParams(
-    fftn = 21600,
-    subFFTns = Seq(675, 800, 864),
-    delays = delays,
-    inputType = DIF
-  )
-  // Interestingly, DIF, DIT doesn't seem to matter much with this architecture...
-
-  import dsptools._
-
-  val dspContext = DspContext(
-    // Expects bit growth accounted for
-    overflowType = Wrap,
-    // Simplest
-    trimType = Floor,
-    complexUse4Muls = false,
-    numMulPipes = 1,
-    numAddPipes = 0,
-    binaryPointGrowth = 1,
-    // Should not be used
-    binaryPoint = Some(1),
-    numBits = Some(1)
-  )
-
-  def fpBP = dspDataType.binaryPoint.get
-  def adcBP = adcDataType.binaryPoint.get
-
-}
-
 class FFASTTopSpec extends FlatSpec with Matchers {
   behavior of "FFASTTop"
   it should "read in ADC inputs" in {
