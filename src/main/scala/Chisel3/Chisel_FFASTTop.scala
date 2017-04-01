@@ -351,8 +351,20 @@ class FFASTTopWrapper[T <: Data:RealBits](
     val adcDataType: T, 
     val dspDataType: T, 
     val ffastParams: FFASTParams, 
-    maxNumPeels: Int = 10,
-    useBlackBox: Boolean = false) extends TopModule(usePads = false) {
+    maxNumPeels: Int,
+    useBlackBox: Boolean = true) extends TopModule(usePads = false) {
+
+  (adcDataType, dspDataType) match {
+    case (adc: FixedPoint, dsp: FixedPoint) => 
+      println(s"ADC Width: ${adc.getWidth}. ADC Fractional Width: ${adc.binaryPoint.get}")
+      println(s"DSP Width: ${dsp.getWidth}. DSP Fractional Width: ${dsp.binaryPoint.get}")
+    case (_, _) =>
+  }
+
+  println(s"FFAST Params: ${ffastParams.toString}")
+  println(s"Max # Peeling Iterations: $maxNumPeels")
+  if (useBlackBox) println("Using analog black box!")
+
   // Need to annotate top-level clk when using clk div
   val mod = 
     Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
@@ -367,6 +379,8 @@ class FFASTTopWrapper[T <: Data:RealBits](
     val extSlowClkSel = Input(Bool())
   })
     
+  SCRHelper(io.scr)
+
   // WARNING: SCARY: Fast clk + fast clk reset uses Chisel default clock, reset
   mod.io.resetClk := reset
   mod.io.inClk := clock
@@ -380,14 +394,44 @@ class FFASTTopWrapper[T <: Data:RealBits](
     id = "clock", // not in io bundle
     sink = Sink(Some(ClkSrc(period = 5.0)))
   )
+
 }
 
 object FFASTTopParams {
-  val adcWidth = 9
-  val adcBP = 8
-  val fpWidth = 20
-  val fpBP = 10
-  val delays = Seq(Seq(0, 3), Seq(7, 12), Seq(16, 24))
+  
+  // Must support bit growth!
+  val adcDataType = FixedPoint(9.W, 8.BP)
+  val dspDataType = FixedPoint(20.W, 10.BP)
+  val delays = Seq(Seq(0, 3), Seq(7, 12), Seq(16, 23))
+  val maxNumPeels = 0
+
+  val ffastParams = FFASTParams(
+    fftn = 21600,
+    subFFTns = Seq(675, 800, 864),
+    delays = delays,
+    inputType = DIF
+  )
+  // Interestingly, DIF, DIT doesn't seem to matter much with this architecture...
+
+  import dsptools._
+
+  val dspContext = DspContext(
+    // Expects bit growth accounted for
+    overflowType = Wrap,
+    // Simplest
+    trimType = Floor,
+    complexUse4Muls = false,
+    numMulPipes = 1,
+    numAddPipes = 0,
+    binaryPointGrowth = 1,
+    // Should not be used
+    binaryPoint = Some(1),
+    numBits = Some(1)
+  )
+
+  def fpBP = dspDataType.binaryPoint.get
+  def adcBP = adcDataType.binaryPoint.get
+
 }
 
 class FFASTTopSpec extends FlatSpec with Matchers {
@@ -398,25 +442,21 @@ class FFASTTopSpec extends FlatSpec with Matchers {
 
     val opt = TestParams.optionsBTolWaveformTB(lsbs = fpBP - 1, outDir = "test_run_dir/FFASTTopTB")
 
-    dsptools.Driver.execute(() => 
-      new FFASTTopWrapper(
-        //adcDataType = DspReal(),
-        //dspDataType = DspReal(),
-        adcDataType = FixedPoint(adcWidth.W, adcBP.BP), 
-        // Must support bit growth!
-        dspDataType = FixedPoint(fpWidth.W, fpBP.BP),
-        ffastParams = FFASTParams(
-          fftn = 21600,
-          subFFTns = Seq(675, 800, 864),
-          delays = Seq(Seq(0, 1)),
-          // Interestingly, DIF, DIT doesn't seem to matter much with this architecture...
-          inputType = DIF
-        ),
-        maxNumPeels = 0
-      ), opt
-    ) { c =>
-      new FFASTTopTester(c)
-    } should be (true)
+    dsptools.DspContext.alter(dspContext) {
+      dsptools.Driver.execute(() => 
+        new FFASTTopWrapper(
+          //adcDataType = DspReal(),
+          //dspDataType = DspReal(),
+          adcDataType = adcDataType, 
+          dspDataType = dspDataType,
+          ffastParams = ffastParams.copy(delays = Seq(Seq(0, 1))),
+          maxNumPeels = maxNumPeels,
+          useBlackBox = false
+        ), opt
+      ) { c =>
+        new FFASTTopTester(c)
+      } should be (true)
+    }
   }
 }
 
@@ -426,21 +466,17 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
     import dspblocks.fft.FFASTTopParams._
 
-    chisel3.Driver.execute(TestParams.buildWithMemories, () => 
-      new FFASTTopWrapper(
-        adcDataType = FixedPoint(adcWidth.W, adcBP.BP), 
-        // Must support bit growth!
-        dspDataType = FixedPoint(fpWidth.W, fpBP.BP),
-        ffastParams = FFASTParams(
-          fftn = 21600,
-          subFFTns = Seq(675, 800, 864),
-          delays = FFASTTopParams.delays,
-          inputType = DIF
-        ),
-        maxNumPeels = 0,
-        useBlackBox = true
-      )
-    ) 
+    dsptools.DspContext.alter(dspContext) {
+      chisel3.Driver.execute(TestParams.buildWithMemories, () => 
+        new FFASTTopWrapper(
+          adcDataType = adcDataType, 
+          dspDataType = dspDataType,
+          ffastParams = ffastParams,
+          maxNumPeels = maxNumPeels
+        )
+      ) 
+    }
+
   }
 }
 
@@ -463,6 +499,21 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   val peekedResults = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
     (n, ph) -> Array.fill(c.ffastParams.subFFTns.max)(Complex(0.0, 0.0))
   }.toMap
+
+
+  // TODO: Generalize
+
+  def getEnable(n: Int, ph: Int): Int = {
+    val fftGroups = c.ffastParams.getSubFFTDelayKeys  
+    val (groupTag, groupIdx) = fftGroups.zipWithIndex.filter { 
+      case ((nG, phG), idx) => n == nG && ph == phG 
+    }.head
+    1 << groupIdx
+  }
+  def getAllEnable: Int = {
+    val fftGroups = c.ffastParams.getSubFFTDelayKeys  
+    fftGroups.map { case (n, ph) => getEnable(n, ph) }.sum
+  }
 
   // TODO: Combine with dsptools' checkDecimal
   def compare(exp: Seq[Complex], out: Seq[Complex], tag: (Int, Int), fixTolOverride: Int = -1, test: String = "") = {
@@ -540,10 +591,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       poke(c.io.scr.debugStates, debugStatesPoke)
       poke(c.io.scr.cpuDone, false)
       // In debug, always read; maybe write -- overwrite later
-      c.ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
-        poke(c.io.scr.ctrlMemReadFromCPU.re(n)(ph), true.B)
-        poke(c.io.scr.ctrlMemWrite.we(n)(ph), false.B)
-      }
+      poke(c.io.scr.ctrlMemReadFromCPU.re, getAllEnable)
+      poke(c.io.scr.ctrlMemWrite.we, 0)
     }
   }
 
@@ -784,11 +833,16 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     val done = DebugNext(0, true)
     val incInput = DebugNext(debugNext.idx + 1, false)
     updatableDspVerbose.withValue(false) {
-      c.ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
+
+      c.ffastParams.subFFTns.foreach { case n =>
         // Once the index has exceeded the subFFT n, turn write off
-        if (debugNext.idx == n)
-          poke(c.io.scr.ctrlMemWrite.we(n)(ph), false.B)
+        if (debugNext.idx == n) {
+          val origWE = peek(c.io.scr.ctrlMemWrite.we)
+          val turnOffNEn = ~(c.ffastParams.adcDelays.map(ph => getEnable(n, ph)).sum) & origWE
+          poke(c.io.scr.ctrlMemWrite.we, turnOffNEn)
+        }
       }
+
       if (BigInt(debugNext.idx).bitLength <= c.io.scr.ctrlMemWrite.wIdx.getWidth) 
         poke(c.io.scr.ctrlMemWrite.wIdx, debugNext.idx)
       val input = customInput match {
@@ -810,10 +864,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   def runWriteDebug(state: String, flipInput: Boolean = true, customInput: Option[Seq[Complex]] = None, wantToEscape: Boolean = false): Boolean = {
     updatableDspVerbose.withValue(false) { 
-      cycleThroughUntil(state)   
-      c.ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
-        poke(c.io.scr.ctrlMemWrite.we(n)(ph), true.B)
-      }
+      cycleThroughUntil(state)  
+      poke(c.io.scr.ctrlMemWrite.we, getAllEnable)
       var debugNext = DebugNext(idx = 0, done = false)
       while (!debugNext.done) {
         debugNext = writeInDebug(debugNext, flipInput, customInput)

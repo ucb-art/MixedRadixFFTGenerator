@@ -52,7 +52,7 @@ class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
   val io = IO(new FFASTClkDivIO(delays, ffastParams.subFFTns))
 
   val clkDivMods = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
-    val mod = chisel3.Module(new SEClkDivider(divBy = divBy, phases = delays))
+    val mod = chisel3.Module(new SEClkDivider(divBy = divBy, phases = delays, syncReset = false))
     mod.suggestName(s"clkDiv_${subFFT}_${divBy}")
     mod.io.inClk := io.inClk
     mod.io.reset := io.resetClk

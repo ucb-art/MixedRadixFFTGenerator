@@ -13,18 +13,43 @@ import chisel3.util._
 // Big memory is dual ported -- can read/write simultaneously
 // Nominally 32 + 10 + 18 bits
 class ControlMemWritePack[T <: Data:Ring](memDataType: DspComplex[T], ffastParams: FFASTParams) extends Bundle {
+
+  val fftGroups = ffastParams.getSubFFTDelayKeys
   val maxIdx = ffastParams.subFFTns.max - 1
+
   val din = Input(memDataType)
   val wIdx = Input(UInt(range"[0, $maxIdx]"))
-  val we = CustomIndexedBundle(CustomIndexedBundle(Input(Bool()), ffastParams.adcDelays), ffastParams.subFFTns)
+
+  val we = Input(UInt(fftGroups.length.W))
+
+  def getWE(n: Int, ph: Int): Bool = {
+    val (groupTag, groupIdx) = fftGroups.zipWithIndex.filter { 
+      case ((nG, phG), idx) => n == nG && ph == phG 
+    }.head
+    we(groupIdx)
+  }
+
+  // val we = CustomIndexedBundle(CustomIndexedBundle(Input(Bool()), ffastParams.adcDelays), ffastParams.subFFTns)
   override def cloneType = (new ControlMemWritePack(memDataType, ffastParams)).asInstanceOf[this.type]
   // This enables you to write din simultaneously to all memories where we is high @ idx wIdx
 }
 
 class ControlMemReadPackFromCPU(ffastParams: FFASTParams) extends Bundle {
+
+  val fftGroups = ffastParams.getSubFFTDelayKeys
   val maxIdx = ffastParams.subFFTns.max - 1
+
   val rIdx = Input(UInt(range"[0, $maxIdx]"))
-  val re = CustomIndexedBundle(CustomIndexedBundle(Input(Bool()), ffastParams.adcDelays), ffastParams.subFFTns)
+  val re = Input(UInt(fftGroups.length.W))
+
+  def getRE(n: Int, ph: Int): Bool = {
+    val (groupTag, groupIdx) = fftGroups.zipWithIndex.filter { 
+      case ((nG, phG), idx) => n == nG && ph == phG 
+    }.head
+    re(groupIdx)
+  }
+
+  // val re = CustomIndexedBundle(CustomIndexedBundle(Input(Bool()), ffastParams.adcDelays), ffastParams.subFFTns)
   override def cloneType = (new ControlMemReadPackFromCPU(ffastParams)).asInstanceOf[this.type]
   // This enables you to read from rIdx of all memories where re is high
 }
@@ -39,10 +64,11 @@ class ControlMemReadPackToCPU[T <: Data:Ring](memDataType: DspComplex[T], ffastP
 
 // TODO: SCR!
 // WARNING: Should set re/we low before exiting debug!
+
 class ControlStatusIO[T <: Data:Ring](
     memDataType: DspComplex[T], 
     ffastParams: FFASTParams, 
-    numStates: Int) extends Bundle {
+    numStates: Int) extends SCRBundle {
   val ctrlMemWrite = new ControlMemWritePack(memDataType, ffastParams)
   val ctrlMemReadFromCPU = new ControlMemReadPackFromCPU(ffastParams)
   // # adc delays * # subFFT stages --> # of control registers
@@ -104,7 +130,7 @@ class Debug[T <: Data:RealBits](
 
     // Assumes you'll never be reading the same time you write in this state -- writing has precedence
     val getAllCPUwes = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-      io.scr.ctrlMemWrite.we(n)(ph) }
+      io.scr.ctrlMemWrite.getWE(n, ph) }
     val cpuWrite = getAllCPUwes.reduce(_ | _)
     val usedIdx = Mux(cpuWrite, io.scr.ctrlMemWrite.wIdx, io.scr.ctrlMemReadFromCPU.rIdx)
     val isADCCollectDebugState = io.currentState === states("ADCCollectDebug").U
@@ -145,10 +171,10 @@ class Debug[T <: Data:RealBits](
       io.dataToMemory(n)(ph)(0).din := delayedCPUdin
       // To be safe, always reset WE @ CPU side!
       val weTemp = withClockAndReset(io.clk, io.stateInfo.start) { 
-        RegNext(io.scr.ctrlMemWrite.we(n)(ph)) }
+        RegNext(io.scr.ctrlMemWrite.getWE(n, ph)) }
       io.dataToMemory(n)(ph)(0).we := weTemp & currStateIsDebug 
       val reTemp = withClockAndReset(io.clk, io.stateInfo.start) {
-        RegNext(io.scr.ctrlMemReadFromCPU.re(n)(ph)) }
+        RegNext(io.scr.ctrlMemReadFromCPU.getRE(n, ph)) }
       io.dataFromMemory(n)(ph)(0).re := reTemp & currStateIsDebug
       // WARNING: always check that last read/write were successful before exiting!
       // 1 cycle delay for bank, addr (therefore we, re need to be equivalently delayed)

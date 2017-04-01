@@ -203,6 +203,7 @@ class CollectADCSamples[T <: Data:RealBits](
   // Global clock = fastest clk, phase 0
   val globalClkInternal = analogBlock.io.adcClks(ffastParams.subFFTns.max)(0)
   val clkMux = Module(new ClkMuxBlackBox(useBlackBox))
+  clkMux.suggestName("clkMux")
   clkMux.io.sel := io.extSlowClkSel
   clkMux.io.clk0 := globalClkInternal
   clkMux.io.clk1 := io.extSlowClk 
@@ -247,7 +248,7 @@ class CollectADCSamples[T <: Data:RealBits](
   val collectAsyncEnqReady = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => asyncs(n, ph).io.enq.ready }
   val allAsyncEnqsReady = collectAsyncEnqReady.reduce(_ & _)
   val synchronizedAllAsyncEnqsReady = withClockAndReset(globalClk, io.stateInfo.start) {
-    ShiftRegister(allAsyncEnqsReady, 3, resetData = false.B, en = io.stateInfo.inState)
+    ShiftRegister(allAsyncEnqsReady, 3)
   }
   val asyncEnqsAllReady = withClockAndReset(globalClk, io.stateInfo.start) {
     RegEnable(true.B, enable = synchronizedAllAsyncEnqsReady, init = false.B)
@@ -296,8 +297,6 @@ class CollectADCSamples[T <: Data:RealBits](
   val memIdxCounts = memIdxCountsTemp.toMap
   // Done when all counts maxed out
   val done = isMaxCounts.reduce(_ & _)
-  // Reset enq valid
-  analogBlock.io.stopCollectingADCSamples := done
   io.stateInfo.done := withClockAndReset(globalClk, io.stateInfo.start) { RegNext(done, init = false.B) }
 
   // TODO: Are all ADC outputs @ the same relative data index? If they're not, I don't think they'll differ by too many
@@ -310,7 +309,9 @@ class CollectADCSamples[T <: Data:RealBits](
     val delayedMax = withClockAndReset(globalClk, io.stateInfo.start) {
       val maxDly = RegNext(next = max, init = 0.U)
       val maxDly2 = RegNext(next = maxDly, init = 0.U)
-      Seq(maxDly, maxDly2)
+      val maxDly3 = RegNext(next = maxDly2, init = 0.U)
+      val maxDly4 = RegNext(next = maxDly3, init = 0.U)
+      Seq(maxDly, maxDly2, maxDly3, maxDly4)
     }
     n -> (Seq(max) ++ delayedMax)
   }.toMap
@@ -326,7 +327,10 @@ class CollectADCSamples[T <: Data:RealBits](
       // TODO: Is RegInit not necessary? -- it's OK to write garbage and then write over it
       val bankAddrDly = RegNext(bankAddr)
       val bankAddrDly2 = RegNext(bankAddrDly)
-      Seq(bankAddrDly, bankAddrDly2)
+      val bankAddrDly3 = RegNext(bankAddrDly2)
+      val bankAddrDly4 = RegNext(bankAddrDly3)
+      // TODO: Don't hard code!
+      Seq(bankAddrDly, bankAddrDly2, bankAddrDly3, bankAddrDly4)
     }
     n -> (Seq(bankAddr) ++ delayedBankAddr)
   }.toMap
