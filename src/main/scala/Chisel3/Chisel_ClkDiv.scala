@@ -41,6 +41,7 @@ class FFASTClkDivIO(delays: Seq[Int], subFFTns: Seq[Int]) extends Bundle {
   val outClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), delays), subFFTns)
   // Useful for debug
   val frameAligned = Output(Bool())
+  val widePulseSlowClk = Output(Clock())
   override def cloneType = (new FFASTClkDivIO(delays, subFFTns)).asInstanceOf[this.type]
 }
 
@@ -61,6 +62,22 @@ class FFASTClkDiv(val ffastParams: FFASTParams) extends Module {
     }
     mod
   }
+
+  // Fastest clk freq
+  val smallestDivBy = ffastParams.subSamplingFactors(ffastParams.subFFTns.max)
+  val halfPeriodPh = smallestDivBy / 2
+
+  val extraClkMod = chisel3.Module(new SEClkDivider(divBy = smallestDivBy, phases = Seq(0, halfPeriodPh), syncReset = false))
+  extraClkMod.io.inClk := io.inClk
+  extraClkMod.io.reset := io.resetClk
+
+  val pulseWidener = AsyncRegInit(
+    clk = extraClkMod.io.outClks(0),
+    reset = extraClkMod.io.outClks(halfPeriodPh).asUInt.toBool,
+    init = false.B
+  )
+  pulseWidener.io.in := true.B 
+  io.widePulseSlowClk := pulseWidener.io.out.asClock 
 
   // When ph0 clk of each subsampling stage is high (assumes 1/divBy duty cycle)
   io.frameAligned := clkDivMods.foldLeft(1.U)((accum, clkDivMod) => accum & clkDivMod.io.outClks(0).asUInt)

@@ -204,7 +204,7 @@ class CollectADCSamples[T <: Data:RealBits](
   analogBlock.io.analogIn := io.analogIn
 
   // Global clock = fastest clk, phase 0
-  val globalClkInternal = analogBlock.io.adcClks(ffastParams.subFFTns.max)(0)
+  val globalClkInternal = analogBlock.io.widePulseSlowClk
   val clkMux = Module(new ClkMuxBlackBox(useBlackBox))
   clkMux.suggestName("clkMux")
   clkMux.io.sel := io.extSlowClkSel

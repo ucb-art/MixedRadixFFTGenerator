@@ -30,13 +30,13 @@ trait PeripheryFFT2 extends LazyModule {
 
 
 
-i messed up tb somewhere
 
 
 
 
 
 
+clean up tests/syn
 
 
 

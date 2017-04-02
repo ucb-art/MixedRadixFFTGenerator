@@ -22,6 +22,8 @@ class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
   val resetValid = Input(Bool())
   // Full rate ADC in
 
+  val widePulseSlowClk = Output(Clock())
+
   val analogIn = Input(DspReal())
   val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
   val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
@@ -60,6 +62,13 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   val sdcRegExpr = (Seq.fill(level - 1)("*/") ++ Seq(s"${name}/")).mkString("")
 
   val fastClkSDC = s"create_clock -name IOFASTCLK -period ${FFASTTopParams.fastClkPeriod} [get_pins ${sdcRegExpr}inClk]"
+
+  // Fastest clk freq
+  val smallestDivBy = ffastParams.subSamplingFactors(ffastParams.subFFTns.max)
+  val halfPeriodPh = smallestDivBy / 2
+    
+  val widePWEdges = Seq(1, halfPeriodPh * 2 + 1, 2 * smallestDivBy + 1)
+  val widePWSDC = s"create_generated_clock -name WIDEPWSLOWCLK -source [get_pins ${sdcRegExpr}inClk] -edges {${widePWEdges.mkString(" ")}} [get_pins ${sdcRegExpr}widePulseSlowClk]"
 
   val outClkConstraints = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
 
@@ -109,10 +118,10 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
     s"set_false_path -from [get_ports io_extSlowClkSel]",
     s"set_size_only [get_cells ${adcCollectRegExpr}clkMux/clkMux]",
     s"create_clock -name EXTSLOWCLK -period ${FFASTTopParams.slowClkExtPeriod} [get_ports io_extSlowClk]",
-    s"set_clock_groups -asynchronous -group EXTSLOWCLK -group {IOFASTCLK ${adcClkNames.mkString(" ")} }"
+    s"set_clock_groups -asynchronous -group EXTSLOWCLK -group {IOFASTCLK WIDEPWSLOWCLK ${adcClkNames.mkString(" ")} }"
   )
 
-  val constraints = Seq(fastClkSDC) ++ outClkConstraints ++ otherConstraints
+  val constraints = Seq(fastClkSDC, widePWSDC) ++ outClkConstraints ++ otherConstraints
   // TODO: Don't hardcode?
   setInline(s"FFASTTopWrapper.sdc", constraints.toSeq.mkString("\n"))
 
@@ -151,6 +160,9 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
     port := reg
   }
 
+  // Memories have minimum pulse width requirements
+  io.widePulseSlowClk := ffastClkDiv.io.widePulseSlowClk
+
   // TODO: Switch to this syntax everywhere
   val adcs = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
     val thisClk = ffastClkDiv.io.outClks(n)(ph)
@@ -177,6 +189,9 @@ class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: F
   val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
   val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
     Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
+
+  val widePulseSlowClk = Output(Clock())
+
   override def cloneType = (new AnalogModelWrapperIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
 
@@ -197,6 +212,8 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
 
   analogModel.io.resetClk := io.resetClk
   analogModel.io.inClk := io.inClk 
+
+  io.widePulseSlowClk := analogModel.io.widePulseSlowClk
 
   // TODO: Being too conservative here w/ lots of extra regs...
   // This makes sure input doesn't start until the below output valids have been reset
