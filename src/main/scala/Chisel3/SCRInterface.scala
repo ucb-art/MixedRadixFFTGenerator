@@ -27,31 +27,11 @@ trait PeripheryFFT2 extends LazyModule {
   val pDevices: ResourceManager[AddrMapEntry]
   pDevices.add(AddrMapEntry("scr_control", MemSize(scrSize, MemAttr(AddrMapProt.RW))))
 
-
-
-
-
-
-
-
-
+need to update rocket-chip chisel
 
 clean up tests/syn
 
-
-
-
-
-
 // ALIGN MASTERS!!!
-
-
-
-
-
-  
-
-
 
   // add status and control registers here
   // TODO: Name?

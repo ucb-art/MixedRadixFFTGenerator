@@ -98,22 +98,24 @@ object TestParams {
     firrtlOptions = FirrtlExecutionOptions(compilerName = "verilog") 
   }
 
-  val buildWithMemories = new ExecutionOptionsManager("BuildWithMemories") with HasChiselExecutionOptions with HasFirrtlOptions {
-    commonOptions = CommonOptions(
-      //globalLogLevel = LogLevel.Info,
-      targetDirName = s"test_run_dir/BuildWithMemories"
-    )
-    firrtlOptions = FirrtlExecutionOptions(
-      compilerName = "verilog",
-      // TODO: Switch to new style transforms
-      // TODO: Don't hard code names
-      customTransforms = Seq(
-        new passes.memlib.InferReadWrite(),
-        new passes.memlib.ReplSeqMem()),
-      annotations = List(
-        passes.memlib.InferReadWriteAnnotation("FFASTTopWrapper"),
-        passes.memlib.ReplSeqMemAnnotation(s"-c:FFASTTopWrapper:-o:test_run_dir/BuildWithMemories/FFASTTopWrapper.conf"))
-    ) 
+  def buildWithMemories(name: String = "BuildWithMemories") = {
+    new ExecutionOptionsManager("BuildWithMemories") with HasChiselExecutionOptions with HasFirrtlOptions {
+      commonOptions = CommonOptions(
+        //globalLogLevel = LogLevel.Info,
+        targetDirName = s"test_run_dir/$name"
+      )
+      firrtlOptions = FirrtlExecutionOptions(
+        compilerName = "verilog",
+        // TODO: Switch to new style transforms
+        // TODO: Don't hard code names
+        customTransforms = Seq(
+          new passes.memlib.InferReadWrite(),
+          new passes.memlib.ReplSeqMem()),
+        annotations = List(
+          passes.memlib.InferReadWriteAnnotation("FFASTTopWrapper"),
+          passes.memlib.ReplSeqMemAnnotation(s"-c:FFASTTopWrapper:-o:test_run_dir/$name/FFASTTopWrapper.conf"))
+      ) 
+    }
   }
    
 }

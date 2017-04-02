@@ -435,12 +435,33 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
     import dspblocks.fft.FFASTTopParams._
 
     dsptools.DspContext.alter(dspContext) {
-      chisel3.Driver.execute(TestParams.buildWithMemories, () => 
+      chisel3.Driver.execute(TestParams.buildWithMemories(), () => 
         new FFASTTopWrapper(
           adcDataType = adcDataType, 
           dspDataType = dspDataType,
           ffastParams = ffastParams,
           maxNumPeels = maxNumPeels
+        )
+      ) 
+    }
+
+  }
+}
+
+class FFASTTopBuildSmallMemTestSpec extends FlatSpec with Matchers {
+  behavior of "FFASTTopBuild"
+  it should "not fail to build" in {
+
+    import dspblocks.fft.FFASTTopParams._
+
+    dsptools.DspContext.alter(dspContext) {
+      chisel3.Driver.execute(TestParams.buildWithMemories(name = "BuildWithMemoriesSmall"), () => 
+        new FFASTTopWrapper(
+          adcDataType = adcDataType, 
+          dspDataType = dspDataType,
+          ffastParams = ffastParams.copy(delays = Seq(Seq(0, 1))),
+          maxNumPeels = maxNumPeels,
+          useBlackBox = false
         )
       ) 
     }
