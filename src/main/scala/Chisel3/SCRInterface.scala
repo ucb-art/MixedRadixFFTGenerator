@@ -44,14 +44,12 @@ clean up tests/syn
 
 
 // ALIGN MASTERS!!!
-// get rid of chisel2
+
 
 
 
 
   
-
-// update to master
 
 
 

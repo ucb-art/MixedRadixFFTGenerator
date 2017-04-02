@@ -37,7 +37,7 @@ val fftPrjSettings = Project.defaultSettings ++ Seq(
   addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)
 )  
 
-lazy val ChiselDSP = ProjectRef(file("ChiselDSP"), "chisel-dsp")
+// lazy val ChiselDSP = ProjectRef(file("ChiselDSP"), "chisel-dsp")
 
 // ARBOR for Matlab interfaces + Type classes
 /*
@@ -49,11 +49,14 @@ lazy val arbor = ProjectRef(
 */
 
 // Generator
+
 lazy val fft = Project(
   id = "fft",
   base = file("."),
   settings = fftPrjSettings
-).dependsOn(ChiselDSP)
+)
+// .dependsOn(ChiselDSP)
+
 
 libraryDependencies ++= dependencies
 scalacOptions ++= ops
@@ -63,4 +66,4 @@ scalacOptions ++= ops
 // mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
 // mainClass in (Compile, run) := Some("FFT.DebugFFT")
 // mainClass in (Compile, run) := Some("dspblocks.fft.PeelingScheduling")
-mainClass in (Compile, run) := Some("dspblocks.fft.WFTATest")
+// mainClass in (Compile, run) := Some("dspblocks.fft.WFTATest")
