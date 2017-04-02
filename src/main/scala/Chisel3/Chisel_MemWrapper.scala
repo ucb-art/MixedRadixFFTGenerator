@@ -53,7 +53,8 @@ class WriteBeforeReadMem[T <: Data:Ring](dataType: => T, val depth: Int, name: S
 
     // TODO: Loosen so no ring?
     // Safer to read twice! (or technically check re)
-    val memOut = Mux1H(Seq(RegNext(io.re) -> mem.read(io.raddr, io.re)))
+    val memOut = mem.read(io.raddr, io.re)
+    // Mux1H(Seq(RegNext(io.re) -> mem.read(io.raddr, io.re)))
 
     io.dout := Mux(
       RegNext(io.waddr === io.raddr && io.we), 

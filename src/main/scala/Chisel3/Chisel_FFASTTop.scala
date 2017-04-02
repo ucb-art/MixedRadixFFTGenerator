@@ -580,7 +580,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
           val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
 
-          if (rIdxOut < c.ffastParams.subFFTns.max)
+          if (rIdxOut < n)
             peekedResults(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
 
           rIdxOut
