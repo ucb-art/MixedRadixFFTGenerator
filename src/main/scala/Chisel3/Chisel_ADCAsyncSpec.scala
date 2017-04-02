@@ -49,6 +49,9 @@ class CollectADCSamplesIO[T <: Data:RealBits](
     ffastParams: FFASTParams, 
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
 
+  // In case ADC doesn't work, be able to skip out of this state
+  val skipADC = Input(Bool())
+
   // Unique to this block b/c clk generator lives here
   val resetClk = Input(Bool())
   val inClk = Input(Clock())
@@ -295,9 +298,9 @@ class CollectADCSamples[T <: Data:RealBits](
   }.unzip
 
   val memIdxCounts = memIdxCountsTemp.toMap
-  // Done when all counts maxed out
+  // Done when all counts maxed out (or you're not supposed to be in ADC state)
   val done = isMaxCounts.reduce(_ & _)
-  io.stateInfo.done := withClockAndReset(globalClk, io.stateInfo.start) { RegNext(done, init = false.B) }
+  io.stateInfo.done := withClockAndReset(globalClk, io.stateInfo.start) { RegNext(done, init = false.B) } | io.skipADC
 
   // TODO: Are all ADC outputs @ the same relative data index? If they're not, I don't think they'll differ by too many
 

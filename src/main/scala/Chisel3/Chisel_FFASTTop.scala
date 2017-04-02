@@ -250,6 +250,11 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
 
   // TODO: Make state machine smarter...
 
+  // TODO: Fix meaning
+  // Debug: if 1, then stay in state
+  // ADC: if 1, then leave state
+  collectADCSamplesBlock.io.skipADC := io.scr.debugStates(statesInt("ADCCollect"))
+
   when (currentStateBools("reset")) {
 
     done := true.B
