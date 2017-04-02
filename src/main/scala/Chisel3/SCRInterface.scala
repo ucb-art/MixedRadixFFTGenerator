@@ -30,6 +30,24 @@ trait PeripheryFFT2 extends LazyModule {
 
 
 
+i messed up tb somewhere
+
+
+
+
+
+
+
+
+
+
+
+
+// ALIGN MASTERS!!!
+// get rid of chisel2
+
+
+
 
   
 

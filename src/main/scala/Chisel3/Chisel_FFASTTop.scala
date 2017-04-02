@@ -570,24 +570,30 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     updatableDspVerbose.withValue(false) {
       poke(c.io.scr.ctrlMemReadFromCPU.rIdx, debugNext.idx)
 
-      // All memories must be fully read
-      val rIdxOutMin = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-
-        val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
-
-        if (rIdxOut < c.ffastParams.subFFTns.max)
-          peekedResults(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
-
-        rIdxOut
-      }.min
-      val stopCond = (stopIdx != -1 && rIdxOutMin == stopIdx) || 
-        (stopIdx == -1 && rIdxOutMin == c.ffastParams.subFFTns.max - 1)
-
-      if (stopCond) {
-        poke(c.io.scr.cpuDone, wantToEscape)
-        done
+      if (peek(c.io.scr.reToCPU) == 0) {
+        // Don't increment if can't read
+        debugNext
       }
-      else incInput
+      else {
+        // All memories must be fully read
+        val rIdxOutMin = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+
+          val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
+
+          if (rIdxOut < c.ffastParams.subFFTns.max)
+            peekedResults(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
+
+          rIdxOut
+        }.min
+        val stopCond = (stopIdx != -1 && rIdxOutMin == stopIdx) || 
+          (stopIdx == -1 && rIdxOutMin == c.ffastParams.subFFTns.max - 1)
+
+        if (stopCond) {
+          poke(c.io.scr.cpuDone, wantToEscape)
+          done
+        }
+        else incInput
+      }
     }
   }
 

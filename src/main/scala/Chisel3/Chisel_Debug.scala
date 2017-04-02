@@ -69,6 +69,9 @@ class ControlStatusIO[T <: Data:Ring](
     memDataType: DspComplex[T], 
     ffastParams: FFASTParams, 
     numStates: Int) extends SCRBundle {
+
+  val fftGroups = ffastParams.getSubFFTDelayKeys
+
   val ctrlMemWrite = new ControlMemWritePack(memDataType, ffastParams)
   val ctrlMemReadFromCPU = new ControlMemReadPackFromCPU(ffastParams)
   // # adc delays * # subFFT stages --> # of control registers
@@ -78,6 +81,10 @@ class ControlStatusIO[T <: Data:Ring](
     CustomIndexedBundle(
       new ControlMemReadPackToCPU(memDataType, ffastParams), 
       ffastParams.adcDelays),ffastParams.subFFTns)
+
+  // Delayed
+  val reToCPU = Output(UInt(fftGroups.length.W))
+  
   val currentState = Output(UInt(range"[0, $numStates)"))
   // If position is high, the corresponding debug state is active 
   // TODO: Make less noob -- technically needs to just have width = # of debug states
@@ -159,6 +166,10 @@ class Debug[T <: Data:RealBits](
     // TODO: Don't hard code???
     val delayedCPUrIdx = withClockAndReset(io.clk, io.stateInfo.start) { 
       ShiftRegister(io.scr.ctrlMemReadFromCPU.rIdx, 2) }
+
+    val delayedCPUre = withClockAndReset(io.clk, io.stateInfo.start) { 
+      ShiftRegister(io.scr.ctrlMemReadFromCPU.re, 2, resetData = false.B, en = true.B) }
+    io.scr.reToCPU := delayedCPUre
 
     // TODO: Kind of redundant with what's outside but whatever...
     // TODO: Figure out another way to get Chisel to name this better for debug

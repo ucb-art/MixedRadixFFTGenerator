@@ -112,7 +112,7 @@ object TestParams {
         new passes.memlib.ReplSeqMem()),
       annotations = List(
         passes.memlib.InferReadWriteAnnotation("FFASTTopWrapper"),
-        passes.memlib.ReplSeqMemAnnotation(s"-c:FFASTTopWrapper:-o:test_run_dir/BuildWithMemories/vlsi_mem_gen.conf"))
+        passes.memlib.ReplSeqMemAnnotation(s"-c:FFASTTopWrapper:-o:test_run_dir/BuildWithMemories/FFASTTopWrapper.conf"))
     ) 
   }
    

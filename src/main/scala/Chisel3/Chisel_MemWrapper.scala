@@ -11,7 +11,7 @@ import dsptools.numbers.implicits._
 
 // TODO: Write mask -- gradually enable across FFT stages!
 
-class WriteBeforeReadMemWrapper[T <: Data](dataType: => T, val depth: Int) extends chisel3.Module {
+class WriteBeforeReadMemWrapper[T <: Data:Ring](dataType: => T, val depth: Int) extends chisel3.Module {
   val mod = Module(new WriteBeforeReadMem(dataType, depth))
   val io = IO(new WriteBeforeReadMemIO(dataType, depth))
   mod.io.waddr := io.waddr
@@ -23,7 +23,7 @@ class WriteBeforeReadMemWrapper[T <: Data](dataType: => T, val depth: Int) exten
   mod.io.re := io.re
 }
 
-class WriteBeforeReadMemIO[T <: Data](dataType: => T, depth: Int) extends Bundle {
+class WriteBeforeReadMemIO[T <: Data:Ring](dataType: => T, depth: Int) extends Bundle {
   val clk = Input(Clock())
   val waddr = Input(UInt(range"[0, $depth)"))
   val raddr = Input(UInt(range"[0, $depth)"))
@@ -38,7 +38,7 @@ class WriteBeforeReadMemIO[T <: Data](dataType: => T, depth: Int) extends Bundle
 // If memory is written and read at the same time (same address),
 // the written memory is passed through to read
 @chiselName
-class WriteBeforeReadMem[T <: Data](dataType: => T, val depth: Int, name: String = "") extends Module {
+class WriteBeforeReadMem[T <: Data:Ring](dataType: => T, val depth: Int, name: String = "") extends Module {
   // TODO: Save power by using write mask, read enable
   val io = IO(new WriteBeforeReadMemIO(dataType, depth))
   withClock(io.clk) {
@@ -47,10 +47,18 @@ class WriteBeforeReadMem[T <: Data](dataType: => T, val depth: Int, name: String
     // Read always enabled
     // When read, write happen at the same time, pass write through
     // Note: Need to match delays!
+
+    // This is, in reality, kind of annoying, but whatever...
+    // When re is low, prevent garbage from going through. (Write output has 1 delay)
+
+    // TODO: Loosen so no ring?
+    // Safer to read twice! (or technically check re)
+    val memOut = Mux1H(Seq(RegNext(io.re) -> mem.read(io.raddr, io.re)))
+
     io.dout := Mux(
       RegNext(io.waddr === io.raddr && io.we), 
       RegNext(io.din), 
-      mem.read(io.raddr, io.re))
+      memOut)
     when (io.we) { mem.write(io.waddr, io.din) }
   }
 }

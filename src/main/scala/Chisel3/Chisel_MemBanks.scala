@@ -2,10 +2,12 @@ package dspblocks.fft
 import chisel3._
 import barstools.tapeout.transforms._
 import chisel3.experimental._
+import dsptools.numbers._
+import dsptools.numbers.implicits._
 
 // Separate this from crossbar to make macro placement easier
 @chiselName
-class MemBanks[T <: Data](dataType: => T, bankLengths: Seq[Int], name: String = "") extends Module {
+class MemBanks[T <: Data:Ring](dataType: => T, bankLengths: Seq[Int], name: String = "") extends Module {
   val io = IO(new Bundle {
     val bank = CustomIndexedBundle(bankLengths.map(len => new WriteBeforeReadMemIO(dataType, len)))
   })
