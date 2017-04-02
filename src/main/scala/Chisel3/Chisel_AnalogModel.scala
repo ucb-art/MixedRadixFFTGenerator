@@ -26,6 +26,7 @@ class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
   val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
   val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
     Output(adcDataType), ffastParams.adcDelays), ffastParams.subFFTns)
+  // Per sub-FFT (aligned on close to last edge)
   val adcSubFFTValid = CustomIndexedBundle(Output(Bool()), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
@@ -82,7 +83,8 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
         ) ++ ffastParams.adcDelays.filter(_ != 0).map { case dly =>
           s"set_multicycle_path -from [get_pins ${sdcRegExpr}adcSubFFTValid_${subFFT}] -to [get_clocks adcClks_${subFFT}_${dly}] -setup 2"
         }
-        // Zeroth ph shouldn't have multi-cycle 
+        // Zeroth ph shouldn't have multi-cycle b/c there should be enough time before the next edge
+        // For non-zeroth ph, you miss the first clk so need multi cycle (input delay is longer than when first edge appears)
         // See: http://application-notes.digchip.com/038/38-21077.pdf
         // https://www.xilinx.com/support/documentation/sw_manuals/xilinx2015_1/ug903-vivado-using-constraints.pdf
         // https://www.xilinx.com/support/answers/63222.html
@@ -140,6 +142,7 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
     val syncReset = withClock(clkMaxPh) {
       ShiftRegister(io.resetValid, 1)
     }
+    // Should definitely be done resetting before frameAligned goes high (due to the 4 to 10 difference in delay)
     val reg = AsyncResetReg(
       frameAlignedMaster,
       clk = clkMaxPh,
@@ -220,6 +223,7 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     val originalValid = analogModel.io.adcSubFFTValid(n)
     // Synchronized to correct clk
     io.adcDigitalOut(n)(ph).bits := withClock(thisClk) {
+      // Delay 3x the data that was valid at the right time from ADC
       ShiftRegister(analogModel.io.adcDigitalOut(n)(ph), 3)
     }
     val delayedReset = withClock(thisClk) {
@@ -230,9 +234,12 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     // First reg isn't adding pipeline delay -- it's to align with ADC data
     // since valid goes high before ADC data is output
     val synchronizedValid = withClock(thisClk) {
+      // First guy is to align up with ADC output (since valid goes high on some weird phase)
+      // The next 2 registers are synchronization
       ShiftRegister(analogModel.io.adcSubFFTValid(n), 3)
     }
     // Synchronize valid to local clk
+    // Also matches delay of ADC
     io.adcDigitalOut(n)(ph).valid := withClockAndReset(thisClk, delayedReset) {
       RegEnable(next = true.B, enable = synchronizedValid, init = false.B)
     }
