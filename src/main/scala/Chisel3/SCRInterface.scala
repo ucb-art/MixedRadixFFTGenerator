@@ -94,8 +94,6 @@ trait PeripheryFFT2Module extends HasPeripheryParameters {
 // make CONFIG=FFT2Config debug
 
 
-//comment out forWarnWarnWarnWarnWarnWarnWarnWarnWarnWarnWarn 
-
 
 
   ffastMod.scr foreach { case (name, dir, port) =>
