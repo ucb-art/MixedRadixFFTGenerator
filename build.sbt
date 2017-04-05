@@ -1,4 +1,4 @@
-organization := "edu.berkeley.eecs"
+organization := "edu.berkeley.cs"
 
 version := "0.1"
 
