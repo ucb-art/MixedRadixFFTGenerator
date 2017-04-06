@@ -7,7 +7,7 @@ object FFASTTopParams {
   // Must support bit growth!
   val adcDataType = FixedPoint(9.W, 8.BP)
   val dspDataType = FixedPoint(20.W, 10.BP)
-  val delays = Seq(Seq(0, 3), Seq(7, 12), Seq(15, 22))
+  val delays = Seq(Seq(0, 1), Seq(6, 9), Seq(12, 19))
   val maxNumPeels = 0
 
   val ffastParams = FFASTParams(
