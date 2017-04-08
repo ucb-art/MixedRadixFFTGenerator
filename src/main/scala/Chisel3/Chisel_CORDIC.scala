@@ -1,383 +1,291 @@
-/*
-
 package dspblocks.fft
 
 import chisel3._
 import chisel3.experimental._
-import dspblocks.numbers._
-import dspblocks.numbers.implicits._
+import dsptools.numbers._
+import dsptools.numbers.implicits._
+import chisel3.util._
+import org.scalatest.{FlatSpec, Matchers}
+import dsptools.{DspTester, DspTesterOptionsManager}
+import barstools.tapeout.TestParams
 
-case class CordicParams(
-    k: Int,
-    l: Int,
-    R: Double) {
+// See http://www.andraka.com/files/crdcsrvy.pdf
 
-}
-
-
-
-
-// TODO: Make parameters more case class-y
-class CORDIC[T <: Data:RealBits]() extends Module {
-
-}
-
-object CordicConstants
-{
-  val ROTATION = Bool(true)
-  val VECTORING = Bool(false)
-  val D_POS = Bool(true)
-  val D_NEG = Bool(false)
-}
-
-// Chisel Verilog generator values 
-// Following code equivalent to setting constants/generics for the Verilog that's generated
-// Parameters for generated implementation
-// k = bitwidth of X, Y vectors
-// l = bitwidth of Z (angle)
-// R = unfolding factor
-
-case class CordicParams(k: Int, l: Int, R: Double) {
-
-  // Set number of total iterations = max (k, l) as determined by # of bits of X/Y, Z
-  val iterations = max(k,l)
-
-  // Set number of stages = Ceiling [# iterations * R] 
-  // R = 0 -> no unfolding (1 stage) & R = 1 -> complete unfolding (iterations # of stages)
-  val stages = if (R>0) (ceil(iterations*R).toInt) else (1)
-
-  // Iterations per stage (whole number > 0; round down)
-  val local_iterations = floor(iterations/stages).toInt
+// x + i * y
+case class CordicParams[T <: Data:RealBits](xyType: T, unrollingFactor: Double) {
   
-  // Leftover iterations 
-  // want to distribute iterations as evenly as possible (difference of 1 max) 
-  val leftover_iterations = iterations % stages
-
-}
-
-// -- Define functionality of actual CORDIC modules --
-
-// INPUT/OUTPUT Coordinates and rotation mode data
-// Takes X,Y coordinates as signed integers (2's complement) with bitwidth k
-// Takes Z angle as signed integer with bitwidth l (modulo 2Pi)
-// Mode = either ROTATION or VECTORING determines if D_POS or D_NEG based off of Z/Y sign
-
-class CordicData(implicit params: CordicParams) extends Bundle() {
-  val x = SInt(width = params.k)
-  val y = SInt(width = params.k)
-  val z = SInt(width = params.l)
-  val mode = Bool()
-  override def clone: this.type = { new CordicData().asInstanceOf[this.type]; }
-}
-
-// IO consists of coordinates, mode, and valid bit
-// Both global CORDIC module and stages are passed their own 
-// x, y, z, mode, valid (in and out versions)
-
-class CordicIo(implicit params: CordicParams)  extends Bundle() {
-
-  // Add valid bit (in.valid) to CordicData, access with in.bits.x, etc.
-  // data from previous block (input x, y, z, mode, valid)
-  val in = new ValidIO(new CordicData()).flip
-
-  // data from this block (output x, y, z, mode, valid)
-  val out = new ValidIO(new CordicData())
-}
-
-// A single rotation stage that starts when ready (valid = true) and input is valid, then after
-// a number of iterations produces valid output.
-// offset is the starting iteration (rotation number - 1) to indicate shift/angle constant value 
-// First rotation handles x0, y0, z0, arctan[1]                                 
-// Iterations is the number of local stage iterations to perform until valid output
-// Each stage should contain HW to do one rotation per cycle; would have to register values if 
-// each stage needs to handle multiple rotations
-// For example, CordicStage(offset=2, iterations=3) should generate the HW to do the following
-// (timing varies with register placement):               
-// - In the same cycle (1st) the input is valid, perform the rotation of bitshift 2 (14.036 degrees)
-// - In the next cycle (2nd), perform the rotation of bitshift 3 (7.125 degrees) on the previous result
-// - In the next cycle (3rd), perform the rotation of bitshift 4 (3.576 degrees) on the previous result
-// - In the next cycle (4th), output should be valid (so the next stage can perform rotation of bitshift 5)
-//   and computation will start again if the input is valid
-
-class CordicStage(offset: Int, iterations: Int)(implicit params: CordicParams) extends Module {
-  val io = new CordicIo()
-  
-  // x(i+1) = x(i)-y(i)*d(i)*2^(-i)
-  // y(i+1) = y(i)+x(i)*d(i)*2^(-i)
-  // z(i+1) = z(i)-d(i)*arctan[2^(-i)] where arctan[...] = angle LUT
-  // divide by 2^n corresponds to shifting right by n
-  // For ROTATION: d(i)=-1 if z(i) < 0, +1 otherwise
-  // For VECTORING: d(i)=+1 if y(i) < 0, -1 otherwise
-  // Check MSB for sign
-
-  // Count keeps track of state. If reach max count -> start at 0
-  // Stay at "state" 0 until valid seen 
-  val count = Reg(init= UInt(0,width = UInt(iterations-1).getWidth))
-  count := Mux((count === UInt(iterations-1))||((count === UInt(0)) && !io.in.valid),UInt(0),count+UInt(1))
-
-  // Valid should only be high for 1 clk cycle
-  // so only update following the last count (state)
-  // --> next block sees Valid high on its count 0
-  // If only 1 iteration/stage, just register input valid as output 
-  val valid = Reg(init=Bool(false))
-  if (iterations > 1) {
-    valid := Mux(count === UInt(iterations-1),Bool(true),Bool(false))
+  val angleTypeTemp = xyType match {
+    case _: DspReal => throw new Exception("CORDIC doesn't work with real types!")
+    case _: UInt => throw new Exception("Must be signed!")
+    case f: FixedPoint => 
+      require(f.widthKnown, "xy type width unknown")
+      FixedPoint(f.getWidth.W, (f.getWidth - 1).BP)
+    case s: SInt => 
+      require(s.widthKnown, "xy type width unknown")
+      s
   }
-  else {
-    valid := io.in.valid
-  }
-  io.out.valid := valid
+  val angleType = angleTypeTemp.asInstanceOf[T]
 
-  // Register mode on first count
-  // Mode needs to be registered for pipelining in case
-  // stage isn't done processing previous data/mode when a new mode comes in
-  val mode = Reg(init=CordicConstants.VECTORING)
-  when (count === UInt(0)) {
-    mode := io.in.bits.mode
-  }
-  io.out.bits.mode := mode    
-
-  // When performing calculations, current __ is = input __ during first count
-  // but is = the registered value in the block during all subsequent counts
-  // since the values are always updated on the next clk cycle after 
-  // a condition is satisfied
-                            
-  val currentMode = Mux(count===UInt(0),io.in.bits.mode,mode)
-
-  val x = Reg(init=SInt(0,width=params.k))
-  val y = Reg(init=SInt(0,width=params.k))
-  val z = Reg(init=SInt(0,width=params.l))
-  
-  val currentX = Mux(count===UInt(0),io.in.bits.x,x)
-  val currentY = Mux(count===UInt(0),io.in.bits.y,y)
-  val currentZ = Mux(count===UInt(0),io.in.bits.z,z)
-
-  
-  // Need to offset which shift is being done depending on which iteration the stage
-  // is currently processing
-  val y2i = currentY >> (UInt(offset)+count)
-  val x2i = currentX >> (UInt(offset)+count)
-  
-  // Make an angle LUT to map count to arctan value (mod 2pi)
-  // Note that the + offset is taken care of directly in the mapping, rather than by logic  
-  val angles = (0 until iterations).map(i => SInt((atan(pow(2,-(i+offset)))/(2*Pi)*pow(2,params.l)).toInt))
-  val angleLUT = Vec(angles)
-  val angleLUTout = angleLUT(count)
-
-  // Determines to check the MSB of Z or Y when in ROTATION/VECTORING mode to determine sign
-  val dsel = ((currentMode===CordicConstants.ROTATION) && !(currentZ(params.l-1)))||((currentMode===CordicConstants.VECTORING) && (currentY(params.k-1)))
-
-  // Chooses - second term or + second term, based off of dsel (rather than multiplying by -1)
-  // The negatives in +/-d are "grouped together"
-  val dy2i = Mux(dsel,-y2i,y2i)
-  val dx2i = Mux(dsel,x2i,-x2i)
-  val dangle = Mux(dsel,-angleLUTout,angleLUTout)
-
-  // feeds the computation to output (registered)
-  y := currentY+dx2i
-  x := currentX+dy2i
-  z := currentZ+dangle
-  
-  io.out.bits.x := x
-  io.out.bits.y := y
-  io.out.bits.z := z
+  val xyWidth = xyType.getWidth
+  val angleWidth = angleType.getWidth
+  val totalIterations = Seq(xyWidth, angleWidth).max
+  // unrollingFactor = 0 -> no unfolding (1 stage)
+  // unrollingFactor = 1 -> complete unfolding (iterations # of stages)
+  val numStages = if (unrollingFactor > 0) math.ceil(totalIterations * unrollingFactor).toInt else 1
+  val numIterationsPerStage = totalIterations / numStages
+  // Want to distribute iterations as evenly as possibly (difference of 1 max)
+  // i.e. if leftoveriterations is non-zero, stages will have different #'s of iterations
+  val leftoverIterations = totalIterations % numStages
 
 }
 
-// CORDIC wrapper - passes in data for CordicStage(s) to process
-// Each CORDIC computation should take 'params.iterations' cycles
+class CordicIOCore[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Bundle {
+  val x = Input(cordicParams.xyType)
+  val y = Input(cordicParams.xyType)
+  // Angle is signed (modulo 2Pi)
+  val angle = Input(cordicParams.angleType)
+  // true = rotation; false = vectoring
+  val isRotation = Input(Bool())
+  val valid = Input(Bool())
+  override def cloneType = (new CordicIOCore(cordicParams)).asInstanceOf[this.type]
+}
 
-class Cordic(paramsIn: CordicParams) extends Module {
-  implicit val params = paramsIn
-  val io = new CordicIo()
+class CordicIO[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Bundle {
+  val in = new CordicIOCore(cordicParams)
+  val out = Flipped(new CordicIOCore(cordicParams))
+  val clk = Input(Clock())
+  val reset = Input(Bool())
+  override def cloneType = (new CordicIO(cordicParams)).asInstanceOf[this.type]
+}
 
-  // For 16-bit Z, Pi/6 rad = Pi/6/(2*Pi)*2^16                                       
-  // In rotation mode, if Pi/2<Z<3Pi/2 (in 0 to 2Pi scheme), need additional rotation by 180deg for Cordic to work
-  // In vectoring mode, if X<0 (quadrant 2/3), need additional rotation by 180deg for Cordic to work, 
-  // since you're rotating back to positive X axis
-  // Cordic can do max rotation of +/-Pi/2
-  // x' = -x
-  // y' = -y
-  // z' = z-Pi
-  // Correction done without registers
-  // If don't need extra rotation, just pass input to output
+class CordicWrapper[T <: Data:RealBits](cordicParams: CordicParams[T]) extends chisel3.Module {
+  val io = IO(new CordicIO(cordicParams))
+  val mod = Module(new Cordic(cordicParams))
+  mod.io.in := io.in
+  io.out := mod.io.out
+  mod.io.clk := clock
+  mod.io.reset := reset
+}
+// Ex: 16-bit SInt Z --> Pi / 6 rad = (Pi / 6) / (2 * Pi) * 2 ^ 16
+// Valid angle [0, 2 * pi)
+// Cordic can do a max rotation of +/- Pi / 2
+// In rotation mode, if Pi / 2 < Z < 3 * Pi / 2,
+// need additional rotation by Pi for Cordic to work
+// In vectoring mode, if X < 0 (quadrant 2, 3), need additional rotation by Pi 
+// Since you're rotating back to positive X when you're correcting:
+// x' = -x
+// y' = -y
+// z' = z - Pi
+@chiselName
+class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module {
+  
+  val io = IO(new CordicIO(cordicParams))
 
-  // Each stage must have the mode input, since while it's processing one input, a new input with 
-  // a different mode could be input into the overall CORDIC block
+  // 4-bit signed:
+  // 15 = -1 = 1111
+  // 12 = -4 = 1100 = -Pi/2  = 3 * Pi / 2
+  //  9 = -7 = 1001
+  //  8 = -8 = 1000 = -Pi    = Pi
+  //  7 =  7 = 0111
+  //  4 =  4 = 0100 = Pi / 2 = Pi / 2
+  //  0 =  0 = 0000
+  // i.e. looking at [-pi, pi) vs. [0, 2pi)
 
-  val x = SInt(width = params.k)
-  val y = SInt(width = params.k)
-  val z = SInt(width = params.l)
+  // let's be consistent and represent as unsigned [0, 2pi) as a reference
+  val halfPi = 1 << (cordicParams.angleWidth - 2)
+  val pi = 1 << (cordicParams.angleWidth - 1)
+  val threeHalvesPi = halfPi * 3
+  val angleZeroTo2Pi = io.in.angle.asUInt
 
-  val selPreRotate = (UInt(io.in.bits.z)>UInt(pow(2,params.l-2).toInt))&&(UInt(io.in.bits.z)<UInt(3*pow(2,params.l-2).toInt)&&(io.in.bits.mode===CordicConstants.ROTATION))||((io.in.bits.mode===CordicConstants.VECTORING)&&(io.in.bits.x(params.k-1)))
+  val correctInput = Mux(
+    io.in.isRotation,
+    angleZeroTo2Pi > halfPi.U & angleZeroTo2Pi < threeHalvesPi.U,
+    io.in.x.signBit
+  )
 
-  // Note that for -Pi, overflow is OK, b/c -Pi and +Pi take you to the same place
-  when (selPreRotate){
-    x := -io.in.bits.x
-    y := -io.in.bits.y
-    z := io.in.bits.z-SInt(pow(2,params.l-1).toInt)
-  }
-  .otherwise {
-    x := io.in.bits.x
-    y := io.in.bits.y
-    z := io.in.bits.z
+  // Distribute "leftover iterations" properly total # of iterations 
+  // doesn't divide # of stages evenly (extras given to front stages)
+  val stageIterations = (0 until cordicParams.numStages).map { case stage => 
+    if (stage < cordicParams.leftoverIterations) 
+      cordicParams.numIterationsPerStage + 1
+    else
+      cordicParams.numIterationsPerStage
   }
 
-  val iterations = Array.fill(params.stages)(0.toInt)
-  val offsets = Array.fill(params.stages)(0.toInt)
-
-  // distribute "leftover iterations" properly when global iterations 
-  // doesn't divide # of stages evenly (extras given to fron stages)
-  // each stage starts at offset based off of how many iterations have been previously done
+  // Each stage starts at offset based off of how many iterations have been previously done
   // Initial stage has offset 0 from default value
-  for (i <- 0 until params.stages) {
-    offsets(i) = iterations.sum
-    if (i < params.leftover_iterations) {
-      iterations(i) = (params.local_iterations+1)
-    }
-    else {
-      iterations(i) = (params.local_iterations)
-    }
+  val stageOffset = stageIterations.init.scanLeft(0) { case (accum, next) => accum + next }
 
-    print ("stage ");
-    print (i);
-    print(" iteration ");
-    print((iterations(i)));
-    print(" offset ");
-    print((offsets(i)));
-    print ("\n");
+  // CORDIC is more bit-level, so do everything as SInt
+  val sintCordicParams = cordicParams.copy(
+    xyType = SInt(cordicParams.xyWidth.W)
+  )
+
+  val cordicStages = stageIterations.zip(stageOffset).map { case (iterations, offset) => 
+    Module(new CordicStage(sintCordicParams, offset = offset, iterations = iterations))
   }
 
-  // each stage doesn't have same iterations, offset value
-  val stages = (0 until params.stages).map(i => Module(new CordicStage(offset = offsets(i), iterations=iterations(i))))
+  // Assign first stage inputs to top level inputs
+  // TODO: This doesn't bit grow
+  cordicStages(0).io.in.isRotation := io.in.isRotation
+  cordicStages(0).io.in.valid := io.in.valid
+  cordicStages(0).io.in.x := Mux(correctInput, -io.in.x, io.in.x).asUInt.asSInt
+  cordicStages(0).io.in.y := Mux(correctInput, -io.in.y, io.in.y).asUInt.asSInt
+  // Note that for -Pi, overflow is OK, b/c -Pi and +Pi take you to the same place
+  cordicStages(0).io.in.angle := 
+    Mux(correctInput, io.in.angle.asUInt.asSInt - pi.S, io.in.angle.asUInt.asSInt)
 
-  // assign first stage global inputs
-  stages(0).io.in.bits.x := x
-  stages(0).io.in.bits.y := y
-  stages(0).io.in.bits.z := z
-  stages(0).io.in.bits.mode := io.in.bits.mode
-  stages(0).io.in.valid := io.in.valid
-
-  // assign outputs of current stage to inputs of next stage
-  for (i <- 0 until (params.stages-1)) {
-    // Wire up ports of the CORDIC stages
-    stages(i).io.out <> stages(i+1).io.in
+  (0 until cordicParams.numStages) foreach { case stage =>
+    cordicStages(stage).io.clk := io.clk
+    cordicStages(stage).io.reset := io.reset
+    if (stage == cordicParams.numStages - 1) {
+      io.out.isRotation := cordicStages(stage).io.out.isRotation
+      io.out.valid := cordicStages(stage).io.out.valid
+      io.out.x := cordicParams.xyType.fromBits(cordicStages(stage).io.out.x.asUInt)
+      io.out.y := cordicParams.xyType.fromBits(cordicStages(stage).io.out.y.asUInt)
+      io.out.angle := cordicParams.angleType.fromBits(cordicStages(stage).io.out.angle.asUInt)
+    }
+    else cordicStages(stage + 1).io.in := cordicStages(stage).io.out
   }
-
-  // assign last stage outputs to global outputs
-  stages(params.stages-1).io.out <> io.out
-  
 }
 
-// Debug: make test | tee log | grep "FAILURE"
-// The tester applied an input and checks the output "iterations" cycles later.
+// Offset is the starting iteration to indicate shift/angle constant value 
+// First rotation (offset 0) handles x0, y0, angle0, arctan(2^0)
+// For example, CordicStage(offset=2, iterations=3) should generate the HW to do the following
+// - In the same cycle that the input is valid, perform rotation with arctan(2^-2) : count = 0
+// - In the next cycle, perform rotation with arctan(2^-3) on the previous result : count = 1
+// - In the next cycle, perform rotation with arctan(2^-4) on the previous result : count = 2
+// - In the next cycle, output should be valid (so the next stage can perform rotation with arctan(2^-5)) : count = 0
+//   and computation will start again *if* the input is valid
 
+@chiselName
+class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int, iterations: Int) extends Module {
+  require(offset >= 0)
+  require(iterations >= 1)
 
-class CordicTester(c: Cordic) extends Tester(c) {
+  val io = IO(new CordicIO(cordicParams))
+
+  withClockAndReset(io.clk, io.reset) {
+
+    // x(i + 1) = x(i) - y(i) * d(i) * 2^(-i)
+    // y(i + 1) = y(i) + x(i) * d(i) * 2^(-i)
+    // z(i + 1) = z(i) - d(i) * arctan[2^(-i)] where arctan[...] = angle LUT
+    // divide by 2^n corresponds to shifting right by n
+    // For ROTATION: d(i)=-1 if z(i) < 0, +1 otherwise
+    // For VECTORING: d(i)=+1 if y(i) < 0, -1 otherwise
+
+    // TODO: Make this clearer? -- do my usual way; this = remnants from class project
+    val countReset = Wire(Bool())
+    val count = withClockAndReset(io.clk, countReset) {
+      RegInit(0.U(BigInt(iterations - 1).bitLength.W))
+    }
+    val countIsMax = count === (iterations - 1).U
+    val countIsZero = count === 0.U
+    count := count + 1.U
+    countReset := countIsMax || (countIsZero && ~(io.in.valid))
+
+    // Valid should only be high for 1 clk cycle
+    val valid = {
+      val next = 
+        if (iterations == 1) io.in.valid
+        else countIsMax
+      RegNext(next = next, init = false.B)
+    }
+    io.out.valid := valid
+
+    // Mode needs to be registered for pipelining in case
+    // stage isn't done processing previous data/mode when a new mode comes in
+    val regIsRotation = RegEnable(next = io.in.isRotation, enable = countIsZero) 
+    io.out.isRotation := regIsRotation
+
+    // When performing calculations, curr__ is = input __ during the 0th count
+    // but is = the registered value in the block during all subsequent counts
+    // since the values are always updated on the next clk cycle after 
+    // a condition is satisfied
+    val currIsRotation = Mux(countIsZero, io.in.isRotation, regIsRotation)
+    val regX = Reg(t = cordicParams.xyType)
+    val regY = Reg(t = cordicParams.xyType)
+    val regAngle = Reg(t = cordicParams.angleType)
+    val currX = Mux(countIsZero, io.in.x, regX)
+    val currY = Mux(countIsZero, io.in.y, regY)
+    val currAngle = Mux(countIsZero, io.in.angle, regAngle)
+
+    // TODO: This won't bit grow, so what's a sufficient # of bits?
+    // Barrel shifter
+    val maxShift = offset + iterations - 1
+    val shift = Wire(UInt(range"[0, $maxShift]"))
+    shift := offset.U + count
+
+    // Need to offset which shift is being done depending on which iteration the stage
+    // is currently processing
+    val y2i = currY >> shift
+    val x2i = currX >> shift
+
+    // Check the MSB of Z or Y when in ROTATION/VECTORING mode to determine sign
+    val dSel = Mux(currIsRotation, ~(currAngle.signBit), currY.signBit)
+
+    // atan output is from -pi / 2 to pi / 2
+    // TODO: Lots of clean up wrt data types
+    val (angleLUTVals, widths) =
+      (0 until iterations).map { case i => 
+        val const = math.atan(math.pow(2, -(offset + i))) 
+        val constNormalizedTo2Pi = const / (2 * math.Pi)
+        val sintConst = math.round(constNormalizedTo2Pi * (1 << cordicParams.angleWidth))
+        val width = BigInt(sintConst).bitLength + 1
+        (sintConst, width)
+      }.unzip
+    // TODO: Convert to LUT? / use width
+    val lutMaxWidth = widths.max
+    val angleLUT = Vec(angleLUTVals.map(v => 
+      cordicParams.angleType.fromDoubleWithFixedWidth(v)
+    ))
+    val angleLUTout = angleLUT(count)
+
+    val dy2i = Mux(dSel, -y2i, y2i)
+    val dx2i = Mux(dSel, x2i, -x2i)
+    val dAngle = Mux(dSel, -angleLUTout, angleLUTout)
+
+    regY := currY + dx2i
+    regX := currX + dy2i
+    // TODO: Remove hack
+    regAngle := currAngle + dAngle
+
+    io.out.x := regX
+    io.out.y := regY
+    io.out.angle := regAngle
+  }
+}
+
+class CordicSpec extends FlatSpec with Matchers {
+  behavior of "Cordic"
+  it should "pass tests" in {
+
+    import dspblocks.fft.FFASTTopParams._
+
+    val opt = TestParams.optionsBTolWaveformTB(lsbs = 3, outDir = "test_run_dir/CordicTB")
+    val params = CordicParams(
+      xyType = dspDataType,
+      unrollingFactor = 0
+    )
     
-  // Amount of error accepted without failing test case (Modify if needed)
-  val error = 8
-
-  //---------- TEST HELPER FUNCTIONS ----------//
-
-  // Gain depends on number of iterations
-  val An = (0 to c.params.iterations).map(i => sqrt(1+pow(2,-2*i))).reduceLeft(_ * _)
-
-
-  // Convert double to fixed-point with f fractional bits
-  def doubleToBigInt(in: Double, f: Int): BigInt = { (in*pow(2,f)).toInt }
-
-  // Convert radians to modulo 2*pi with w bits
-  def radiansToBigInt(in: Double, w: Int): BigInt = { ((in/(2*Pi))*pow(2,w)).toInt }
-
-  // Generate bits for a test vector that will be applied to input and
-  // expected at output.
-  // 'f' is number of fractional bits in fixed-point representation
-  def testData(x: Double, y: Double, f: Int, z: Double, mode: Bool): Array[BigInt] = {
-      Array(doubleToBigInt(x, f), doubleToBigInt(y, f), radiansToBigInt(z, c.params.l),
-      mode.litValue())
-  }
-
-  // Tester expects unsigned BigInt, so convert all signed to unsigned.
-  def testDataUnsigned(data: Array[BigInt], bw: Array[Int]): Array[BigInt] = {
-      (data, bw).zipped.map((data: BigInt, bw: Int) =>
-      data & ((1<<bw)-1)) }
-
-  // Want results as signed BigInt, so convert all unsigned to signed.
-  def testDataSigned(data: Array[BigInt], bw: Array[Int]): Array[BigInt] = {
-      (data, bw).zipped.map((data: BigInt, bw: Int) =>
-      if(data >= (1<<(bw-1))) (data-(1<<bw)) else data) }
-
-  // Check output bits against expected data
-  def checkTestData(result: Array[BigInt], expected: Array[BigInt]): Boolean = {
-    var isClose = true
-    for(i <- 0 until expected.length) {
-      val expLow = expected(i) - error
-      val expHigh = expected(i) + error
-      val msg = "CHECK " + i + " <- " + expLow + " <= " + result(i) + " <= " + expHigh
-      if((result(i) >= expLow) && (result(i) <= expHigh))
-      {
-        println(msg + " PASS");
-      } else {
-        println(msg + " FAIL");
-        isClose = false
-      }
-    }
-    isClose
-  }
-  
-  //---------- GENERATE TEST VECTORS ----------//
-
-  // Polar (r, angle) to rectangular (X, Y):
-  // x=r/An, y=0, z=angle -> x=X, y=Y, z=0
-  //val rangeRotation = Range(-90,90,30)
-  val rangeRotation = Range(-180,180,1)
-  val testsRotation = for(i <- rangeRotation) yield {
-    (("Testing rotation with r=1, angle=" + i + " degrees"),
-     testData(1/An, 0, c.params.k-3, toRadians(i), ROTATION),
-     testData(cos(toRadians(i)), sin(toRadians(i)), c.params.k-3, 0, ROTATION))
-  }
-
-  // Rectangular (X, Y) to polar (r, angle):
-  // x=X/An, y=Y/An, z=0 -> x=r, y=0, z=angle
-  //val rangeVectoring = Range(-90,90,30)
-  val rangeVectoring = Range(-180,180,1)
-  val testsVectoring = for(i <- rangeVectoring) yield {
-    (("Testing vectoring with x=cos(" + i + "), y=sin(" + i + ")"),
-     testData(cos(toRadians(i))/An, sin(toRadians(i))/An, c.params.k-3, 0, VECTORING),
-     testData(1, 0, c.params.k-3, toRadians(i), VECTORING))
-  }
-  
-  val tests = testsRotation ++ testsVectoring
-  
-  //---------- RUN TESTS ----------//
-
-  // Bitwidths for test values
-  val bw = Array(c.params.k, c.params.k, c.params.l, 1)
-
-  // Iterate over tests
-  for(test <- tests) {
-    println(test._1)
-    // Set input data
-    poke(c.io.in.valid, 1)
-    poke(c.io.in.bits, testDataUnsigned(test._2, bw))
-
-    // Step forward 'iterations' cycles
-    step(1)
-    poke(c.io.in.valid, 0)
-    for(i <- 0 until c.params.iterations) { step(1) }
-
-    // Check output data
-    expect(c.io.out.valid, 1)
-    ok &&= checkTestData(testDataSigned(peek(c.io.out.bits), bw),
-    testDataSigned(test._3, bw))
-
-    // Clear outputs
-    reset()
+    dsptools.Driver.execute(() => 
+      new CordicWrapper(params), opt
+    ) { c =>
+      new CordicTester(c)
+    } should be (true)
+    
   }
 }
+
+class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
 
 }
 
 
-*/
+
+
+// todo remove all pipeline regs
+// is the last angle meaningful?
+// renormalize memory -- also renormalize this (asUInt)
+// y very big, x very small
+// is mod 2Pi correct for SInt? 
