@@ -58,14 +58,6 @@ class CordicIO[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Bundle
   override def cloneType = (new CordicIO(cordicParams)).asInstanceOf[this.type]
 }
 
-class CordicWrapper[T <: Data:RealBits](cordicParams: CordicParams[T]) extends chisel3.Module {
-  val io = IO(new CordicIO(cordicParams))
-  val mod = Module(new Cordic(cordicParams))
-  mod.io.in := io.in
-  io.out := mod.io.out
-  mod.io.clk := clock
-  mod.io.reset := reset
-}
 // Ex: 16-bit SInt Z --> Pi / 6 rad = (Pi / 6) / (2 * Pi) * 2 ^ 16
 // Valid angle [0, 2 * pi)
 // Cordic can do a max rotation of +/- Pi / 2
@@ -254,6 +246,8 @@ class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int
     io.out.x := regX
     io.out.y := regY
     io.out.angle := regAngle
+
+    // Note: -pi, pi are the same thing, so overflow with multiplication by a negative is OK
   }
 }
 
@@ -263,9 +257,13 @@ class CordicSpec extends FlatSpec with Matchers {
 
     import dspblocks.fft.FFASTTopParams._
 
-    val opt = TestParams.optionsBTolWaveformTB(lsbs = 3, outDir = "test_run_dir/CordicTB")
+    val opt = TestParams.optionsBTolWaveformTB(
+      lsbs = 8, 
+      outDir = "test_run_dir/CordicTB", 
+      genVerilogTB = false
+    )
     val params = CordicParams(
-      xyType = dspDataType,
+      xyType = FixedPoint(23.W, 21.BP),
       unrollingFactor = 0
     )
     
@@ -278,12 +276,52 @@ class CordicSpec extends FlatSpec with Matchers {
   }
 }
 
+class CordicWrapper[T <: Data:RealBits](cordicParams: CordicParams[T]) extends chisel3.Module {
+  val io = IO(new CordicIO(cordicParams))
+  val mod = Module(new Cordic(cordicParams))
+  mod.io.in := io.in
+  io.out := mod.io.out
+  mod.io.clk := clock
+  mod.io.reset := reset
+}
+
+// TODO: Have this calculate x, y?
+case class CordicTests(x: Double, y: Double, r: Double, theta: Double)
+
 class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
+  // Have step size be half of 1 bin 
+  val fftn = 21600
+  val stepSize = 1.toDouble / fftn * 2 * math.Pi / 2
+  val magnitudes = Seq(0.01, 0.1, 1.0)
+  val angles = -math.Pi until math.Pi by stepSize
+  val tests = for (r <- magnitudes; theta <- angles) yield {
+    val x = r * math.cos(theta)
+    val y = r * math.sin(theta)
+    CordicTests(x, y, r, theta)
+  }
+
+  println("Number of angles tested: " + angles.length)
+
+  updatableDspVerbose.withValue(false) {
+    for (t <- tests) {
+      poke(c.io.in.x, t.x)
+      poke(c.io.in.y, t.y)
+      poke(c.io.in.angle, 0.0)
+      poke(c.io.in.isRotation, false)
+      poke(c.io.in.valid, true)
+      step(1)
+      poke(c.io.in.valid, false)
+      while(!peek(c.io.out.valid)) {
+        step(1)
+      }
+      expect(c.io.out.angle, t.theta / math.Pi)
+      // Note: theta = math.atan2(y, x)
+    }
+  }
 
 }
 
-// todo remove all pipeline regs
+// TODO: remove all pipeline regs
 // is the last angle meaningful?
 // renormalize memory -- also renormalize this (asUInt)
-// y very big, x very small
 // is mod 2Pi correct for SInt? 
