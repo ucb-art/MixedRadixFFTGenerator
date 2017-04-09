@@ -28,7 +28,7 @@ case class CordicParams[T <: Data:RealBits](xyType: T, unrollingFactor: Double) 
 
   val xyWidth = xyType.getWidth
   val angleWidth = angleType.getWidth
-  val totalIterations = Seq(xyWidth, angleWidth).max
+  val totalIterations = xyWidth
   // unrollingFactor = 0 -> no unfolding (1 stage)
   // unrollingFactor = 1 -> complete unfolding (iterations # of stages)
   val numStages = if (unrollingFactor > 0) math.ceil(totalIterations * unrollingFactor).toInt else 1
@@ -99,7 +99,7 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module {
 
   val correctInput = Mux(
     io.in.isRotation,
-    angleZeroTo2Pi > halfPi.U & angleZeroTo2Pi < threeHalvesPi.U,
+    (angleZeroTo2Pi > halfPi.U) & (angleZeroTo2Pi < threeHalvesPi.U),
     io.in.x.signBit
   )
 
@@ -167,6 +167,7 @@ class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int
 
   withClockAndReset(io.clk, io.reset) {
 
+    // z == angle
     // x(i + 1) = x(i) - y(i) * d(i) * 2^(-i)
     // y(i + 1) = y(i) + x(i) * d(i) * 2^(-i)
     // z(i + 1) = z(i) - d(i) * arctan[2^(-i)] where arctan[...] = angle LUT
@@ -280,9 +281,6 @@ class CordicSpec extends FlatSpec with Matchers {
 class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
 
 }
-
-
-
 
 // todo remove all pipeline regs
 // is the last angle meaningful?
