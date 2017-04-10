@@ -489,7 +489,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     (n, ph) -> Array.fill(c.ffastParams.subFFTns.max)(Complex(0.0, 0.0))
   }.toMap
 
-
+  case class PeekedComplexBigInt(real: BigInt, imag: BigInt)
+  val peekedResultsBigInts = c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+    (n, ph) -> Array.fill(c.ffastParams.subFFTns.max)(PeekedComplexBigInt(0, 0))
+  }.toMap
   // TODO: Generalize
 
   def getEnable(n: Int, ph: Int): Int = {
@@ -568,8 +571,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   def clearResults() = {
     c.ffastParams.getSubFFTDelayKeys foreach { case (n, ph) => 
       // TODO: There has to be a better way to reset!
-      for (arrayIdx <- 0 until c.ffastParams.subFFTns.max)
+      for (arrayIdx <- 0 until c.ffastParams.subFFTns.max) {
         peekedResults(n, ph)(arrayIdx) = Complex(0.0, 0.0)
+        peekedResultsBigInts(n, ph)(arrayIdx) = PeekedComplexBigInt(0, 0)
+      }
     }
   }
 
@@ -601,8 +606,14 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
           val rIdxOut = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).rIdx)
 
-          if (rIdxOut < n)
+          if (rIdxOut < n) {
             peekedResults(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
+
+            // FOR ROCKET-CHIP TESTING
+            val realPeek = dspPeek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout.real)._2
+            val imagPeek = dspPeek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout.imag)._2
+            peekedResultsBigInts(n, ph)(rIdxOut) = PeekedComplexBigInt(real = realPeek, imag = imagPeek)
+          }
 
           rIdxOut
         }.min
@@ -922,6 +933,9 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   }
 
 /*
+
+// GENERAL READ AND WRITE TESTS
+
   setupDebug(usedDebugStates)
 
   for (loopNum <- 0 until numLoops) {
@@ -968,6 +982,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   clearResults() 
 */
 
+/*
+
+// ADC -> FFT OUTPUT TESTS
+
   setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
 
   // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
@@ -993,6 +1011,21 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       fixTolOverride = fpBP + 1)
   }
   clearResults()
+*/
+
+// -------------------------------- FOR ROCKET-CHIP TESTING
+
+  // Skip ADC Collect state for basic debug, since ADC isn't hooked up
+  setupDebug(Seq("ADCCollect", "ADCCollectDebug", "FFTDebug"))
+  // Smaller FFTs will use a subset
+  val inFFT = FFTTestVectors.createInput(c.ffastParams.subFFTns.max, fracBits = adcBP)
+  // Writes to all memories simultaneously
+  runWriteDebug("ADCCollectDebug", customInput = Some(inFFT))
+  // Should auto-escape from ADCCollectDebug
+  runDebug("FFTDebug")
+  peekedResults.toSeq foreach { case ((n, ph), outVals) =>
+    compare(exp = FFTTestVectors.createOutput(inFFT.take(n)), out = outVals.toSeq.take(n), tag = (n, ph), test = "Debug Write to FFT")
+  }
 
   println("\n\n *************************************************** \n\n")
   checksPerformed.toSeq foreach { x => println(x) }
