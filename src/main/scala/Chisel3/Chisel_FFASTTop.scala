@@ -417,7 +417,7 @@ class FFASTTopSpec extends FlatSpec with Matchers {
           //dspDataType = DspReal(),
           adcDataType = adcDataType, 
           dspDataType = dspDataType,
-          ffastParams = ffastParams.copy(delays = Seq(Seq(0, 1))),
+          ffastParams = ffastParams,
           maxNumPeels = maxNumPeels,
           useBlackBox = false
         ), opt
