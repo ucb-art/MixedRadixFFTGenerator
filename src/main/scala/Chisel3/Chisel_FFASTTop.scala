@@ -610,8 +610,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
             peekedResults(n, ph)(rIdxOut) = peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout)
 
             // FOR ROCKET-CHIP TESTING
-            val realPeek = dspPeek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout.real)._2
-            val imagPeek = dspPeek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout.imag)._2
+            val realPeek = dspPeekWithBigInt(c.io.scr.ctrlMemReadToCPU(n)(ph).dout.real)._2
+            val imagPeek = dspPeekWithBigInt(c.io.scr.ctrlMemReadToCPU(n)(ph).dout.imag)._2
             peekedResultsBigInts(n, ph)(rIdxOut) = PeekedComplexBigInt(real = realPeek, imag = imagPeek)
           }
 
