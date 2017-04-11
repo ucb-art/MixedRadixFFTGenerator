@@ -61,14 +61,14 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
   val sdcRegExpr = (Seq.fill(level - 1)("*/") ++ Seq(s"${name}/")).mkString("")
 
-  val fastClkSDC = s"create_clock -name IOFASTCLK -period ${FFASTTopParams.fastClkPeriod} [get_pins ${sdcRegExpr}inClk]"
+  val fastClkSDC = s"create_clock -name IOFASTCLK -period ${FFASTTopParams.fastClkPeriod} [get_pins -hier ${sdcRegExpr}inClk]"
 
   // Fastest clk freq
   val smallestDivBy = ffastParams.subSamplingFactors(ffastParams.subFFTns.max)
   val halfPeriodPh = smallestDivBy / 2
     
   val widePWEdges = Seq(1, halfPeriodPh * 2 + 1, 2 * smallestDivBy + 1)
-  val widePWSDC = s"create_generated_clock -name WIDEPWSLOWCLK -source [get_pins ${sdcRegExpr}inClk] -edges {${widePWEdges.mkString(" ")}} [get_pins ${sdcRegExpr}widePulseSlowClk]"
+  val widePWSDC = s"create_generated_clock -name WIDEPWSLOWCLK -source [get_pins -hier ${sdcRegExpr}inClk] -edges {${widePWEdges.mkString(" ")}} [get_pins -hier ${sdcRegExpr}widePulseSlowClk]"
 
   val outClkConstraints = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
 
@@ -81,16 +81,16 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
       if (ffastParams.adcDelays.contains(clkDelay)) {
         Seq(
-          s"create_generated_clock -name adcClks_${subFFT}_${clkDelay} -source [get_pins ${sdcRegExpr}inClk] -edges {${edges.mkString(" ")}} [get_pins ${sdcRegExpr}adcClks_${subFFT}_${clkDelay}]",
-          s"set_input_delay -clock adcClks_${subFFT}_${clkDelay} ${FFASTTopParams.inputDelay} [get_pins ${sdcRegExpr}adcDigitalOut_${subFFT}_${clkDelay}]"
+          s"create_generated_clock -name adcClks_${subFFT}_${clkDelay} -source [get_pins -hier ${sdcRegExpr}inClk] -edges {${edges.mkString(" ")}} [get_pins -hier ${sdcRegExpr}adcClks_${subFFT}_${clkDelay}]",
+          s"set_input_delay -clock adcClks_${subFFT}_${clkDelay} ${FFASTTopParams.inputDelay} [get_pins -hier ${sdcRegExpr}adcDigitalOut_${subFFT}_${clkDelay}]"
         )
       }
       else {
         val valid0InputDelay = clkDelay * FFASTTopParams.fastClkPeriod + FFASTTopParams.inputDelay
         Seq( 
-          s"set_input_delay -clock adcClks_${subFFT}_0 ${valid0InputDelay} [get_pins ${sdcRegExpr}adcSubFFTValid_${subFFT}]"
+          s"set_input_delay -clock adcClks_${subFFT}_0 ${valid0InputDelay} [get_pins -hier ${sdcRegExpr}adcSubFFTValid_${subFFT}]"
         ) ++ ffastParams.adcDelays.filter(_ != 0).map { case dly =>
-          s"set_multicycle_path -from [get_pins ${sdcRegExpr}adcSubFFTValid_${subFFT}] -to [get_clocks adcClks_${subFFT}_${dly}] -setup 2"
+          s"set_multicycle_path -from [get_pins -hier ${sdcRegExpr}adcSubFFTValid_${subFFT}] -to [get_clocks adcClks_${subFFT}_${dly}] -setup 2"
         }
         // Zeroth ph shouldn't have multi-cycle b/c there should be enough time before the next edge
         // For non-zeroth ph, you miss the first clk so need multi cycle (input delay is longer than when first edge appears)
@@ -113,12 +113,14 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   val otherConstraints = Seq(
     // Below are top-level ports
     // == resetClk
-    s"set_false_path -from [get_ports reset]",
-    s"set_false_path -from [get_ports io_stateMachineReset]",
-    s"set_false_path -from [get_ports io_extSlowClkSel]",
-    s"set_size_only [get_cells ${adcCollectRegExpr}clkMux/clkMux]",
-    s"create_clock -name EXTSLOWCLK -period ${FFASTTopParams.slowClkExtPeriod} [get_ports io_extSlowClk]",
-    s"set_clock_groups -asynchronous -group EXTSLOWCLK -group {IOFASTCLK WIDEPWSLOWCLK ${adcClkNames.mkString(" ")} }"
+    "if {[get_db core] == \"FFASTTopWrapper\"} {",
+    "  set_false_path -from [get_ports reset]",
+    "  set_false_path -from [get_ports io_stateMachineReset]",
+    "  set_false_path -from [get_ports io_extSlowClkSel]",
+    s"  create_clock -name EXTSLOWCLK -period ${FFASTTopParams.slowClkExtPeriod} [get_ports io_extSlowClk]",
+    s"  set_clock_groups -asynchronous -group EXTSLOWCLK -group {IOFASTCLK WIDEPWSLOWCLK ${adcClkNames.mkString(" ")} }",
+    "}",
+    s"set_size_only [get_cells -hier ${adcCollectRegExpr}clkMux/clkMux]"
   )
 
   val constraints = Seq(fastClkSDC, widePWSDC) ++ outClkConstraints ++ otherConstraints
