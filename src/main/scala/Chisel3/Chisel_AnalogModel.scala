@@ -59,16 +59,21 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
   // This module = 1, then goes up
   val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
-  val sdcRegExpr = (Seq.fill(level - 1)("*/") ++ Seq(s"${name}/")).mkString("")
+  val sdcRegExpr = s"${name}/"
 
-  val fastClkSDC = s"create_clock -name IOFASTCLK -period ${FFASTTopParams.fastClkPeriod} [get_pins -hier ${sdcRegExpr}inClk]"
+  val pinsSDC = Seq(
+    s"set pin_inClk [get_pins -hier ${sdcRegExpr}inClk]",
+    s"set pin_widePulseSlowClk [get_pins -hier ${sdcRegExpr}widePulseSlowClk]"
+  )
+
+  val fastClkSDC = s"create_clock -name IOFASTCLK -period ${FFASTTopParams.fastClkPeriod} $$pin_inClk"
 
   // Fastest clk freq
   val smallestDivBy = ffastParams.subSamplingFactors(ffastParams.subFFTns.max)
   val halfPeriodPh = smallestDivBy / 2
     
   val widePWEdges = Seq(1, halfPeriodPh * 2 + 1, 2 * smallestDivBy + 1)
-  val widePWSDC = s"create_generated_clock -name WIDEPWSLOWCLK -source [get_pins -hier ${sdcRegExpr}inClk] -edges {${widePWEdges.mkString(" ")}} [get_pins -hier ${sdcRegExpr}widePulseSlowClk]"
+  val widePWSDC = s"create_generated_clock -name WIDEPWSLOWCLK -source $$pin_inClk -edges {${widePWEdges.mkString(" ")}} $$pin_widePulseSlowClk"
 
   val outClkConstraints = ffastParams.subSamplingFactors.map { case (subFFT, divBy) =>
 
@@ -81,7 +86,7 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
       if (ffastParams.adcDelays.contains(clkDelay)) {
         Seq(
-          s"create_generated_clock -name adcClks_${subFFT}_${clkDelay} -source [get_pins -hier ${sdcRegExpr}inClk] -edges {${edges.mkString(" ")}} [get_pins -hier ${sdcRegExpr}adcClks_${subFFT}_${clkDelay}]",
+          s"create_generated_clock -name adcClks_${subFFT}_${clkDelay} -source $$pin_inClk -edges {${edges.mkString(" ")}} [get_pins -hier ${sdcRegExpr}adcClks_${subFFT}_${clkDelay}]",
           s"set_input_delay -clock adcClks_${subFFT}_${clkDelay} ${FFASTTopParams.inputDelay} [get_pins -hier ${sdcRegExpr}adcDigitalOut_${subFFT}_${clkDelay}]"
         )
       }
@@ -123,7 +128,7 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
     s"set_size_only [get_cells -hier ${adcCollectRegExpr}clkMux/clkMux]"
   )
 
-  val constraints = Seq(fastClkSDC, widePWSDC) ++ outClkConstraints ++ otherConstraints
+  val constraints = pinsSDC ++ Seq(fastClkSDC, widePWSDC) ++ outClkConstraints ++ otherConstraints
   // TODO: Don't hardcode?
   setInline(s"FFASTTopWrapper.sdc", constraints.toSeq.mkString("\n"))
 
