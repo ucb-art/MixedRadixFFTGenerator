@@ -48,7 +48,10 @@ class WFTAIO[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationPara
   val maxRad = Seq(fftParams.butterfly.maxRad, (if (usedRads.contains(2) && usedRads.contains(4)) 4 else 0)).max
   
   val currRad = new CustomIndexedBundle(usedRads.map(r => r -> Input(Bool())): _*)
-  val currRadOut = Flipped(currRad.cloneType)
+  
+  // Not used
+  // val currRadOut = Flipped(currRad.cloneType)
+
   // Output
   val y = Vec(maxRad, Output(DspComplex(dspDataType)))
   // Input
@@ -140,10 +143,12 @@ class WFTATester[T <: Data:RealBits](c: WFTAWrapper[T]) extends DspTester(c) {
       c.io.y.zipWithIndex foreach { case (y, idx) => expect(y, tests(outT).out(idx)) }
       usedRads foreach { rad =>
         val currRad = tests(outT).rad
+        /*
         if (currRad == rad)
           expect(c.io.currRadOut(rad), true.B)
         else 
           expect(c.io.currRadOut(rad), false.B)
+        */
       }
     }
 
@@ -197,7 +202,7 @@ class WFTAWrapper[T <: Data:RealBits](dspDataType: => T, val fftParams: Factoriz
   val io = IO(mod.io.cloneType)
   mod.io.currRad := io.currRad
   // TODO: Only need to calc currRad once, but not much overhead
-  io.currRadOut := mod.io.currRadOut
+  // io.currRadOut := mod.io.currRadOut
   mod.io.x := io.x
   io.y := mod.io.y
   mod.io.clk := clock
@@ -219,7 +224,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
   def wftaInternalDelays = {
     var count = 0
     // Spreads out add delays (handles addPipe < 1 too) + mul delays
-    WFTA.stages.map { case x => 
+    WFTA.stages.zipWithIndex.map { case (x, idx) => 
       count = {
         // Reset count on multiply (only handle sequence of adds)
         if (x != WFTAAdd) 0
@@ -228,6 +233,9 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
         else count + 1
       }
       if (x == WFTAMul) context.numMulPipes
+      // Add pipeline to last stage manually
+      // TODO: UNDO
+      else if (idx == WFTA.stages.length - 1) 1
       // Add a Pipe if enough adds in series
       else if (context.numAddPipes < 1) math.floor(count * context.numAddPipes.toDouble).toInt
       else math.floor(context.numAddPipes.toDouble).toInt
@@ -653,6 +661,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       io.y(6) := Mux1H0(r7o, y(6))
     }
 
+/*
     io.currRadOut.elements foreach { case (key, port) =>
       // TODO: Be smarter...
       if (key == "2") io.currRadOut(2) := r2o
@@ -661,6 +670,7 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       if (key == "5") io.currRadOut(5) := r5o
       if (key == "7") io.currRadOut(7) := r7o
     }
+*/
     
   }
 }
