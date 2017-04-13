@@ -30,16 +30,14 @@ trait PeripheryAmyBundle {
   val RX_ADC_VCO_N_OUT = Output(Bool())
 
   // BUMPS ONLY
-  val RX_ADC_RF_INP = Analog(1.W)
-  val RX_ADC_RF_INN = Analog(1.W)
-  val RX_ADC_CLK_10G_P = Analog(1.W)
-  val RX_ADC_CLK_10G_N = Analog(1.W)
-  val RX_ADC_VDDSAR = Analog(1.W)
-  val RX_ADC_VDDFIR = Analog(1.W)
-  val RX_ADC_VDDVCO = Analog(1.W)
-  val RX_ADC_AVDD = Analog(1.W)
-  val RX_ADC_DVDD = Analog(1.W)
-  val VDD6 = Analog(1.W)
+  val RX_ADC_RF_INP = Input(Bool())
+  val RX_ADC_RF_INN = Input(Bool())
+  val RX_ADC_CLK_10G_P = Input(Bool())
+  val RX_ADC_CLK_10G_N = Input(Bool())
+  val RX_ADC_VDDSAR = Input(Bool())
+  val RX_ADC_VDDFIR = Input(Bool())
+  val RX_ADC_VDDVCO = Input(Bool())
+  
 }
 
 class RX_ADC_TOP_IO extends Bundle with PeripheryAmyBundle {
@@ -154,15 +152,13 @@ module RX_ADC_TOP(
     inout RX_ADC_CLK_10G_N,
     inout RX_ADC_VDDSAR,
     inout RX_ADC_VDDFIR,
-    inout RX_ADC_VDDVCO,
-    inout RX_ADC_AVDD,
-    inout RX_ADC_DVDD,
-    inout VDD6
+    inout RX_ADC_VDDVCO
 );
 
 // Fake connection for testing
+
 reg rx_adc_2400MHz_clk;
-assign rx_adc_2400MHz_clk = RX_ADC_DIG_CLK;
+assign rx_adc_2400MHz_clk = RX_ADC_CLK_10G_P;
 
 reg [3:0] clk_counter;
 
@@ -222,14 +218,13 @@ class AmyWrapperWrapper extends chisel3.Module {
     val rx_adc_mem_clk_out = Output(Bool())
     val RX_ADC_RST_ACTHIGH = Input(Bool())
     val RX_ADC_MEM_WRITE_EN = Input(Bool())
-    val RX_ADC_DIG_CLK = Input(Bool())
   })
   val mod = Module(new AmyWrapper(false))
   // Hijack scan clk for testing
-  mod.io.RX_ADC_DIG_CLK := clock.asUInt
   mod.io.RX_ADC_RST_ACTHIGH := io.RX_ADC_RST_ACTHIGH
   mod.io.RX_ADC_MEM_WRITE_EN := io.RX_ADC_MEM_WRITE_EN
   io.rx_adc_mem_clk_out := mod.io.rx_adc_mem_clk_out.asUInt
+  mod.io.RX_ADC_CLK_10G_P := clock.asUInt
   mod.io.scr <> io.scr
 }
 
@@ -287,7 +282,7 @@ class Mem1P(depth: Int, dwidth: Int, name: String) extends Module {
   }
 }
 
-class AmyWrapper(useBlackBox: Boolean) extends Module {
+class AmyWrapper(useBlackBox: Boolean) extends chisel3.Module {
   val io = IO(new AmyAdcIo)
   val amyBlackBox = Module(new RX_ADC_TOP(useBlackBox))
 
@@ -301,17 +296,13 @@ class AmyWrapper(useBlackBox: Boolean) extends Module {
   io.RX_ADC_VCO_P_OUT := amyBlackBox.io.RX_ADC_VCO_P_OUT
   io.RX_ADC_VCO_N_OUT := amyBlackBox.io.RX_ADC_VCO_N_OUT
   io.rx_adc_mem_clk_out := amyBlackBox.io.rx_adc_mem_clk_out
-
-  attach(io.RX_ADC_RF_INP, amyBlackBox.io.RX_ADC_RF_INP)
-  attach(io.RX_ADC_RF_INN, amyBlackBox.io.RX_ADC_RF_INN)
-  attach(io.RX_ADC_CLK_10G_P, amyBlackBox.io.RX_ADC_CLK_10G_P)
-  attach(io.RX_ADC_CLK_10G_N, amyBlackBox.io.RX_ADC_CLK_10G_N)
-  attach(io.RX_ADC_VDDSAR, amyBlackBox.io.RX_ADC_VDDSAR)
-  attach(io.RX_ADC_VDDFIR, amyBlackBox.io.RX_ADC_VDDFIR)
-  attach(io.RX_ADC_VDDVCO, amyBlackBox.io.RX_ADC_VDDVCO)
-  attach(io.RX_ADC_AVDD, amyBlackBox.io.RX_ADC_AVDD)
-  attach(io.RX_ADC_DVDD, amyBlackBox.io.RX_ADC_DVDD)
-  attach(io.VDD6, amyBlackBox.io.VDD6)
+  amyBlackBox.io.RX_ADC_RF_INP := io.RX_ADC_RF_INP
+  amyBlackBox.io.RX_ADC_RF_INN := io.RX_ADC_RF_INN
+  amyBlackBox.io.RX_ADC_CLK_10G_P := io.RX_ADC_CLK_10G_P
+  amyBlackBox.io.RX_ADC_CLK_10G_N := io.RX_ADC_CLK_10G_N
+  amyBlackBox.io.RX_ADC_VDDSAR := io.RX_ADC_VDDSAR
+  amyBlackBox.io.RX_ADC_VDDFIR := io.RX_ADC_VDDFIR
+  amyBlackBox.io.RX_ADC_VDDVCO := io.RX_ADC_VDDVCO
   
   val clk = amyBlackBox.io.rx_adc_mem_clk_out
   
@@ -320,7 +311,7 @@ class AmyWrapper(useBlackBox: Boolean) extends Module {
   }
 
   val rst = withClock(clk) {
-    ShiftRegister(io.RX_ADC_RST_ACTHIGH, 3)
+    ShiftRegister(reset, 3)
   }
 
   val syncCounterReset = rst | ~we
@@ -372,18 +363,25 @@ class AmyWrapper(useBlackBox: Boolean) extends Module {
 }
 
 class AmyTester(c: AmyWrapperWrapper) extends DspTester(c) {
+
+// fix clk
+
+
+
+
   val numTestCycles = 30
   // Everything is actually clocked via fake internal clock,
   // but I think the time steps should correspond go Chisel testers "step"
   poke(c.io.RX_ADC_RST_ACTHIGH, true)
-  step(20)
+  step(32)
   poke(c.io.RX_ADC_RST_ACTHIGH, false)
   poke(c.io.scr.re, false)
   poke(c.io.RX_ADC_MEM_WRITE_EN, true)
-  step(200)
+  step(16 * numTestCycles)
+  // 3 slow cycle delay. Actual RE goes high 3 slow cycles after WEN goes low (& re)
   poke(c.io.RX_ADC_MEM_WRITE_EN, false)
   poke(c.io.scr.re, true)
-  step(1)
+  step(16 * 10)
   for (i <- 0 until numTestCycles) {
     poke(c.io.scr.rIdx, i)
     c.io.scr.elements.filter { case (name, port) => c.mod.memNames.contains(name) }.foreach { case (name, v) => 
@@ -393,6 +391,6 @@ class AmyTester(c: AmyWrapperWrapper) extends DspTester(c) {
         case _ =>
       }
     }
-    step(1)
+    step(16)
   }
 }
