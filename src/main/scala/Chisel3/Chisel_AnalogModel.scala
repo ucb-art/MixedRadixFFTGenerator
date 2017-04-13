@@ -121,10 +121,12 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
     "if {[get_db core] == \"FFASTTopWrapper\"} {",
     "  set_false_path -from [get_ports reset]",
     "  set_false_path -from [get_ports io_stateMachineReset]",
-    "  set_false_path -from [get_ports io_extSlowClkSel]",
     s"  create_clock -name EXTSLOWCLK -period ${FFASTTopParams.slowClkExtPeriod} [get_ports io_extSlowClk]",
     s"  set_clock_groups -asynchronous -group EXTSLOWCLK -group {IOFASTCLK WIDEPWSLOWCLK ${adcClkNames.mkString(" ")} }",
+    "} else {",
+    s"  set_clock_groups -asynchronous -group CLK_CPU -group {IOFASTCLK WIDEPWSLOWCLK ${adcClkNames.mkString(" ")} }",
     "}",
+    "set_false_path -from [get_ports io_extSlowClkSel]",
     s"set_size_only [get_cells -hier ${adcCollectRegExpr}clkMux/clkMux]"
   )
 
