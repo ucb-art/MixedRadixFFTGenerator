@@ -17,6 +17,7 @@ object AmyParams {
 
   val scrSplit = memWidth / scrWidth
   require(memWidth % scrWidth == 0)
+  require(scanWidth == scrWidth)
 }
 
 trait PeripheryAmyBundle {
@@ -103,8 +104,6 @@ class RX_ADC_TOP(useBlackBox: Boolean) extends BlackBox {
     setInline("amy_RX_ADC_TOP.v",
 """
 
-`timescale 100ps / 10ps
-
 module RX_ADC_TOP(
     input RX_ADC_RST_ACTHIGH,
     input RX_ADC_DIG_CLK,
@@ -173,7 +172,6 @@ always @(posedge rx_adc_2400MHz_clk) begin
     else if (RX_ADC_RST_ACTHIGH) begin
         clk_counter <= 0;
         rx_adc_mem_clk_out <= 0;
-        rx_adc0_out_sar <= 0;
         rx_adc0_out_vcop <= 1;
         rx_adc0_out_vcon <= 2;
         rx_adc1_out_sar <= 3;
@@ -187,24 +185,28 @@ always @(posedge rx_adc_2400MHz_clk) begin
         rx_adc3_out_vcon <= 11;
         rx_adc02_out_lsb <= 12;
         rx_adc13_out_lsb <= 13;
+        rx_adc0_out_sar <= 14;
     end
 end
 
+wire [9:0] mul;
+assign mul = 10;
+
 always @(negedge rx_adc_mem_clk_out) begin
-    rx_adc0_out_sar <= rx_adc0_out_sar + 1;
-    rx_adc0_out_vcop <= rx_adc0_out_vcop + 1;
-    rx_adc0_out_vcon <= rx_adc0_out_vcon + 1;
-    rx_adc1_out_sar <= rx_adc1_out_sar + 1;
-    rx_adc1_out_vcop <= rx_adc1_out_vcop + 1;
-    rx_adc1_out_vcon <= rx_adc1_out_vcon + 1;
-    rx_adc2_out_sar <= rx_adc2_out_sar + 1;
-    rx_adc2_out_vcop <= rx_adc2_out_vcop + 1;
-    rx_adc2_out_vcon <= rx_adc2_out_vcon + 1;
-    rx_adc3_out_sar <= rx_adc3_out_sar + 1;
-    rx_adc3_out_vcop <= rx_adc3_out_vcop + 1;
-    rx_adc3_out_vcon <= rx_adc3_out_vcon + 1;
-    rx_adc02_out_lsb <= rx_adc02_out_lsb + 1;
-    rx_adc13_out_lsb <= rx_adc13_out_lsb + 1;
+    rx_adc0_out_sar <= rx_adc0_out_sar * mul;
+    rx_adc0_out_vcop <= rx_adc0_out_vcop * mul;
+    rx_adc0_out_vcon <= rx_adc0_out_vcon * mul;
+    rx_adc1_out_sar <= rx_adc1_out_sar * mul;
+    rx_adc1_out_vcop <= rx_adc1_out_vcop * mul;
+    rx_adc1_out_vcon <= rx_adc1_out_vcon * mul;
+    rx_adc2_out_sar <= rx_adc2_out_sar * mul;
+    rx_adc2_out_vcop <= rx_adc2_out_vcop * mul;
+    rx_adc2_out_vcon <= rx_adc2_out_vcon * mul;
+    rx_adc3_out_sar <= rx_adc3_out_sar * mul;
+    rx_adc3_out_vcop <= rx_adc3_out_vcop * mul;
+    rx_adc3_out_vcon <= rx_adc3_out_vcon * mul;
+    rx_adc02_out_lsb <= rx_adc02_out_lsb * mul;
+    rx_adc13_out_lsb <= rx_adc13_out_lsb * mul;
 end
 
 endmodule
@@ -282,6 +284,8 @@ class Mem1P(depth: Int, dwidth: Int, name: String) extends Module {
   }
 }
 
+// Needs to use chisel3.Module and *not* dspblocks.fft.Module (local scope)
+// to have access to implicit clock, reset
 class AmyWrapper(useBlackBox: Boolean) extends chisel3.Module {
   val io = IO(new AmyAdcIo)
   val amyBlackBox = Module(new RX_ADC_TOP(useBlackBox))
@@ -310,6 +314,7 @@ class AmyWrapper(useBlackBox: Boolean) extends chisel3.Module {
     ShiftRegister(io.RX_ADC_MEM_WRITE_EN, 3)
   }
 
+  // WARNING: Using implicit reset here!
   val rst = withClock(clk) {
     ShiftRegister(reset, 3)
   }
@@ -325,7 +330,6 @@ class AmyWrapper(useBlackBox: Boolean) extends chisel3.Module {
   }
 
   val memNames = Seq(
-    "rx_adc0_out_sar",
     "rx_adc0_out_vcop",
     "rx_adc0_out_vcon",
     "rx_adc1_out_sar",
@@ -338,7 +342,8 @@ class AmyWrapper(useBlackBox: Boolean) extends chisel3.Module {
     "rx_adc3_out_vcop",
     "rx_adc3_out_vcon",
     "rx_adc02_out_lsb",
-    "rx_adc13_out_lsb"
+    "rx_adc13_out_lsb",
+    "rx_adc0_out_sar"
   )
 
   val memMods = memNames.map { case n => 
@@ -364,33 +369,45 @@ class AmyWrapper(useBlackBox: Boolean) extends chisel3.Module {
 
 class AmyTester(c: AmyWrapperWrapper) extends DspTester(c) {
 
-// fix clk
+  val numTestCycles = 50
+  val clkDiv = 16
 
+  updatableDspVerbose.withValue(false) { 
 
+    // Set true to make life easier
+    poke(c.io.scr.re, true)
 
+    // Everything is actually clocked via fake internal clock,
+    // but I think the time steps should correspond go Chisel testers "step"
+    poke(c.io.RX_ADC_RST_ACTHIGH, true)
+    step(2 * clkDiv)
+    poke(c.io.RX_ADC_RST_ACTHIGH, false)
 
-  val numTestCycles = 30
-  // Everything is actually clocked via fake internal clock,
-  // but I think the time steps should correspond go Chisel testers "step"
-  poke(c.io.RX_ADC_RST_ACTHIGH, true)
-  step(32)
-  poke(c.io.RX_ADC_RST_ACTHIGH, false)
-  poke(c.io.scr.re, false)
-  poke(c.io.RX_ADC_MEM_WRITE_EN, true)
-  step(16 * numTestCycles)
-  // 3 slow cycle delay. Actual RE goes high 3 slow cycles after WEN goes low (& re)
-  poke(c.io.RX_ADC_MEM_WRITE_EN, false)
-  poke(c.io.scr.re, true)
-  step(16 * 10)
-  for (i <- 0 until numTestCycles) {
-    poke(c.io.scr.rIdx, i)
-    c.io.scr.elements.filter { case (name, port) => c.mod.memNames.contains(name) }.foreach { case (name, v) => 
-      v match {
-        case vec: Vec[_] => 
-          vec.foreach(p => peek(p))
-        case _ =>
+    poke(c.io.RX_ADC_MEM_WRITE_EN, true)
+    step(clkDiv * numTestCycles)
+    // 3 slow cycle delay.
+    poke(c.io.RX_ADC_MEM_WRITE_EN, false)
+    step(clkDiv * 3)
+
+    for (i <- 0 until numTestCycles) {
+      poke(c.io.scr.rIdx, i)
+      step(clkDiv)
+      c.io.scr.elements.filter { case (name, port) => c.mod.memNames.contains(name) }.foreach { case (name, v) => 
+        v match {
+          case vec: Vec[_] => 
+            val temp = vec.map { case p => dspPeekWithBigInt(p)._2 }
+            require(temp.length == 2)
+            val out = temp(0) + (temp(1) << scrWidth)
+            val startingCount = BigInt(c.mod.memNames.indexOf(name) + 1)
+            val mulFactor = i + 3
+            // Deserializer output starts 3 cycles earlier (due to counter reset)
+            val expectedOut = (startingCount * BigInt(10).pow(mulFactor)).mod(BigInt(1) << memWidth)
+            expect(out == expectedOut, s"Output $out should match $expectedOut")
+          case _ =>
+        }
       }
+      step(clkDiv)
     }
-    step(16)
+
   }
 }
