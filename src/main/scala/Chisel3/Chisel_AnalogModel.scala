@@ -178,7 +178,7 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
   val io = IO(new AnalogModelIO)
 
   // This module = 1, then goes up
-  val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
+  // val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
   val sdcRegExpr = s"${name}/"
 
   val pinsSDC = Seq(

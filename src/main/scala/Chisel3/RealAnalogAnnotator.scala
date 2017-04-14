@@ -6,7 +6,7 @@ import chisel3._
 import chisel3.experimental._
 import barstools.tapeout.transforms._
 
-trait RealAnalogAnnotator extends AnalogAnnotator { self: Module =>
+trait RealAnalogAnnotator extends AnalogAnnotator { self: chisel3.Module =>
   def io: Bundle 
 
   def annotateReal(): Unit = {

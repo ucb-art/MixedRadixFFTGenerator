@@ -69,7 +69,7 @@ class FFASTTop[T <: Data:RealBits](
   dspDataType: => T, 
   ffastParams: FFASTParams, 
   maxNumPeels: Int = 10,
-  useBlackBox: Boolean) extends Module with RealAnalogAnnotator {
+  useBlackBox: Boolean) extends chisel3.Module with RealAnalogAnnotator {
 
 ////////////////// STATE MACHINE
 
@@ -453,7 +453,6 @@ class FFASTTopSpec extends FlatSpec with Matchers {
   }
 }
 
-// TODO: Need to use Wrapper b/c of Module wrapper incompatibility with module hack
 class FFASTTopBuildSpec extends FlatSpec with Matchers {
   behavior of "FFASTTopBuild"
   it should "not fail to build" in {
@@ -462,7 +461,7 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
     dsptools.DspContext.alter(dspContext) {
       chisel3.Driver.execute(TestParams.buildWithMemories(topName = "FFASTTop"), () => 
-        new FFASTTopWrapper(
+        new FFASTTop(
           adcDataType = adcDataType, 
           dspDataType = dspDataType,
           ffastParams = ffastParams,
