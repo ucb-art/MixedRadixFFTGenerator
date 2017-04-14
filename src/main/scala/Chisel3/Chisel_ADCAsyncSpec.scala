@@ -47,7 +47,9 @@ class StateTransitionIO extends Bundle {
 class CollectADCSamplesIO[T <: Data:RealBits](
     dspDataType: => T, 
     ffastParams: FFASTParams, 
-    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
+    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle with PeripheryADCBundle {
+
+  val adcScr = new ADCSCR
 
   // In case ADC doesn't work, be able to skip out of this state
   val skipADC = Input(Bool())
@@ -61,7 +63,6 @@ class CollectADCSamplesIO[T <: Data:RealBits](
   val analogIn = Input(DspReal())
 
   val extSlowClk = Input(Clock())
-  val extSlowClkSel = Input(Bool())
 
   // TODO: Maybe move dataToMemory, dataFromMemory, stateInfo to separate bundle
 
@@ -185,9 +186,11 @@ class CollectADCSamples[T <: Data:RealBits](
     fftType: FFTType, 
     // TODO: Consider moving into FFASTParams?
     subFFTnsColMaxs: Map[Int, Seq[Int]],
-    useBlackBox: Boolean = false) extends Module {
+    useBlackBox: Boolean) extends Module with RealAnalogAnnotator {
 
   val io = IO(new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs))
+
+  annotateReal()
 
   // Should not jump to the last state if done with this state
   io.stateInfo.skipToEnd := false.B
@@ -199,19 +202,16 @@ class CollectADCSamples[T <: Data:RealBits](
 
   val analogBlock = Module(new AnalogModelWrapper(adcDataType, ffastParams, useBlackBox = useBlackBox))
    
-  analogBlock.io.resetClk := io.resetClk
-  analogBlock.io.inClk := io.inClk
-  analogBlock.io.analogIn := io.analogIn
+  analogBlock.io.adcScr := io.adcScr
+  attach(io.ADCINP, analogBlock.io.ADCINP)
+  attach(io.ADCINM, analogBlock.io.ADCINM)
+  analogBlock.io.ADCCLKP := io.ADCCLKP
+  analogBlock.io.ADCCLKM := io.ADCCLKM
+  analogBlock.io.ADCBIAS := io.ADCBIAS
+  analogBlock.io.clkrst := io.clkrst
 
   // Global clock = fastest clk, phase 0
-  val globalClkInternal = analogBlock.io.widePulseSlowClk
-  val clkMux = Module(new ClkMuxBlackBox(useBlackBox))
-  clkMux.suggestName("clkMux")
-  clkMux.io.sel := io.extSlowClkSel
-  clkMux.io.clk0 := globalClkInternal
-  clkMux.io.clk1 := io.extSlowClk 
-  val globalClk = clkMux.io.clkOut
-
+  val globalClk = io.extSlowClk 
   io.globalClk := globalClk
 
   val deqReady = io.stateInfo.start || io.stateInfo.inState

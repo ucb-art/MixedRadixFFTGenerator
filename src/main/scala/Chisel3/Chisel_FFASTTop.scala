@@ -31,22 +31,14 @@ class FFASTTopIO[T <: Data:RealBits](
     dspDataType: => T,
     ffastParams: FFASTParams,
     numStates: Int,
-    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle {
-
-  val resetClk = Input(Bool())
-  val inClk = Input(Clock())
-  val analogIn = Input(DspReal())
+    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle with PeripheryADCBundle {
 
   // Top-level stuff
   val stateMachineReset = Input(Bool())
   val extSlowClk = Input(Clock())
-  val extSlowClkSel = Input(Bool())
 
   val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, numStates)
-
-  // The following IO are for debug purposes only (removed for real tapeout)
-  // val adc = new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs)
-  // val debug = new DebugIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)
+  val adcScr = new ADCSCR
 
   override def cloneType = 
     (new FFASTTopIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]
@@ -77,7 +69,7 @@ class FFASTTop[T <: Data:RealBits](
   dspDataType: => T, 
   ffastParams: FFASTParams, 
   maxNumPeels: Int = 10,
-  useBlackBox: Boolean = false) extends Module {
+  useBlackBox: Boolean) extends Module with RealAnalogAnnotator {
 
 ////////////////// STATE MACHINE
 
@@ -112,6 +104,8 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   val io = IO(
     new FFASTTopIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs))
 
+  annotateReal()
+
   val collectADCSamplesBlock = Module(
     new CollectADCSamples(
       adcDataType = adcDataType,
@@ -121,13 +115,18 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
       subFFTnsColMaxs,
       useBlackBox = useBlackBox)
   )
-  collectADCSamplesBlock.io.resetClk := io.resetClk
-  collectADCSamplesBlock.io.inClk := io.inClk
-  collectADCSamplesBlock.io.analogIn := io.analogIn
+
+  collectADCSamplesBlock.io.adcScr := io.adcScr
+  attach(io.ADCINP, collectADCSamplesBlock.io.ADCINP)
+  attach(io.ADCINM, collectADCSamplesBlock.io.ADCINM)
+  collectADCSamplesBlock.io.ADCCLKP := io.ADCCLKP
+  collectADCSamplesBlock.io.ADCCLKM := io.ADCCLKM
+  collectADCSamplesBlock.io.ADCBIAS := io.ADCBIAS
+  collectADCSamplesBlock.io.clkrst := io.clkrst
+
   collectADCSamplesBlock.io.idxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs
 
   collectADCSamplesBlock.io.extSlowClk := io.extSlowClk 
-  collectADCSamplesBlock.io.extSlowClkSel := io.extSlowClkSel
 
   val globalClk = collectADCSamplesBlock.io.globalClk
 
@@ -375,26 +374,41 @@ class FFASTTopWrapper[T <: Data:RealBits](
     Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
   
   val io = IO(new Bundle { 
-    val analogIn = Input(DspReal())
-    val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, mod.numStates)
-    // clock, reset used for Analog
 
+    val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, mod.numStates)
+
+    // Connect to core reset
+    // Connect to core clk
     val stateMachineReset = Input(Bool())
-    val extSlowClk = Input(Bool())
-    val extSlowClkSel = Input(Bool())
+
+    val ADCINP = Input(DspReal())
+    val ADCINM = Input(DspReal())
+    val ADCCLKP = Input(Bool())
+    val ADCCLKM = Input(Bool())
+    val clkrst = Input(Bool())
+
   })
     
   SCRHelper(io.scr)
+  SCRHelper(mod.io.adcScr)
 
   // WARNING: SCARY: Fast clk + fast clk reset uses Chisel default clock, reset
-  mod.io.resetClk := reset
-  mod.io.inClk := clock
-  mod.io.analogIn := io.analogIn
+  mod.io.clkrst := reset
+  mod.io.ADCCLKP := clock.asUInt
+  mod.io.ADCCLKM := ~clock.asUInt
+  attach(mod.io.ADCINP, BitsToReal(io.ADCINP))
+  attach(mod.io.ADCINM, BitsToReal(io.ADCINM))
   mod.io.scr <> io.scr
   mod.io.stateMachineReset := io.stateMachineReset
-  mod.io.extSlowClk := io.extSlowClk.asClock
-  mod.io.extSlowClkSel := io.extSlowClkSel
+
+  // Fake subsampling clk derived from 10G
+  val subsamplingT = ffastParams.subSamplingFactors.map(_._2).min
+  val clkDivFake = Module(new SEClkDivider(divBy = subsamplingT, phases = Seq(0)))
+  clkDivFake.io.reset := reset
+  clkDivFake.io.inClk := clock
+  mod.io.extSlowClk := clkDivFake.io.outClks(0)
   
+  // TODO: Doesn't do anything...
   annotateClkPort(clock, 
     id = "clock", // not in io bundle
     sink = Sink(Some(ClkSrc(period = 5.0)))
@@ -594,7 +608,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     val done = DebugNext(0, true)
     val incInput = DebugNext(debugNext.idx + 1, false)
     updatableDspVerbose.withValue(false) {
-      poke(c.io.scr.ctrlMemReadFromCPU.rIdx, debugNext.idx)
+      if (debugNext.idx < c.ffastParams.subFFTns.max)
+        poke(c.io.scr.ctrlMemReadFromCPU.rIdx, debugNext.idx)
 
       if (peek(c.io.scr.reToCPU) == 0) {
         // Don't increment if can't read
@@ -807,7 +822,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           var adcIdx = 0
           while (peek(c.io.scr.currentState) == c.mod.statesInt("ADCCollect")) {
             // Fast rate!
-            poke(c.io.analogIn, ins(adcIdx)) 
+            poke(c.io.ADCINP, ins(adcIdx)) 
             step(1)
             adcIdx = (adcIdx + 1) % c.ffastParams.fftn
           }  
@@ -815,7 +830,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           var adcIn = adcInStart
           while (peek(c.io.scr.currentState) == c.mod.statesInt("ADCCollect")) {
             // Fast rate!
-            poke(c.io.analogIn, adcIn) 
+            poke(c.io.ADCINP, adcIn) 
             step(1)
             adcIn += adcInInc
             if (adcIn >= math.abs(adcInStart)) adcIn = adcIn + 2 * adcInStart
@@ -919,9 +934,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   updatableDspVerbose.withValue(false) { 
 
-    // Use internal clk for simulation
-    poke(c.io.extSlowClk, false.B)
-    poke(c.io.extSlowClkSel, false.B)
+    poke(c.io.ADCINM, 0.0)
 
     poke(c.io.stateMachineReset, true.B)
     step(subsamplingT * 2)
@@ -1019,9 +1032,6 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   setupDebug(Seq("ADCCollect", "ADCCollectDebug", "FFTDebug"))
   // Smaller FFTs will use a subset
   val inFFT = FFTTestVectors.createInput(c.ffastParams.subFFTns.max, fracBits = adcBP)
-
-  val cTestInputs = inFFT.map(x => FixedPoint.toBigInt(x.real, fpBP))
-
   // Writes to all memories simultaneously
   runWriteDebug("ADCCollectDebug", customInput = Some(inFFT))
   // Should auto-escape from ADCCollectDebug
