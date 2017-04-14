@@ -1032,6 +1032,9 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   setupDebug(Seq("ADCCollect", "ADCCollectDebug", "FFTDebug"))
   // Smaller FFTs will use a subset
   val inFFT = FFTTestVectors.createInput(c.ffastParams.subFFTns.max, fracBits = adcBP)
+
+  val cTestInputs = inFFT.map(x => FixedPoint.toBigInt(x.real, fpBP))
+  
   // Writes to all memories simultaneously
   runWriteDebug("ADCCollectDebug", customInput = Some(inFFT))
   // Should auto-escape from ADCCollectDebug
