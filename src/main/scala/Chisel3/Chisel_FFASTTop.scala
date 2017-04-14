@@ -356,7 +356,7 @@ class FFASTTopWrapper[T <: Data:RealBits](
     val dspDataType: T, 
     val ffastParams: FFASTParams, 
     maxNumPeels: Int,
-    useBlackBox: Boolean = true) extends TopModule(usePads = false) {
+    useBlackBox: Boolean = true) extends TopModule(usePads = false) with AnalogAnnotator {
 
   (adcDataType, dspDataType) match {
     case (adc: FixedPoint, dsp: FixedPoint) => 
@@ -396,8 +396,19 @@ class FFASTTopWrapper[T <: Data:RealBits](
   mod.io.clkrst := reset
   mod.io.ADCCLKP := clock.asUInt
   mod.io.ADCCLKM := ~clock.asUInt
-  attach(mod.io.ADCINP, BitsToReal(io.ADCINP))
-  attach(mod.io.ADCINM, BitsToReal(io.ADCINM))
+
+  val adcinp = Wire(Analog(1.W))
+  val adcinm = Wire(Analog(1.W))
+
+  renameAnalog(adcinp, "wire\n`ifndef SYNTHESIS\n  real\n`endif\n       ")
+  renameAnalog(adcinm, "wire\n`ifndef SYNTHESIS\n  real\n`endif\n       ")
+
+  attach(adcinp, BitsToReal(io.ADCINP))
+  attach(adcinm, BitsToReal(io.ADCINM))
+
+  attach(mod.io.ADCINP, adcinp)
+  attach(mod.io.ADCINM, adcinm)
+
   mod.io.scr <> io.scr
   mod.io.stateMachineReset := io.stateMachineReset
 
@@ -442,6 +453,7 @@ class FFASTTopSpec extends FlatSpec with Matchers {
   }
 }
 
+// TODO: Need to use Wrapper b/c of Module wrapper incompatibility with module hack
 class FFASTTopBuildSpec extends FlatSpec with Matchers {
   behavior of "FFASTTopBuild"
   it should "not fail to build" in {
@@ -449,12 +461,13 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
     import dspblocks.fft.FFASTTopParams._
 
     dsptools.DspContext.alter(dspContext) {
-      chisel3.Driver.execute(TestParams.buildWithMemories(), () => 
+      chisel3.Driver.execute(TestParams.buildWithMemories(topName = "FFASTTop"), () => 
         new FFASTTopWrapper(
           adcDataType = adcDataType, 
           dspDataType = dspDataType,
           ffastParams = ffastParams,
-          maxNumPeels = maxNumPeels
+          maxNumPeels = maxNumPeels,
+          useBlackBox = true
         )
       ) 
     }

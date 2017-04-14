@@ -7,6 +7,7 @@ import dsptools.numbers.implicits._
 import rocketchiselutil._
 import barstools.tapeout.transforms._
 import chisel3.experimental._
+import barstools.tapeout.transforms.clkgen._
 
 // TODO: Get rid of copy paste, don't use fixed params
 
@@ -100,7 +101,7 @@ object ModuleHierarchy {
 
 class RealToBits extends BlackBox {
   val io = IO(new Bundle {
-    val in = Input(Analog(1.W))
+    val in = Analog(1.W)
     val out = Output(UInt(64.W))
   })
   setInline("RealToBits.v",
@@ -118,7 +119,7 @@ class RealToBits extends BlackBox {
 class BitsToReal extends BlackBox {
   val io = IO(new Bundle {
     val in = Input(UInt(64.W))
-    val out = Output(Analog(1.W))
+    val out = Analog(1.W)
   })
   setInline("BitsToReal.v",
     s"""
@@ -145,7 +146,7 @@ object RealToBits {
 object BitsToReal {
   def apply(in: DspReal): Analog = {
     val bitsToRealMod = Module(new BitsToReal)
-    bitsToRealMod.io.in := in.node 
+    bitsToRealMod.io.in := in.node
     bitsToRealMod.io.out
   }
 }
@@ -154,18 +155,19 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
   val io = IO(new AnalogModelIO)
   annotateReal()
   val ffastClkDiv = Module(new FFASTClkDiv(ffastParams))
-  ffastClkDiv.io.inClk := io.ADCCLKP & ~io.ADCCLKM
+  ffastClkDiv.io.inClk := (io.ADCCLKP & ~io.ADCCLKM).asClock
   ffastClkDiv.io.resetClk := io.clkrst
   // Valid data only in CollectADCSamplesState (becomes active
   // 6 cycles after reset is lowered), should be aligned to when all PH0's are aligned
   // TODO: Switch to this syntax everywhere
   val adcs = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
     val thisClk = ffastClkDiv.io.outClks(n)(ph)
-    io.clkout(n)(ph) := thisClk
+    val subsamplingFactor = ffastParams.subSamplingFactors(n)
+    io.clkout(subsamplingFactor)(ph) := thisClk
     val adc = Module(new FakeADC(adcDataType))
     adc.io.clk := thisClk
     adc.io.analogIn := RealToBits(io.ADCINP) - RealToBits(io.ADCINM)
-    io.adcout(n)(ph) := adc.io.digitalOut
+    io.adcout(subsamplingFactor)(ph) := adc.io.digitalOut
     adc
   }
 }
@@ -228,6 +230,8 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
 
   //val adcCollectRegExpr = Seq.fill(level - 2)("*/").mkString("")
 
+  val rstDly = FFASTTopParams.rstDly 
+
   val otherConstraints = Seq(
     // Below are top-level ports
     // == resetClk
@@ -237,7 +241,9 @@ class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FF
     // CLK_CPU created in chip top = core_clock
     s"  create_clock -name CLK_CPU -period ${FFASTTopParams.slowClkExtPeriod} [get_ports io_extSlowClk]",
     "}",
-    s"  set_clock_groups -asynchronous -group CLK_CPU -group { IOFASTCLK ${adcClkNames.mkString(" ")} }"
+    s"  set_clock_groups -asynchronous -group CLK_CPU -group { IOFASTCLK ${adcClkNames.mkString(" ")} }",
+    s"  set_max_delay -from [get_ports *clkrst] $rstDly",
+    s"  set_min_delay -from [get_ports *clkrst] $rstDly"
   )
 
   val constraints = pinsSDC ++ Seq(fastClkSDC) ++ outClkConstraints ++ otherConstraints
@@ -296,27 +302,6 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
 }
 */
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // Wrapper that handles some amount of synchronization
 
 class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Bundle with PeripheryADCBundle {
@@ -329,15 +314,22 @@ class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: F
   override def cloneType = (new AnalogModelWrapperIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
 
+
+
+
+
+
+
+
+
+
+
 class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, useBlackBox: Boolean) extends Module with RealAnalogAnnotator {
 
   val io = IO(new AnalogModelWrapperIO(adcDataType, ffastParams))
 
   annotateReal()
 
-
-
-/*
   val analogModel = 
     if (useBlackBox) {
       // TODO: WARNING: Should only exist once!
@@ -349,10 +341,45 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     else
       Module(new AnalogModel(adcDataType, ffastParams))
 
-  analogModel.io.resetClk := io.resetClk
-  analogModel.io.inClk := io.inClk 
+  analogModel.io.asclkd := io.adcScr.asclkd
+  analogModel.io.extsel_clk := io.adcScr.extsel_clk
+  analogModel.io.vref0 := io.adcScr.vref0
+  analogModel.io.vref1 := io.adcScr.vref1
+  analogModel.io.vref2 := io.adcScr.vref2
+  analogModel.io.clkgcal := io.adcScr.clkgcal
+  analogModel.io.clkgbias := io.adcScr.clkgbias
+   
+    //analogModel.io <> io.adcScr
+    attach(io.ADCINP, analogModel.io.ADCINP)
+    attach(io.ADCINM, analogModel.io.ADCINM)
+    analogModel.io.ADCCLKP := io.ADCCLKP
+    analogModel.io.ADCCLKM := io.ADCCLKM
+    analogModel.io.ADCBIAS := io.ADCBIAS
+    analogModel.io.clkrst := io.clkrst
 
-  io.widePulseSlowClk := analogModel.io.widePulseSlowClk
+    // Synchronized to last phase of slowest clk, reset guaranteed to go low before 
+    // used clk is generated
+    val subsamplingFactorMin = FFASTTopParams.ffastParams.subSamplingFactors(ffastParams.subFFTns.min)
+    val slowestGenClkLastPhase = analogModel.io.clkout(subsamplingFactorMin)(ffastParams.adcDelays.max)
+    val resetClkAlignment = AsyncRegInit(clk = slowestGenClkLastPhase, reset = io.clkrst, init = true.B)
+    resetClkAlignment.io.in := false.B
+
+    val lcmCounter = withClockAndReset(slowestGenClkLastPhase, resetClkAlignment.io.out) {
+      val minFFT = ffastParams.subFFTns.min
+      val count = Wire(UInt(range"[0, $minFFT)"))
+      val isMaxCount = count === (minFFT - 1).U 
+      val countNext = Mux(isMaxCount, 0.U, count + 1.U)
+      count := RegNext(next = countNext, init = 0.U)
+      count
+    }
+
+
+
+
+
+
+/*
+
 
   // TODO: Being too conservative here w/ lots of extra regs...
   // This makes sure input doesn't start until the below output valids have been reset
@@ -368,38 +395,47 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     ShiftRegister(notCollectADCSamplesStateNoDelay, 3)
   }
 
+*/
+
+/*
   analogModel.io.resetValid := notCollectADCSamplesState
   analogModel.io.collectADCSamplesState := collectADCSamplesState
   analogModel.io.analogIn := io.analogIn
   io.adcClks := analogModel.io.adcClks
 
+  */
+
   ffastParams.getSubFFTDelayKeys foreach { case (n, ph) => 
-    val thisClk = analogModel.io.adcClks(n)(ph)
+    val subsamplingFactor = FFASTTopParams.ffastParams.subSamplingFactors(n)
+    val thisClk = analogModel.io.clkout(subsamplingFactor)(ph)
+    io.adcClks(n)(ph) := thisClk
     // Goes high after the last phase following synchronization
-    val originalValid = analogModel.io.adcSubFFTValid(n)
+
     // Synchronized to correct clk
     io.adcDigitalOut(n)(ph).bits := withClock(thisClk) {
       // Delay 3x the data that was valid at the right time from ADC
-      ShiftRegister(analogModel.io.adcDigitalOut(n)(ph), 3)
+      ShiftRegister(analogModel.io.adcout(subsamplingFactor)(ph), 3)
     }
-    val delayedReset = withClock(thisClk) {
-      ShiftRegister(notCollectADCSamplesStateNoDelay, 3)
-    }
+    //val delayedReset = withClock(thisClk) {
+    //  ShiftRegister(notCollectADCSamplesStateNoDelay, 3)
+    //}
 
     // TODO: HOW TO GUARANTEE TIMING ON THIS GUY?
     // First reg isn't adding pipeline delay -- it's to align with ADC data
     // since valid goes high before ADC data is output
-    val synchronizedValid = withClock(thisClk) {
+    //val synchronizedValid = withClock(thisClk) {
       // First guy is to align up with ADC output (since valid goes high on some weird phase)
       // The next 2 registers are synchronization
-      ShiftRegister(analogModel.io.adcSubFFTValid(n), 3)
-    }
+     // ShiftRegister(analogModel.io.adcSubFFTValid(n), 3)
+    //}
     // Synchronize valid to local clk
     // Also matches delay of ADC
-    io.adcDigitalOut(n)(ph).valid := withClockAndReset(thisClk, delayedReset) {
+    io.adcDigitalOut(n)(ph).valid :=  true.B
+
+    /*withClockAndReset(thisClk, delayedReset) {
       RegEnable(next = true.B, enable = synchronizedValid, init = false.B)
-    }
+    }*/
   }
-*/
+
 
 }

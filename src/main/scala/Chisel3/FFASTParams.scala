@@ -41,6 +41,7 @@ object FFASTTopParams {
   val fastClkPeriod = 0.1
   val slowClkExtPeriod = fastClkPeriod * 20
   val inputDelay = 0.02
+  val rstDly = 1.5
 
   val fastClkPeriodsBeforeMaxFFTPh0ForInternalValid = 2
 
