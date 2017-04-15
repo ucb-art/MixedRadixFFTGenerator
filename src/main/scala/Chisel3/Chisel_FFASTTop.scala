@@ -141,19 +141,18 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   inputSubFFTIdxToBankAddrLUT.io.clk := globalClk
   outputSubFFTIdxToBankAddrLUT.io.clk := globalClk
 
-  val debugBlock = Module(
-    new Debug(
-      dspDataType,
-      ffastParams,
-      statesInt,
-      subFFTnsColMaxs)
-  )
+  val (dataMemsTemp, memDlys) = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+    // TODO: Should dspDataType be complex?
+    val memBankLengths = ffastParams.subFFTBankLengths(n)
+    val mem = Module(new MemBankInterface(DspComplex(dspDataType), memBankLengths, name = s"ffastDataSRAM_${n}_${ph}"))
+    mem.io.clk := globalClk
+    mem.suggestName(s"ffastDataMemInterface_${n}_${ph}")
+    ((n, ph) -> mem, mem.moduleDelay)
+  }.unzip
 
-  debugBlock.io.scr <> io.scr
-  debugBlock.io.currentState := currentState
-  debugBlock.io.clk := globalClk
-  debugBlock.io.adcIdxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
-  debugBlock.io.postFFTIdxToBankAddr.bankAddrs := outputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
+  val dataMems = dataMemsTemp.toMap
+  require(memDlys.distinct.length == 1)
+  val memOutDelay = memDlys.min
 
   val subFFTs = ffastParams.subFFTns.map { case fft =>
     val fftParams = PeelingScheduling.getFFTParams(fft)
@@ -163,21 +162,29 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
       parallelPELabels = ffastParams.adcDelays,
       fftType = ffastParams.inputType,
       // TODO: DON'T HARD CODE!!!
-      memOutDelay = 1
+      memOutDelay = memOutDelay
     ))
     mod.io.clk := globalClk
     mod.suggestName(s"subFFT$fft")
     fft -> mod
   }.toMap
 
-  val dataMems = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-    // TODO: Should dspDataType be complex?
-    val memBankLengths = ffastParams.subFFTBankLengths(n)
-    val mem = Module(new MemBankInterface(DspComplex(dspDataType), memBankLengths, name = s"ffastDataSRAM_${n}_${ph}"))
-    mem.io.clk := globalClk
-    mem.suggestName(s"ffastDataMemInterface_${n}_${ph}")
-    (n, ph) -> mem
-  }.toMap
+  val debugBlock = Module(
+    new Debug(
+      dspDataType,
+      ffastParams,
+      statesInt,
+      subFFTnsColMaxs,
+      memOutDelay = memOutDelay,
+      idxToBankAddrDelay = inputSubFFTIdxToBankAddrLUT.moduleDelay
+      )
+  )
+
+  debugBlock.io.scr <> io.scr
+  debugBlock.io.currentState := currentState
+  debugBlock.io.clk := globalClk
+  debugBlock.io.adcIdxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
+  debugBlock.io.postFFTIdxToBankAddr.bankAddrs := outputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
 
   // TODO: This DspComplex[T] vs. T being DspComplex thing is driving me crazy -- make consistent!
   def connectToMem(
@@ -432,7 +439,7 @@ class FFASTTopWrapper[T <: Data:RealBits](
 
 class FFASTTopSpec extends FlatSpec with Matchers {
   behavior of "FFASTTop"
-  it should "read in ADC inputs" in {
+  it should "work" in {
 
     import dspblocks.fft.FFASTTopParams._
 
@@ -446,6 +453,32 @@ class FFASTTopSpec extends FlatSpec with Matchers {
           adcDataType = adcDataType, 
           dspDataType = dspDataType,
           ffastParams = ffastParams,
+          maxNumPeels = maxNumPeels,
+          useBlackBox = false
+        ), opt
+      ) { c =>
+        new FFASTTopTester(c)
+      } should be (true)
+    }
+  }
+}
+
+class FFASTTopSmallSpec extends FlatSpec with Matchers {
+  behavior of "FFASTTop (small)"
+  it should "work" in {
+
+    import dspblocks.fft.FFASTTopParams._
+
+    val opt = TestParams.optionsBTolWaveformTB(lsbs = fpBP - 1, outDir = "test_run_dir/FFASTTopSmallTB")
+
+    dsptools.DspContext.alter(dspContext) {
+      dsptools.Driver.execute(() => 
+        new FFASTTopWrapper(
+          //adcDataType = DspReal(),
+          //dspDataType = DspReal(),
+          adcDataType = adcDataType, 
+          dspDataType = dspDataType,
+          ffastParams = ffastParams.copy(delays = Seq(Seq(0, 1))),
           maxNumPeels = maxNumPeels,
           useBlackBox = false
         ), opt
@@ -481,13 +514,13 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 }
 
 class FFASTTopBuildSmallMemTestSpec extends FlatSpec with Matchers {
-  behavior of "FFASTTopBuild"
+  behavior of "FFASTTopBuild (small, without memories)"
   it should "not fail to build" in {
 
     import dspblocks.fft.FFASTTopParams._
 
     dsptools.DspContext.alter(dspContext) {
-      chisel3.Driver.execute(TestParams.buildWithMemories(name = "BuildWithMemoriesSmall"), () => 
+      chisel3.Driver.execute(TestParams.buildWithMemories(name = "BuildSmall"), () => 
         new FFASTTopWrapper(
           adcDataType = adcDataType, 
           dspDataType = dspDataType,
@@ -573,7 +606,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     p.xlabel = "Frequency Bin"
     p.ylabel = "20log10(||Vpeak||)"
 
-    f.saveas(s"test_run_dir/FFASTTopTB/${test}Result_${fft}_${ph}.pdf") 
+    f.saveas(s"test_run_dir/${test}Result_${fft}_${ph}.pdf") 
 
     // TODO: Remove some redundancy
 

@@ -121,7 +121,11 @@ class Debug[T <: Data:RealBits](
     dspDataType: T, 
     ffastParams: FFASTParams, 
     states: Map[String, Int], 
-    subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
+    subFFTnsColMaxs: Map[Int, Seq[Int]],
+    memOutDelay: Int,
+    idxToBankAddrDelay: Int) extends Module {
+
+  val delayToMatch = memOutDelay + idxToBankAddrDelay
 
   val io = IO(new DebugIO(dspDataType, ffastParams, states.toSeq.length, subFFTnsColMaxs))
 
@@ -141,8 +145,9 @@ class Debug[T <: Data:RealBits](
     val cpuWrite = getAllCPUwes.reduce(_ | _)
     val usedIdx = Mux(cpuWrite, io.scr.ctrlMemWrite.wIdx, io.scr.ctrlMemReadFromCPU.rIdx)
     val isADCCollectDebugState = io.currentState === states("ADCCollectDebug").U
+
     val delayedIsADCCollectDebugState = 
-      withClockAndReset(io.clk, io.stateInfo.start) { RegNext(isADCCollectDebugState) }
+      withClockAndReset(io.clk, io.stateInfo.start) { ShiftRegister(isADCCollectDebugState, idxToBankAddrDelay) }
 
     val (addrTemp, bankTemp) = ffastParams.subFFTns.map { case n =>
       io.adcIdxToBankAddr.idxs(n) := usedIdx
@@ -161,14 +166,13 @@ class Debug[T <: Data:RealBits](
     val bank = bankTemp.toMap
 
     // Since bank, address delayed by 1 clk cycle (through LUT)
-    val delayedCPUdin = withClockAndReset(io.clk, io.stateInfo.start) { RegNext(io.scr.ctrlMemWrite.din) }
+    val delayedCPUdin = withClockAndReset(io.clk, io.stateInfo.start) { ShiftRegister(io.scr.ctrlMemWrite.din, idxToBankAddrDelay) }
     // Bank, address delayed by 1 clk cycle; mem read takes another cycle
-    // TODO: Don't hard code???
     val delayedCPUrIdx = withClockAndReset(io.clk, io.stateInfo.start) { 
-      ShiftRegister(io.scr.ctrlMemReadFromCPU.rIdx, 2) }
+      ShiftRegister(io.scr.ctrlMemReadFromCPU.rIdx, delayToMatch) }
 
     val delayedCPUre = withClockAndReset(io.clk, io.stateInfo.start) { 
-      ShiftRegister(io.scr.ctrlMemReadFromCPU.re, 2, resetData = false.B, en = true.B) }
+      ShiftRegister(io.scr.ctrlMemReadFromCPU.re, delayToMatch, resetData = false.B, en = true.B) }
     io.scr.reToCPU := delayedCPUre
 
     // TODO: Kind of redundant with what's outside but whatever...
@@ -182,10 +186,10 @@ class Debug[T <: Data:RealBits](
       io.dataToMemory(n)(ph)(0).din := delayedCPUdin
       // To be safe, always reset WE @ CPU side!
       val weTemp = withClockAndReset(io.clk, io.stateInfo.start) { 
-        RegNext(io.scr.ctrlMemWrite.getWE(n, ph)) }
+        ShiftRegister(io.scr.ctrlMemWrite.getWE(n, ph), idxToBankAddrDelay) }
       io.dataToMemory(n)(ph)(0).we := weTemp & currStateIsDebug 
       val reTemp = withClockAndReset(io.clk, io.stateInfo.start) {
-        RegNext(io.scr.ctrlMemReadFromCPU.getRE(n, ph)) }
+        ShiftRegister(io.scr.ctrlMemReadFromCPU.getRE(n, ph), idxToBankAddrDelay) }
       io.dataFromMemory(n)(ph)(0).re := reTemp & currStateIsDebug
       // WARNING: always check that last read/write were successful before exiting!
       // 1 cycle delay for bank, addr (therefore we, re need to be equivalently delayed)

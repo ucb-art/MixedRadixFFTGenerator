@@ -4,6 +4,7 @@ import dsptools.numbers._
 import dsptools.numbers.implicits._
 import chisel3.experimental._
 import barstools.tapeout.transforms._
+import chisel3.util._
 
 // Crossbar + Membanks
 
@@ -36,9 +37,15 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int], name:
   // Read data valid 1 clk cycle after read address
   // Have as many input ports as # of banks -- that then gets sorted
   // TODO: Should get delay from sub-modules
-  val moduleDelay = 1
+  
   val io = IO(new MemBankInterfaceIO(dataType, maxNumBanks = bankLengths.length, maxDepth = bankLengths.max))
   val memBanks = Module(new MemBanks(dataType, bankLengths, name = name))
+
+  // Read address delayed + additional set of registers @ this output
+  // TODO: Don't hard code
+  val memDoutDelay = 1
+  val moduleDelay = memBanks.moduleDelay + memDoutDelay
+
   withClock(io.clk) {
 
     // Wire to give a better name :\
@@ -88,10 +95,10 @@ class MemBankInterface[T <: Data:Ring](dataType: T, bankLengths: Seq[Int], name:
     }
 
     io.o.zipWithIndex foreach { case (lane, laneIdx) =>
-      lane.dout := Mux1H(memBanks.io.bank.elements.map { case (bankIdx, bankIo) => 
+      lane.dout := ShiftRegister(Mux1H(memBanks.io.bank.elements.map { case (bankIdx, bankIo) => 
         // Read delay happens one cycle after address valid -- need to delay match
         (RegNext(readBankSel(bankIdx.toInt)(laneIdx)), bankIo.dout)
-      })
+      }), memDoutDelay)
     }
   }
 }

@@ -38,7 +38,11 @@ class WriteBeforeReadMemIO[T <: Data:Ring](dataType: => T, depth: Int) extends B
 // If memory is written and read at the same time (same address),
 // the written memory is passed through to read
 @chiselName
-class WriteBeforeReadMem[T <: Data:Ring](dataType: => T, val depth: Int, name: String = "") extends Module {
+class WriteBeforeReadMem[T <: Data:Ring](dataType: => T, val depth: Int, name: String = "") extends Module with DelayTracking {
+
+  // Read address delayed
+  val moduleDelay = 1
+
   // TODO: Save power by using write mask, read enable
   val io = IO(new WriteBeforeReadMemIO(dataType, depth))
   withClock(io.clk) {

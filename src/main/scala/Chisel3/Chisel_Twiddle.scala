@@ -30,7 +30,8 @@ class TwiddleGen[T <: Data:RealBits](
     dspDataType: => T, 
     fftParams: FactorizationParams, 
     fftType: FFTType, 
-    wftaDelay: Int) extends Module with DelayTracking {
+    wftaDelay: Int,
+    delayToMatch: Int) extends Module with DelayTracking {
 
   require(fftParams.calc.getStages.length == 1, "Only 1 FFT supported at a time!")
   
@@ -42,7 +43,9 @@ class TwiddleGen[T <: Data:RealBits](
   // CalcCtrl (2) + Mem Read Delay (1)
   // Delayed @ TwiddleAddr + final out (x2) -- Look for shift register
   // See !@#$
-  val moduleDelay = 3
+  val moduleDelay = delayToMatch
+  val dly1 = 1
+  val dly2 = moduleDelay - dly1
 
   val twiddleType = fftParams.twiddle.getTwiddleType(dspDataType)
 
@@ -87,7 +90,7 @@ class TwiddleGen[T <: Data:RealBits](
     val maxTwiddleROMDepth = fftParams.twiddle.maxTwiddleROMDepth
     val twiddleAddr = Wire(UInt(range"[0, $maxTwiddleROMDepth)"))
     // !@#$
-    twiddleAddr := ShiftRegister(twiddleCount * twiddleCountMulsUsed, 1)
+    twiddleAddr := ShiftRegister(twiddleCount * twiddleCountMulsUsed, dly1)
 
     val primeIdxInt = stagePrimes.map { case p => 
       val idx = globalPrime.indexOf(p) 
@@ -96,7 +99,7 @@ class TwiddleGen[T <: Data:RealBits](
     }
     val primeIdx = primeIdxInt.map(p => p.U)
     // !@#$
-    val currentPrimeIdx = ShiftRegister(Mux1H(io.currentStageToTwiddle.zip(primeIdx)), 1)
+    val currentPrimeIdx = ShiftRegister(Mux1H(io.currentStageToTwiddle.zip(primeIdx)), dly1)
 
     // Parameters: columns associated with twiddles for 1 until radix, but want to address column first
     val twiddleList = fftParams.twiddle.twiddles.map { case (associatedPrime, twiddles) => 
@@ -167,7 +170,7 @@ class TwiddleGen[T <: Data:RealBits](
     outInternal.zipWithIndex foreach { case (outLane, idx) =>
       val laneIdx = idx + 1
       // !@#$
-      io.twiddles(laneIdx) := ShiftRegister(outLane, 2) 
+      io.twiddles(laneIdx) := ShiftRegister(outLane, dly2) 
     }
 
   }

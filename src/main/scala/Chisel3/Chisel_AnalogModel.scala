@@ -252,7 +252,7 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
 
   val constraints = pinsSDC ++ Seq(fastClkSDC) ++ outClkConstraints ++ otherConstraints
   // TODO: Don't hardcode?
-  setInline(s"FFASTTopWrapper.sdc", constraints.toSeq.mkString("\n"))
+  setInline(s"FFASTTop.sdc", constraints.toSeq.mkString("\n"))
 
 }
 
@@ -317,6 +317,12 @@ class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: F
     Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelWrapperIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
+
+
+
+
+
+
 
 
 

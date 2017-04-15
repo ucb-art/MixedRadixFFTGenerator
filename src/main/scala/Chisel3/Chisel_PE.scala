@@ -3,9 +3,9 @@ import chisel3._
 import chisel3.experimental._
 import dsptools.numbers._
 import dsptools.numbers.implicits._
-import dsptools.hasContext
 import barstools.tapeout.transforms._
 import chisel3.util._
+import dsptools.{hasContext, DspContext}
 
 class ProcessingElementIO[T <: Data:RealBits](
     twiddleType: => T,
@@ -28,6 +28,7 @@ class ProcessingElementIO[T <: Data:RealBits](
 }
 
 // TODO: Add programmable DIT/DIF support
+@chiselName
 class ProcessingElement[T <: Data:RealBits](
     twiddleType: => T, 
     dataType: => T, 
@@ -39,37 +40,43 @@ class ProcessingElement[T <: Data:RealBits](
 
   wfta.io.clk := io.clk
 
-  // TODO: Consistent naming
-  val twDelay = context.complexMulPipe
-  val moduleDelay = wfta.moduleDelay + twDelay
+  // TODO: Don't hard code!!
+  val (moduleDelay, twDelay) = DspContext.withNumAddPipes(1) {
 
-  withClock(io.clk) {
-    // Delayed in CalcCtrl
-    // TODO: What happens if only 1 radix is used?
-    wfta.io.currRad := io.currRad
+    // TODO: Consistent naming
+    val twDelay = context.complexMulPipe
 
-    // DIF twiddle multiplication after WFTA; DIT twiddle multiplication before WFTA
-    val twMulIn = fftType match {
-      case DIT => io.x
-      case DIF => wfta.io.y
-    }
+    withClock(io.clk) {
+      // Delayed in CalcCtrl
+      // TODO: What happens if only 1 radix is used?
+      wfta.io.currRad := io.currRad
 
-    val twMulOut = twMulIn.zipWithIndex.map { case (in, idx) =>
-      if (idx == 0) ShiftRegister(in, twDelay)
-      else {
-        in context_* io.twiddles(idx)
+      // DIF twiddle multiplication after WFTA; DIT twiddle multiplication before WFTA
+      val twMulIn = fftType match {
+        case DIT => io.x
+        case DIF => wfta.io.y
+      }
+
+      val twMulOut = twMulIn.zipWithIndex.map { case (in, idx) =>
+        if (idx == 0) ShiftRegister(in, twDelay)
+        else {
+          in context_* io.twiddles(idx)
+        }
+      }
+
+      // TODO: Can use non-delayed DIT flag for programmable
+      fftType match {
+        case DIT => 
+          wfta.io.x := twMulOut
+          io.y := wfta.io.y
+        case DIF => 
+          wfta.io.x := io.x
+          io.y := twMulOut
       }
     }
 
-    // TODO: Can use non-delayed DIT flag for programmable
-    fftType match {
-      case DIT => 
-        wfta.io.x := twMulOut
-        io.y := wfta.io.y
-      case DIF => 
-        wfta.io.x := io.x
-        io.y := twMulOut
-    }
+    (wfta.moduleDelay + twDelay, twDelay)
+
   }
 
 }

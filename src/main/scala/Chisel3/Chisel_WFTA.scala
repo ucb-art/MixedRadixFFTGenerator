@@ -234,7 +234,9 @@ class WFTA[T <: Data:RealBits](dspDataType: => T, fftParams: FactorizationParams
       }
       if (x == WFTAMul) context.numMulPipes
       // Add pipeline to last stage manually
-      // TODO: UNDO
+      // TODO: UNDO (b/c decimal isn't supported in dsptools...)
+      // TODO: SERIOUS UNDO
+      else if (idx == 2) 1
       else if (idx == WFTA.stages.length - 1) 1
       // Add a Pipe if enough adds in series
       else if (context.numAddPipes < 1) math.floor(count * context.numAddPipes.toDouble).toInt

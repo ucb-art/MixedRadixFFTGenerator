@@ -32,7 +32,7 @@ class SubFFT[T <: Data:RealBits](
     fftParams: FactorizationParams, 
     parallelPELabels: Seq[Int], 
     fftType: FFTType, 
-    memOutDelay: Int) extends Module {
+    val memOutDelay: Int) extends Module {
 
   val maxNumBanks = fftParams.mem.maxNumBanks
   
@@ -48,12 +48,6 @@ class SubFFT[T <: Data:RealBits](
   ).toMap
   val pe0Ref = pe.toSeq.head._2
 
-  val twiddleGen = Module(new TwiddleGen(
-    dspDataType = dspDataType, 
-    fftParams,
-    fftType,
-    wftaDelay = pe0Ref.wfta.moduleDelay
-  ))
   val calcCtrl = Module(new CalcCtrl(
     fftParams, 
     fftType,
@@ -63,8 +57,14 @@ class SubFFT[T <: Data:RealBits](
     twDly = pe0Ref.twDelay
   ))
 
-  require(twiddleGen.moduleDelay == (calcCtrl.moduleDelay + memOutDelay), 
-    "Twiddle gen and (Calc + Mem) delays must match to reach BF @ the same time!")
+  val twiddleGen = Module(new TwiddleGen(
+    dspDataType = dspDataType, 
+    fftParams,
+    fftType,
+    wftaDelay = pe0Ref.wfta.moduleDelay,
+    // TODO: Better name
+    delayToMatch = calcCtrl.moduleDelay + memOutDelay
+  ))
 
   calcCtrl.io.clk := io.clk
   calcCtrl.io.stateInfo <> io.stateInfo
