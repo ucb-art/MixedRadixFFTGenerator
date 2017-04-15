@@ -69,7 +69,9 @@ class FFASTTop[T <: Data:RealBits](
   dspDataType: => T, 
   ffastParams: FFASTParams, 
   maxNumPeels: Int = 10,
-  useBlackBox: Boolean) extends chisel3.Module with RealAnalogAnnotator {
+  useBlackBox: Boolean) extends 
+    chisel3.Module(override_clock = Some(false.B.asClock), override_reset = Some(true.B)) 
+    with RealAnalogAnnotator {
 
 ////////////////// STATE MACHINE
 
@@ -461,7 +463,8 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
 
     dsptools.DspContext.alter(dspContext) {
       chisel3.Driver.execute(TestParams.buildWithMemories(topName = "FFASTTop"), () => 
-        new FFASTTop(
+        // WARNING UNUSED THINGS NOT CONNECTED IN WRAPPER!!!
+        new FFASTTopWrapper(
           adcDataType = adcDataType, 
           dspDataType = dspDataType,
           ffastParams = ffastParams,
