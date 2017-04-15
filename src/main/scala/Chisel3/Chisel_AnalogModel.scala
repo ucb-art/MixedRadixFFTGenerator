@@ -173,7 +173,7 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
 }
 
 // TODO: Don't use BBInline to print stuff...
-class AnalogModelBlackBox[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, name : String) extends BlackBox {
+class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, name : String) extends BlackBox {
   // val io = IO(new AnalogModelIO(adcDataType, ffastParams))
   val io = IO(new AnalogModelIO)
 
@@ -334,7 +334,7 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     if (useBlackBox) {
       // TODO: WARNING: Should only exist once!
       val analogBlockName = "analogBlockAngieModel"
-      val m = Module(new AnalogModelBlackBox(adcDataType, ffastParams, name = analogBlockName))
+      val m = Module(new TISARADC_SFFT(adcDataType, ffastParams, name = analogBlockName))
       m.suggestName(analogBlockName)
       m
     }
