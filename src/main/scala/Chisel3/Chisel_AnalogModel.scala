@@ -235,11 +235,15 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
   val otherConstraints = Seq(
     // Below are top-level ports
     // == resetClk
-    "if {[get_db core] == \"FFASTTopWrapper\"} {",
+    "if {[get_db core] == \"FFASTTop\"} {",
     // core_reset in chip top
     "  set_false_path -from [get_ports io_stateMachineReset]",
     // CLK_CPU created in chip top = core_clock
     s"  create_clock -name CLK_CPU -period ${FFASTTopParams.slowClkExtPeriod} [get_ports io_extSlowClk]",
+
+    // Should be auto constrained at chip top level, but here, these are inputs
+    s"set_input_delay -clock CLK_CPU ${FFASTTopParams.inputDelay} [get_ports io_scr*]", 
+    s"set_input_delay -clock CLK_CPU ${FFASTTopParams.inputDelay} [get_ports io_adcScr*]", 
     "}",
     s"  set_clock_groups -asynchronous -group CLK_CPU -group { IOFASTCLK ${adcClkNames.mkString(" ")} }",
     s"  set_max_delay -from [get_ports *clkrst] $rstDly",
