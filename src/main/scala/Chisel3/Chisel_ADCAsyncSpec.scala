@@ -49,7 +49,7 @@ class CollectADCSamplesIO[T <: Data:RealBits](
     ffastParams: FFASTParams, 
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle with PeripheryADCBundle {
 
-  val adcScr = new ADCSCR
+  val adcScr = new ADCSCR(ffastParams)
 
   // In case ADC doesn't work, be able to skip out of this state
   val skipADC = Input(Bool())

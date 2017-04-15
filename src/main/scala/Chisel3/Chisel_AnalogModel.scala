@@ -11,9 +11,9 @@ import barstools.tapeout.transforms.clkgen._
 
 // TODO: Get rid of copy paste, don't use fixed params
 
-class ADCSCR extends SCRBundle {
-  val subsamplingFactors = FFASTTopParams.ffastParams.subSamplingFactors.map(_._2).toSeq
-  val adcDelays = FFASTTopParams.ffastParams.adcDelays
+class ADCSCR(ffastParams: FFASTParams) extends SCRBundle {
+  val subsamplingFactors = ffastParams.subSamplingFactors.map(_._2).toSeq
+  val adcDelays = ffastParams.adcDelays
 
   val asclkd = CustomIndexedBundle(CustomIndexedBundle(
     Input(UInt(4.W)), 
@@ -30,6 +30,8 @@ class ADCSCR extends SCRBundle {
   val clkgcal = CustomIndexedBundle(Input(UInt(8.W)), subsamplingFactors)
 
   val clkgbias = Input(UInt(8.W))
+
+  override def cloneType = (new ADCSCR(ffastParams)).asInstanceOf[this.type]
 }
 
 trait PeripheryADCBundle {
@@ -41,43 +43,18 @@ trait PeripheryADCBundle {
   val clkrst = Input(Bool())
 }
 
-class AnalogModelIO extends ADCSCR with PeripheryADCBundle {
+class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends ADCSCR(ffastParams) with PeripheryADCBundle {
 
   val adcout = CustomIndexedBundle(CustomIndexedBundle(
-    Output(FFASTTopParams.adcDataType), 
+    Output(adcDataType), 
     adcDelays), subsamplingFactors)
 
   val clkout = CustomIndexedBundle(CustomIndexedBundle(
     Output(Clock()), 
     adcDelays), subsamplingFactors)
-}
 
-/*
-class AnalogModelIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Bundle {
-  // Chip startup
-  val resetClk = Input(Bool())
-  // Fast clk
-  val inClk = Input(Clock())
-
-  // WARNING: NEEDS INTERNAL REGISTERING
-  // HOLD -- indicates you're in the state where ADC inputs matter
-  val collectADCSamplesState = Input(Bool())
-  // NOTE: This goes low 6 slowest clock cycles before collectADCSamplesState goes high
-  // -- should internally register to synchronize to the right clk
-  val resetValid = Input(Bool())
-  // Full rate ADC in
-
-  val widePulseSlowClk = Output(Clock())
-
-  val analogIn = Input(DspReal())
-  val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
-  val adcDigitalOut = CustomIndexedBundle(CustomIndexedBundle(
-    Output(adcDataType), ffastParams.adcDelays), ffastParams.subFFTns)
-  // Per sub-FFT (aligned on close to last edge)
-  val adcSubFFTValid = CustomIndexedBundle(Output(Bool()), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelIO(adcDataType, ffastParams)).asInstanceOf[this.type]
-} 
-*/
+}
 
 object ModuleHierarchy {
   // TODO: Clean up
@@ -152,7 +129,7 @@ object BitsToReal {
 }
 
 class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module with RealAnalogAnnotator {
-  val io = IO(new AnalogModelIO)
+  val io = IO(new AnalogModelIO(adcDataType, ffastParams))
   annotateReal()
   val ffastClkDiv = Module(new FFASTClkDiv(ffastParams))
   ffastClkDiv.io.inClk := (io.ADCCLKP & ~io.ADCCLKM).asClock
@@ -163,7 +140,8 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
   val adcs = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
     val thisClk = ffastClkDiv.io.outClks(n)(ph)
     val subsamplingFactor = ffastParams.subSamplingFactors(n)
-    io.clkout(subsamplingFactor)(ph) := thisClk
+    // Model the fact that there is some oscillation when reset is high
+    io.clkout(subsamplingFactor)(ph) := (thisClk.asUInt.toBool | (io.clkrst & io.ADCCLKP)).asClock
     val adc = Module(new FakeADC(adcDataType))
     adc.io.clk := thisClk
     adc.io.analogIn := RealToBits(io.ADCINP) - RealToBits(io.ADCINM)
@@ -175,7 +153,7 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
 // TODO: Don't use BBInline to print stuff...
 class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, name : String) extends BlackBox {
   // val io = IO(new AnalogModelIO(adcDataType, ffastParams))
-  val io = IO(new AnalogModelIO)
+  val io = IO(new AnalogModelIO(adcDataType, ffastParams))
 
   // This module = 1, then goes up
   // val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
@@ -256,60 +234,10 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
 
 }
 
-/*
-class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module {
-  val io = IO(new AnalogModelIO(adcDataType, ffastParams))
-  val ffastClkDiv = Module(new FFASTClkDiv(ffastParams))
-  ffastClkDiv.io.inClk := io.inClk
-  ffastClkDiv.io.resetClk := io.resetClk
-  // Valid data only in CollectADCSamplesState (becomes active
-  // 6 cycles after reset is lowered), should be aligned to when all PH0's are aligned
-  val frameAlignedMasterTemp = AsyncResetReg(
-    true.B, 
-    clk = (ffastClkDiv.io.frameAligned & io.collectADCSamplesState).asClock, 
-    rst = io.resetValid 
-  )
-
-  // For debugging purposes
-  val frameAlignedMaster = Wire(Bool())
-  frameAlignedMaster := frameAlignedMasterTemp
-
-  io.adcSubFFTValid.elements foreach { case (nS, port) => 
-    val n = nS.toInt
-    val clkMaxPh = ffastClkDiv.io.outClks(n)(ffastParams.clkDelays.max)
-    // TODO: 3 is probably overkill...
-    val syncReset = withClock(clkMaxPh) {
-      ShiftRegister(io.resetValid, 1)
-    }
-    // Should definitely be done resetting before frameAligned goes high (due to the 4 to 10 difference in delay)
-    val reg = AsyncResetReg(
-      frameAlignedMaster,
-      clk = clkMaxPh,
-      rst = syncReset
-    )
-    port := reg
-  }
-
-  // Memories have minimum pulse width requirements
-  io.widePulseSlowClk := ffastClkDiv.io.widePulseSlowClk
-
-  // TODO: Switch to this syntax everywhere
-  val adcs = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
-    val thisClk = ffastClkDiv.io.outClks(n)(ph)
-    io.adcClks(n)(ph) := thisClk
-    val adc = Module(new FakeADC(adcDataType))
-    adc.io.clk := thisClk
-    adc.io.analogIn := io.analogIn
-    io.adcDigitalOut(n)(ph) := adc.io.digitalOut
-    adc
-  }
-}
-*/
-
 // Wrapper that handles some amount of synchronization
 
 class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Bundle with PeripheryADCBundle {
-  val adcScr = new ADCSCR
+  val adcScr = new ADCSCR(ffastParams)
   // HOLD -- indicates you're in the state where ADC inputs matter
   val collectADCSamplesState = Input(Bool())
   val adcClks = CustomIndexedBundle(CustomIndexedBundle(Output(Clock()), ffastParams.adcDelays), ffastParams.subFFTns)
@@ -333,7 +261,7 @@ class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: F
 
 
 
-
+@chiselName
 class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, useBlackBox: Boolean) extends Module with RealAnalogAnnotator {
 
   val io = IO(new AnalogModelWrapperIO(adcDataType, ffastParams))
@@ -358,94 +286,58 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
   analogModel.io.vref2 := io.adcScr.vref2
   analogModel.io.clkgcal := io.adcScr.clkgcal
   analogModel.io.clkgbias := io.adcScr.clkgbias
-   
-    //analogModel.io <> io.adcScr
-    attach(io.ADCINP, analogModel.io.ADCINP)
-    attach(io.ADCINM, analogModel.io.ADCINM)
-    analogModel.io.ADCCLKP := io.ADCCLKP
-    analogModel.io.ADCCLKM := io.ADCCLKM
-    analogModel.io.ADCBIAS := io.ADCBIAS
-    analogModel.io.clkrst := io.clkrst
+     
+  attach(io.ADCINP, analogModel.io.ADCINP)
+  attach(io.ADCINM, analogModel.io.ADCINM)
+  analogModel.io.ADCCLKP := io.ADCCLKP
+  analogModel.io.ADCCLKM := io.ADCCLKM
+  analogModel.io.ADCBIAS := io.ADCBIAS
+  analogModel.io.clkrst := io.clkrst
 
-    // Synchronized to last phase of slowest clk, reset guaranteed to go low before 
-    // used clk is generated
-    val subsamplingFactorMin = FFASTTopParams.ffastParams.subSamplingFactors(ffastParams.subFFTns.min)
-    val slowestGenClkLastPhase = analogModel.io.clkout(subsamplingFactorMin)(ffastParams.adcDelays.max)
-    val resetClkAlignment = AsyncRegInit(clk = slowestGenClkLastPhase, reset = io.clkrst, init = true.B)
+  val validLast = ffastParams.subSamplingFactors.map { case (n, divBy) => 
+    // Intermediate valid synchronized to the last phase; reset guaranteed to go low x fast clk cycles before
+    // the last phase is actually generated (i.e. there is a pulse)
+    val lastPh = analogModel.io.clkout(divBy)(ffastParams.adcDelays.max)
+    val resetClkAlignment = AsyncRegInit(clk = lastPh, reset = io.clkrst, init = true.B)
     resetClkAlignment.io.in := false.B
-
-    val lcmCounter = withClockAndReset(slowestGenClkLastPhase, resetClkAlignment.io.out) {
-      val minFFT = ffastParams.subFFTns.min
-      val count = Wire(UInt(range"[0, $minFFT)"))
-      val isMaxCount = count === (minFFT - 1).U 
-      val countNext = Mux(isMaxCount, 0.U, count + 1.U)
+    val countReset = resetClkAlignment.io.out
+    // Count should be 0 when first valid data comes out of the sampled ADC (1 cycle delay from sample/hold time)
+    // Now synchronous reset
+    val count = Wire(UInt(range"[0, $n)"))
+    val isMaxCount = count === (n - 1).U 
+    val countNext = Mux(isMaxCount, 0.U, count + 1.U)
+    val alignmentCount = withClockAndReset(lastPh, countReset) {
       count := RegNext(next = countNext, init = 0.U)
       count
     }
 
-
-
-
-
-
-/*
-
-
-  // TODO: Being too conservative here w/ lots of extra regs...
-  // This makes sure input doesn't start until the below output valids have been reset
-  // Slowest clk, ph0
-  val validSyncClk = analogModel.io.adcClks(ffastParams.subFFTns.min)(0)
-  val collectADCSamplesState = withClock(validSyncClk) {
-    ShiftRegister(io.collectADCSamplesState, 10)
-  }
-
-  val notCollectADCSamplesStateNoDelay = ~io.collectADCSamplesState
-  // TODO: Redundant overkill...
-  val notCollectADCSamplesState = withClock(validSyncClk) {
-    ShiftRegister(notCollectADCSamplesStateNoDelay, 3)
-  }
-
-*/
-
-/*
-  analogModel.io.resetValid := notCollectADCSamplesState
-  analogModel.io.collectADCSamplesState := collectADCSamplesState
-  analogModel.io.analogIn := io.analogIn
-  io.adcClks := analogModel.io.adcClks
-
-  */
+    // Clk domain crossing
+    val notCollectADCSamplesState = withClock(lastPh) {
+      ShiftRegister(~io.collectADCSamplesState, 3)
+    }
+    val alignedValid = withClockAndReset(lastPh, notCollectADCSamplesState) {
+      RegEnable(next = true.B, init = false.B, enable = isMaxCount)
+    }
+    n -> alignedValid
+  }.toMap
 
   ffastParams.getSubFFTDelayKeys foreach { case (n, ph) => 
-    val subsamplingFactor = FFASTTopParams.ffastParams.subSamplingFactors(n)
+    val subsamplingFactor = ffastParams.subSamplingFactors(n)
     val thisClk = analogModel.io.clkout(subsamplingFactor)(ph)
     io.adcClks(n)(ph) := thisClk
-    // Goes high after the last phase following synchronization
 
-    // Synchronized to correct clk
-    io.adcDigitalOut(n)(ph).bits := withClock(thisClk) {
-      // Delay 3x the data that was valid at the right time from ADC
-      ShiftRegister(analogModel.io.adcout(subsamplingFactor)(ph), 3)
+    val dataFromADC = analogModel.io.adcout(subsamplingFactor)(ph)
+    val internalValid = validLast(n)
+    val validAlignedWithDataFromADC = withClock(thisClk) {
+      RegNext(internalValid)
     }
-    //val delayedReset = withClock(thisClk) {
-    //  ShiftRegister(notCollectADCSamplesStateNoDelay, 3)
-    //}
 
-    // TODO: HOW TO GUARANTEE TIMING ON THIS GUY?
-    // First reg isn't adding pipeline delay -- it's to align with ADC data
-    // since valid goes high before ADC data is output
-    //val synchronizedValid = withClock(thisClk) {
-      // First guy is to align up with ADC output (since valid goes high on some weird phase)
-      // The next 2 registers are synchronization
-     // ShiftRegister(analogModel.io.adcSubFFTValid(n), 3)
-    //}
-    // Synchronize valid to local clk
-    // Also matches delay of ADC
-    io.adcDigitalOut(n)(ph).valid :=  true.B
-
-    /*withClockAndReset(thisClk, delayedReset) {
-      RegEnable(next = true.B, enable = synchronizedValid, init = false.B)
-    }*/
+    // TODO: Unnecessary synchronization?
+    io.adcDigitalOut(n)(ph).valid := withClock(thisClk) {
+      ShiftRegister(validAlignedWithDataFromADC, 2)
+    }
+    io.adcDigitalOut(n)(ph).bits := withClock(thisClk) {
+      ShiftRegister(dataFromADC, 2)
+    }
   }
-
-
 }

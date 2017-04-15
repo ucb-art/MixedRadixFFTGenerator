@@ -38,29 +38,11 @@ class FFASTTopIO[T <: Data:RealBits](
   val extSlowClk = Input(Clock())
 
   val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, numStates)
-  val adcScr = new ADCSCR
+  val adcScr = new ADCSCR(ffastParams)
 
   override def cloneType = 
     (new FFASTTopIO(dspDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]
 
-  ///////////////////////////////////////
-  //////////////////////////////// DEBUG
-/*
-  val asyncEnqValidMin = Output(Bool())
-  val asyncEnqDataMin = Output(dspDataType)
-  val asyncDeqValidMin = Output(Bool())
-  val asyncDeqDataMin = Output(dspDataType)
-
-  val asyncEnqValidMax = Output(Bool())
-  val asyncEnqDataMax = Output(dspDataType)
-  val asyncDeqValidMax = Output(Bool())
-  val asyncDeqDataMax = Output(dspDataType)
-
-  val subFFTMin = ffastParams.subFFTns.min 
-  val subFFTMax = ffastParams.subFFTns.max
-  val countMaxFFTMin = Output(UInt(range"[0, $subFFTMin]"))
-  val countMaxFFTMax = Output(UInt(range"[0, $subFFTMin]"))
-*/
 }
 
 @chiselName
@@ -573,7 +555,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   }
 
   // TODO: Combine with dsptools' checkDecimal
-  def compare(exp: Seq[Complex], out: Seq[Complex], tag: (Int, Int), fixTolOverride: Int = -1, test: String = "") = {
+  def compare(exp: Seq[Complex], out: Seq[Complex], tag: (Int, Int), fixTolOverride: Int = -1, test: String = "", print: Boolean = false) = {
 
     val fft = tag._1
     val ph = tag._2
@@ -606,7 +588,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     p.xlabel = "Frequency Bin"
     p.ylabel = "20log10(||Vpeak||)"
 
-    f.saveas(s"test_run_dir/${test}Result_${fft}_${ph}.pdf") 
+    if (print)
+      f.saveas(s"test_run_dir/${test}Result_${fft}_${ph}.pdf") 
 
     // TODO: Remove some redundancy
 
@@ -659,9 +642,11 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     val done = DebugNext(0, true)
     val incInput = DebugNext(debugNext.idx + 1, false)
     updatableDspVerbose.withValue(false) {
-      if (debugNext.idx < c.ffastParams.subFFTns.max)
-        poke(c.io.scr.ctrlMemReadFromCPU.rIdx, debugNext.idx)
-
+      
+      poke(c.io.scr.ctrlMemReadFromCPU.rIdx, debugNext.idx % c.ffastParams.subFFTns.max)
+      if (debugNext.idx >= c.ffastParams.subFFTns.max)
+        poke(c.io.scr.ctrlMemReadFromCPU.re, 0)
+      
       if (peek(c.io.scr.reToCPU) == 0) {
         // Don't increment if can't read
         debugNext
@@ -892,7 +877,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   def runDebug(state: String, stopIdx: Int = -1) = {
     updatableDspVerbose.withValue(false) { 
-      cycleThroughUntil(state)  
+      cycleThroughUntil(state) 
+      poke(c.io.scr.ctrlMemReadFromCPU.re, getAllEnable)
       var debugNext = DebugNext(idx = 0, done = false)
       while (!debugNext.done) {
         debugNext = debugCollection(debugNext, stopIdx)
@@ -996,9 +982,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   }
 
-/*
-
-// GENERAL READ AND WRITE TESTS
+// -------------------------------- GENERAL READ AND WRITE TESTS
 
   setupDebug(usedDebugStates)
 
@@ -1044,11 +1028,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     compare(exp = FFTTestVectors.createOutput(inFFT.take(n)), out = outVals.toSeq.take(n), tag = (n, ph), test = "Debug Write to FFT")
   }
   clearResults() 
-*/
 
-/*
-
-// ADC -> FFT OUTPUT TESTS
+// -------------------------------- ADC -> FFT OUTPUT TESTS
 
   setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
 
@@ -1075,14 +1056,13 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       fixTolOverride = fpBP + 1)
   }
   clearResults()
-*/
 
 // -------------------------------- FOR ROCKET-CHIP TESTING
 
   // Skip ADC Collect state for basic debug, since ADC isn't hooked up
   setupDebug(Seq("ADCCollect", "ADCCollectDebug", "FFTDebug"))
   // Smaller FFTs will use a subset
-  val inFFT = FFTTestVectors.createInput(c.ffastParams.subFFTns.max, fracBits = adcBP)
+  // val inFFT = FFTTestVectors.createInput(c.ffastParams.subFFTns.max, fracBits = adcBP)
 
   val cTestInputs = inFFT.map(x => FixedPoint.toBigInt(x.real, fpBP))
   
