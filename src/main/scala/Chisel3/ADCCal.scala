@@ -99,17 +99,21 @@ class ADCCalIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) 
 
 class ADCCal[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module with DelayTracking {
   val io = IO(new ADCCalIO(adcDataType, ffastParams))
-  val calMods = ffastParams.getSubFFTDelayKeys.map { case (n, ph) =>
+  val (calMods, modDelays) = ffastParams.getSubFFTDelayKeys.map { case (n, ph) =>
     val mod = Module(new SubADCCal(io.numBits, s"${n}_${ph}"))
-    mod.clk := io.clk 
-    mod.adcIn := io.adcIn(n)(ph)
-    io.calOut(n)(ph) := mod.calOut
-    io.adcCalScr.calOut(n)(ph) := mod.calOut
-    mod.isAdcCollect := io.isAdcCollect
-    mod.calCoeff := io.adcCalScr.calCoeff(n)(ph)
-    mod.loadAddr := io.adcCalScr.loadAddr
-    mod.re := io.adcCalScr.allRE 
-    mod.we := io.adcCalScr.getWE(n, ph)
-    io.adcCalScr.calOut(n)(ph) := mod.subADCCalScr.calOut
-  }
+    mod.suggestName(s"calMod_${n}_${ph}")
+    mod.io.clk := io.clk 
+    mod.io.adcIn := io.adcIn(n)(ph).asUInt
+    io.calOut(n)(ph) := adcDataType.fromBits(mod.io.calOut)
+    io.adcCalScr.calOut(n)(ph) := mod.io.calOut
+    mod.io.isAdcCollect := io.isAdcCollect
+    mod.io.calCoeff := io.adcCalScr.calCoeff(n)(ph)
+    mod.io.loadAddr := io.adcCalScr.loadAddr
+    mod.io.re := io.adcCalScr.allRE 
+    mod.io.we := io.adcCalScr.getWE(n, ph)
+    (mod, mod.moduleDelay)
+  }.unzip
+  val tempDly = modDelays.distinct
+  require(tempDly.length == 1)
+  val moduleDelay = tempDly.head
 }
