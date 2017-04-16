@@ -2,8 +2,12 @@ package dspblocks.fft
 import chisel3._
 import chisel3.experimental._
 import barstools.tapeout.transforms._
+import dsptools.numbers._
+import dsptools.numbers.implicits._
 
-class ADCCalSCR(numBits: Int, ffastParams: Int) extends SCRBundle {
+class ADCCalSCR[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends SCRBundle {
+  require(adcDataType.asInstanceOf[Data].isWidthKnown)
+  val numBits = adcDataType.getWidth
   val fftGroups = ffastParams.getSubFFTDelayKeys
 
   val calCoeff = CustomIndexedBundle(CustomIndexedBundle(
@@ -23,7 +27,7 @@ class ADCCalSCR(numBits: Int, ffastParams: Int) extends SCRBundle {
     we(groupIdx)
   }
 
-  override def cloneType = (new ADCCalSCR(numBits, ffastParams)).asInstanceOf[this.type]
+  override def cloneType = (new ADCCalSCR(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
 
 // Expect to read raw data through main memory; not here
@@ -83,10 +87,7 @@ class SubADCCal(numBits: Int, calMemNameSuffix: String) extends Module with Dela
 }
 
 class ADCCalIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Bundle {
-  require(adcDataType.widthKnown)
-  val numBits = adcDataType.getWidth
-
-  val adcCalScr = new ADCCalSCR(numBits, ffastParams)
+  val adcCalScr = new ADCCalSCR(adcDataType, ffastParams)
   val isAdcCollect = Input(Bool())
   val adcIn = CustomIndexedBundle(CustomIndexedBundle(
     Input(adcDataType), ffastParams.adcDelays), ffastParams.subFFTns)
@@ -100,7 +101,7 @@ class ADCCalIO[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) 
 class ADCCal[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module with DelayTracking {
   val io = IO(new ADCCalIO(adcDataType, ffastParams))
   val (calMods, modDelays) = ffastParams.getSubFFTDelayKeys.map { case (n, ph) =>
-    val mod = Module(new SubADCCal(io.numBits, s"${n}_${ph}"))
+    val mod = Module(new SubADCCal(io.adcCalScr.numBits, s"${n}_${ph}"))
     mod.suggestName(s"calMod_${n}_${ph}")
     mod.io.clk := io.clk 
     mod.io.adcIn := io.adcIn(n)(ph).asUInt

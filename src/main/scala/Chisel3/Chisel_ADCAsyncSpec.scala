@@ -45,9 +45,12 @@ class StateTransitionIO extends Bundle {
 
 // TODO: Find some better way to pass in params
 class CollectADCSamplesIO[T <: Data:RealBits](
+    adcDataType: => T,
     dspDataType: => T, 
     ffastParams: FFASTParams, 
     subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Bundle with PeripheryADCBundle {
+
+  val adcCalScr = new ADCCalSCR(adcDataType, ffastParams)
 
   val adcScr = new ADCSCR(ffastParams)
 
@@ -73,7 +76,7 @@ class CollectADCSamplesIO[T <: Data:RealBits](
 
   val idxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
 
-  override def cloneType = (new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
+  override def cloneType = (new CollectADCSamplesIO(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
 
   ////////////////////////////////////////
   ////////////////////////////////// DEBUG
@@ -179,6 +182,7 @@ object FFASTMemOutputLanes {
   }
 }
 
+// TODO: DON'T HARD CODE LATENCY FROM IDX TO BANKADDR
 class CollectADCSamples[T <: Data:RealBits](
     adcDataType: => T, 
     dspDataType: => T,
@@ -188,7 +192,7 @@ class CollectADCSamples[T <: Data:RealBits](
     subFFTnsColMaxs: Map[Int, Seq[Int]],
     useBlackBox: Boolean) extends Module with RealAnalogAnnotator {
 
-  val io = IO(new CollectADCSamplesIO(dspDataType, ffastParams, subFFTnsColMaxs))
+  val io = IO(new CollectADCSamplesIO(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, subFFTnsColMaxs))
 
   annotateReal()
 
@@ -258,9 +262,16 @@ class CollectADCSamples[T <: Data:RealBits](
   }
 
   // Don't synchronize enq_valids until the queues are all ready
-  analogBlock.io.collectADCSamplesState := io.stateInfo.inState & asyncEnqsAllReady
+  val actuallyCollectADCSamples = io.stateInfo.inState & asyncEnqsAllReady
+  analogBlock.io.collectADCSamplesState := actuallyCollectADCSamples
 
-  // TODO: Placeholder
+  // Calibration
+  val calibrationMod = Module(new ADCCal(adcDataType, ffastParams))
+  calibrationMod.io.adcCalScr <> io.adcCalScr
+  calibrationMod.io.clk := globalClk
+  calibrationMod.io.isAdcCollect := actuallyCollectADCSamples
+  val calibrationModDelay = calibrationMod.moduleDelay
+
   // Eventually, calibration blocks will be here
   // Also, the idx -> bank, addr LUT takes 1 cycle (outputs registered)
   ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
@@ -269,28 +280,29 @@ class CollectADCSamples[T <: Data:RealBits](
       // Only first lane is ever active in this block
       // NOTE: ADC output has much fewer bits than memory (due to growing during DSP ops)
       val async = asyncs(n, ph)
+      calibrationMod.io.adcIn(n)(ph) := async.io.deq.bits
       val cmplx = Wire(DspComplex(dspDataType))
-      cmplx.real := async.io.deq.bits
+      cmplx.real := calibrationMod.io.calOut(n)(ph)
       cmplx.imag := Ring[T].zero
       io.dataToMemory(n)(ph)(0).din := RegNext(cmplx)
     } 
   }
 
-  // TODO: When passing through calibration, delay deq.valid one time b/c SeqReadMem has 1 cycle latency
-
   // TODO: Can I use only 1 counter per stage associated w/ last phase? b/c I assume that always comes last?
   // Or do I need multiple? Minor optimization...
   val (memIdxCountsTemp, isMaxCounts) = withClockAndReset(globalClk, io.stateInfo.start) {
     ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+      // Delay valid to match calibration
+      val delayedValid = ShiftRegister(asyncs(n, ph).io.deq.valid, calibrationModDelay)
       // @ count n, hold
       val count = Wire(UInt(range"[0, $n]"))
       val isMaxCount = count === n.U
       val countNext = Mux(isMaxCount, n.U, count +& 1.U)
       // First time deq valid happens corresponds to data 0
       // which means that it goes to idx one the next time data is received (data 1)
-      count := RegEnable(next = countNext, init = 0.U, enable = asyncs(n, ph).io.deq.valid)
+      count := RegEnable(next = countNext, init = 0.U, enable = delayedValid)
       // Delayed to match Idx -> Bank, Addr LUT + Calibration delay
-      io.dataToMemory(n)(ph)(0).we := RegNext(asyncs(n, ph).io.deq.valid & (~isMaxCount))
+      io.dataToMemory(n)(ph)(0).we := RegNext(delayedValid & (~isMaxCount))
       // TODO: Is # of lanes always == # of banks?
       // Address associated with *current* count
       (((n, ph) -> count), isMaxCount)
@@ -362,20 +374,4 @@ class CollectADCSamples[T <: Data:RealBits](
     io.dataToMemory(n)(ph)(0).loc.bank := correctBankAddr.bank
   }
 
-  ////////////////////////////////////
-  ///////////////////////////// DEBUG
-/*
-  io.asyncEnqValidMin := asyncs(ffastParams.subFFTns.min, 0).io.enq.valid
-  io.asyncEnqDataMin := asyncs(ffastParams.subFFTns.min, 0).io.enq.bits
-  io.asyncDeqValidMin := asyncs(ffastParams.subFFTns.min, 0).io.deq.valid
-  io.asyncDeqDataMin := asyncs(ffastParams.subFFTns.min, 0).io.deq.bits
-
-  io.asyncEnqValidMax := asyncs(ffastParams.subFFTns.max, 0).io.enq.valid
-  io.asyncEnqDataMax := asyncs(ffastParams.subFFTns.max, 0).io.enq.bits
-  io.asyncDeqValidMax := asyncs(ffastParams.subFFTns.max, 0).io.deq.valid
-  io.asyncDeqDataMax := asyncs(ffastParams.subFFTns.max, 0).io.deq.bits
-
-  io.countMaxFFTMin := countMaxPerSubFFT(ffastParams.subFFTns.min)(0)
-  io.countMaxFFTMax := countMaxPerSubFFT(ffastParams.subFFTns.max)(0)
-*/
 }
