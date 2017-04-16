@@ -71,7 +71,7 @@ class FFASTTopBuildSpec extends FlatSpec with Matchers {
     import dspblocks.fft.FFASTTopParams._
 
     dsptools.DspContext.alter(dspContext) {
-      chisel3.Driver.execute(TestParams.buildWithMemories(topName = "FFASTTop"), () => 
+      chisel3.Driver.execute(TestParams.buildWithMemories(tName = "FFASTTop"), () => 
         // WARNING UNUSED THINGS NOT CONNECTED IN WRAPPER!!!
         new FFASTTop(
           adcDataType = adcDataType, 

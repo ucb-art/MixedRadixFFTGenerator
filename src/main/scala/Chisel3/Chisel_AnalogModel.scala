@@ -235,12 +235,12 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
     s"  create_clock -name CLK_CPU -period ${FFASTTopParams.slowClkExtPeriod} [get_ports io_extSlowClk]",
 
     // Should be auto constrained at chip top level, but here, these are inputs
-    s"set_input_delay -clock CLK_CPU ${FFASTTopParams.inputDelay} [get_ports io_scr*]", 
-    s"set_input_delay -clock CLK_CPU ${FFASTTopParams.inputDelay} [get_ports io_adcScr*]", 
+    s"  set_input_delay -clock CLK_CPU ${FFASTTopParams.inputDelay} [get_ports io_scr*]", 
+    s"  set_input_delay -clock CLK_CPU ${FFASTTopParams.inputDelay} [get_ports io_adcScr*]", 
     "}",
-    s"  set_clock_groups -asynchronous -group CLK_CPU -group { IOFASTCLK ${adcClkNames.mkString(" ")} }",
-    s"  set_max_delay -from [get_ports *clkrst] $rstDly",
-    s"  set_min_delay -from [get_ports *clkrst] $rstDly"
+    s"set_clock_groups -asynchronous -group CLK_CPU -group { IOFASTCLK ${adcClkNames.mkString(" ")} }",
+    s"set_max_delay -from [get_ports *clkrst] $rstDly",
+    s"set_min_delay -from [get_ports *clkrst] $rstDly"
   )
 
   val constraints = pinsSDC ++ Seq(fastClkSDC) ++ outClkConstraints ++ otherConstraints

@@ -191,14 +191,15 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
 
 
 ////////////////////////////////////// PEELING MEMORIES
-  val circularBuffers = ffastParams.subFFTns.map { case n =>
+  val circularBuffers = ffastParams.subFFTns.map { case np =>
+    val n = if (np == 675) 688 else np
     val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $n)"), n, s"circBuffer_sram_$n"))
     mod.suggestName(s"cb_$n")
     mod.io.clk := globalClk
     n -> mod
   }.toMap
   // TODO: Normalized: Different fraction!
-  val k = ffastParams.k
+  val k = Seq(ffastParams.k, 1952).max
   val n = ffastParams.fftn
   val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
   outIdxsMem.io.clk := globalClk

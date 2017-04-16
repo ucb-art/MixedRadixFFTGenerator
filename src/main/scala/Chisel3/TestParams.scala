@@ -98,8 +98,8 @@ object TestParams {
     firrtlOptions = FirrtlExecutionOptions(compilerName = "verilog") 
   }
 
-  def buildWithMemories(name: String = "BuildWithMemories", topName: String = "FFASTTopWrapper") = {
-    // println(s"Circuit name: $topName")
+  def buildWithMemories(name: String = "BuildWithMemories", tName: String = "FFASTTop") = {
+    // println(s"Circuit name: $tName")
     val firrtlOptions = FirrtlExecutionOptions(
         compilerName = "verilog",
         // TODO: Switch to new style transforms
@@ -108,8 +108,9 @@ object TestParams {
           new passes.memlib.InferReadWrite(),
           new passes.memlib.ReplSeqMem()),
         annotations = List(
-          passes.memlib.InferReadWriteAnnotation(topName),
-          passes.memlib.ReplSeqMemAnnotation(s"-c:$topName:-o:test_run_dir/${name}/$topName.conf"))
+          passes.memlib.InferReadWriteAnnotation(tName),
+          passes.memlib.ReplSeqMemAnnotation(s"-c:FFASTTop:-o:test_run_dir/${name}/FFASTTop.conf"))
+          //passes.memlib.ReplSeqMemAnnotation(s"-c:${tName}:-o:test_run_dir/${name}/${tName}.conf"))
     ) 
     new ExecutionOptionsManager("BuildWithMemories") with HasChiselExecutionOptions with HasFirrtlOptions {
       commonOptions = CommonOptions(

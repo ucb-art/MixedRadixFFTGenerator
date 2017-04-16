@@ -243,7 +243,7 @@ class AmySpec extends FlatSpec with Matchers {
 class AmyBuildSpec extends FlatSpec with Matchers {
   behavior of "Amy's ADC stuff with memories"
   it should "not fail to build" in {
-    chisel3.Driver.execute(TestParams.buildWithMemories(name = "AmyBuildWithMemories", topName = "AmyWrapperWrapper"), () => 
+    chisel3.Driver.execute(TestParams.buildWithMemories(name = "AmyBuildWithMemories", tName = "AmyWrapperWrapper"), () => 
       new AmyWrapperWrapper 
     ) 
   }
