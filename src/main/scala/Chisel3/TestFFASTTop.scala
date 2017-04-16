@@ -560,8 +560,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   def setupAdcCal(): Unit = {
     updatableDspVerbose.withValue(false) { 
       cycleThroughUntil("ADCCollectDebug")  
-      poke(c.io.adcCalScr.we, getAllEnable)
-      poke(c.io.adcCalScr.allRE, false)
+      poke(c.io.adcCalScr.calWE, getAllEnable)
+      poke(c.io.adcCalScr.calAllRE, false)
       // Write to ADC Cal
       for (x <- 0 until (1 << c.adcDataType.getWidth)) {
         poke(c.io.adcCalScr.loadAddr, x)
@@ -570,9 +570,9 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         }
         step(subsamplingT)
       }
-      poke(c.io.adcCalScr.we, 0)
+      poke(c.io.adcCalScr.calWE, 0)
       step(subsamplingT)
-      poke(c.io.adcCalScr.allRE, true)
+      poke(c.io.adcCalScr.calAllRE, true)
       // Read from ADC Cal
       for (x <- 0 until (1 << c.adcDataType.getWidth)) {
         poke(c.io.adcCalScr.loadAddr, x)
@@ -583,7 +583,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         }
         step(subsamplingT)
       }
-      poke(c.io.adcCalScr.allRE, false)
+      poke(c.io.adcCalScr.calAllRE, false)
 
     } 
   }
@@ -591,24 +591,14 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   // ADC Stuff should fail if not hooked up properly
   def checkConnection(): Unit = {
     // Non black box version only used during testing
-    val checkedPorts = SCRHelper(c.io, print = false)
+    val checkedPorts = (SCRHelper(c.io.adcScr, print = false) ++ Seq((c.io.ADCBIAS -> "ADCBIAS"))).map { case (el, str) => str -> el }.toMap
     c.mod.collectADCSamplesBlock.analogBlock.analogModel.asInstanceOf[AnalogModel[T]].connectionCheckMap.foreach { case (str, (el, maxVal)) => 
-      poke(checkedPorts(str), maxVal)
-
-      println(str)
+      updatableDspVerbose.withValue(false) { 
+        poke(checkedPorts(str), maxVal)
+      } 
     }
   }
     
-
-    
-
-
-
-
-
-
-
-
   import dspblocks.fft.FFASTTopParams._
   
   // Clk gen reset

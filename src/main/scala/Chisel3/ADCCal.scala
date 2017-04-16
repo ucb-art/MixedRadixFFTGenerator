@@ -17,14 +17,14 @@ class ADCCalSCR[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams)
   val calOut = CustomIndexedBundle(CustomIndexedBundle(
     Output(UInt(numBits.W)), ffastParams.adcDelays
   ), ffastParams.subFFTns)
-  val allRE = Input(Bool())
-  val we = Input(UInt(fftGroups.length.W))
+  val calAllRE = Input(Bool())
+  val calWE = Input(UInt(fftGroups.length.W))
 
   def getWE(n: Int, ph: Int): Bool = {
     val (groupTag, groupIdx) = fftGroups.zipWithIndex.filter { 
       case ((nG, phG), idx) => n == nG && ph == phG 
     }.head
-    we(groupIdx)
+    calWE(groupIdx)
   }
 
   override def cloneType = (new ADCCalSCR(adcDataType, ffastParams)).asInstanceOf[this.type]
@@ -110,7 +110,7 @@ class ADCCal[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) ex
     mod.io.isAdcCollect := io.isAdcCollect
     mod.io.calCoeff := io.adcCalScr.calCoeff(n)(ph)
     mod.io.loadAddr := io.adcCalScr.loadAddr
-    mod.io.re := io.adcCalScr.allRE 
+    mod.io.re := io.adcCalScr.calAllRE 
     mod.io.we := io.adcCalScr.getWE(n, ph)
     (mod, mod.moduleDelay)
   }.unzip

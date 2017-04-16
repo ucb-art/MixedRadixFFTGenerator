@@ -5,6 +5,9 @@ abstract class SCRBundle extends Bundle
 
 object SCRHelper {
   def apply(scr: SCRBundle, print: Boolean = true): Seq[(Element, String)] = {
+    getBundleInfo(scr, print)
+  }
+  def getBundleInfo(scr: Bundle, print: Boolean = true): Seq[(Element, String)] = {
     if (print) println("Discovered SCR Ports:")
     val scrPorts = getGroundPorts("scr", scr)
     scrPorts.map { case (element, name) =>

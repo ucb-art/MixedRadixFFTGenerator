@@ -91,6 +91,9 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   val io = IO(
     new FFASTTopIO(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, numStates, subFFTnsColMaxs))
 
+  val scrInfo = (SCRHelper(io.scr) ++ SCRHelper(io.adcScr) ++ SCRHelper(io.adcCalScr)).map { case (el, str) => str }
+  require(scrInfo.distinct.length == scrInfo.length, "All SCR entry names must be distinct!")
+
   annotateReal()
 
   val collectADCSamplesBlock = Module(
@@ -329,7 +332,7 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
 }
 
 //////////////
-
+// NOT SYNTHESIZABLE
 class FFASTTopWrapper[T <: Data:RealBits](
     val adcDataType: T, 
     val dspDataType: T, 
@@ -372,10 +375,6 @@ class FFASTTopWrapper[T <: Data:RealBits](
     val adcScr = new ADCSCR(ffastParams)
 
   })
-    
-  SCRHelper(io.scr)
-  SCRHelper(io.adcScr)
-  SCRHelper(io.adcCalScr)
 
   mod.io.adcCalScr <> io.adcCalScr
   mod.io.adcScr <> io.adcScr

@@ -331,6 +331,7 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     val notCollectADCSamplesState = withClock(lastPh) {
       ShiftRegister(~io.collectADCSamplesState, 3)
     }
+
     val alignedValid = withClockAndReset(lastPh, notCollectADCSamplesState) {
       RegEnable(next = true.B, init = false.B, enable = isMaxCount)
     }
@@ -347,6 +348,7 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     val validAlignedWithDataFromADC = withClock(thisClk) {
       RegNext(internalValid)
     }
+
     validAlignedWithDataFromADC.suggestName(s"validAlignedWithDataFromADC_${n}_${ph}")
 
     // TODO: Unnecessary synchronization?
