@@ -14,7 +14,8 @@ object FFASTTopParams {
     fftn = 21600,
     subFFTns = Seq(675, 800, 864),
     delays = delays,
-    inputType = DIF
+    inputType = DIF,
+    sparsityPc = 0.09
   )
   // Interestingly, DIF, DIT doesn't seem to matter much with this architecture...
 
