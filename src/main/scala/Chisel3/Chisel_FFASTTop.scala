@@ -174,6 +174,54 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   debugBlock.io.adcIdxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
   debugBlock.io.postFFTIdxToBankAddr.bankAddrs := outputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////// PEELING MEMORIES
+  val circularBuffers = ffastParams.subFFTns.map { case n =>
+    val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $n)"), n, s"circBuffer_sram_$n"))
+    mod.suggestName(s"cb_$n")
+    mod.io.clk := globalClk
+    n -> mod
+  }.toMap
+  // TODO: Normalized: Different fraction!
+  val k = ffastParams.k
+  val n = ffastParams.fftn
+  val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
+  outIdxsMem.io.clk := globalClk
+
+  val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
+  outValsMem.io.clk := globalClk
+////////////////////////////////////// PEELING MEMORIES
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   // TODO: This DspComplex[T] vs. T being DspComplex thing is driving me crazy -- make consistent!
   def connectToMem(
       mems: Map[(Int, Int), MemBankInterface[DspComplex[T]]], 

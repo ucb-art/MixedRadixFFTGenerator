@@ -8,10 +8,10 @@ case class FFASTParams(
     subFFTns: Seq[Int],
     delays: Seq[Seq[Int]] = Seq(Seq(0, 1)),
     inputType: FFTType = DIF,
-    sparsityPc: Double 
+    sparsityPc: Double  = 0.05
 ) {
 
-  def k = math.round(sparsity * fftn)
+  def k = math.round(sparsityPc * fftn).toInt
 
   def outputType = inputType.opposite
 

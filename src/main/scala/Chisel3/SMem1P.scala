@@ -4,7 +4,7 @@ import dsptools.numbers._
 import dsptools.numbers.implicits._
 import chisel3.experimental._
 
-class SMem1PIO[T <: Data:RealBits](dataType: => T, val depth: Int) extends Bundle {
+class SMem1PIO[T <: Data](dataType: => T, val depth: Int) extends Bundle {
   val clk = Input(Clock())
   // From backend
   val waddr = Input(UInt(range"[0, $depth)"))
@@ -18,7 +18,7 @@ class SMem1PIO[T <: Data:RealBits](dataType: => T, val depth: Int) extends Bundl
 }
 
 @chiselName
-class SMem1P[T <: Data:RealBits](dataType: => T, depth: Int, name: String = "") extends Module with DelayTracking {
+class SMem1P[T <: Data](dataType: => T, depth: Int, name: String = "") extends Module with DelayTracking {
   val moduleDelay = 2
   val io = IO(new SMem1PIO(dataType, depth))
   val mem = SyncReadMem(depth, dataType)
