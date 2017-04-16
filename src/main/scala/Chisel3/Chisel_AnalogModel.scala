@@ -298,6 +298,7 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     // Intermediate valid synchronized to the last phase; reset guaranteed to go low x fast clk cycles before
     // the last phase is actually generated (i.e. there is a pulse)
     val lastPh = analogModel.io.clkout(divBy)(ffastParams.adcDelays.max)
+    // See: http://www.sunburst-design.com/papers/CummingsSNUG2003Boston_Resets.pdf
     val resetClkAlignment = AsyncRegInit(clk = lastPh, reset = io.clkrst, init = true.B)
     resetClkAlignment.io.in := false.B
     val countReset = resetClkAlignment.io.out
@@ -331,6 +332,7 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
     val validAlignedWithDataFromADC = withClock(thisClk) {
       RegNext(internalValid)
     }
+    validAlignedWithDataFromADC.suggestName(s"validAlignedWithDataFromADC_${n}_${ph}")
 
     // TODO: Unnecessary synchronization?
     io.adcDigitalOut(n)(ph).valid := withClock(thisClk) {
