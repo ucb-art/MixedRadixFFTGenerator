@@ -557,6 +557,58 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     clearResults()
   }
 
+  def setupAdcCal(): Unit = {
+    updatableDspVerbose.withValue(false) { 
+      cycleThroughUntil("ADCCollectDebug")  
+      poke(c.io.adcCalScr.we, getAllEnable)
+      poke(c.io.adcCalScr.allRE, false)
+      // Write to ADC Cal
+      for (x <- 0 until (1 << c.adcDataType.getWidth)) {
+        poke(c.io.adcCalScr.loadAddr, x)
+        c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+          poke(c.io.adcCalScr.calCoeff(n)(ph), x)
+        }
+        step(subsamplingT)
+      }
+      poke(c.io.adcCalScr.we, 0)
+      step(subsamplingT)
+      poke(c.io.adcCalScr.allRE, true)
+      // Read from ADC Cal
+      for (x <- 0 until (1 << c.adcDataType.getWidth)) {
+        poke(c.io.adcCalScr.loadAddr, x)
+        // Mem delay
+        step(2 * subsamplingT)
+        c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+          expect(c.io.adcCalScr.calOut(n)(ph), x)
+        }
+        step(subsamplingT)
+      }
+      poke(c.io.adcCalScr.allRE, false)
+
+    } 
+  }
+
+  // ADC Stuff should fail if not hooked up properly
+  def checkConnection(): Unit = {
+    // Non black box version only used during testing
+    val checkedPorts = SCRHelper(c.io, print = false)
+    c.mod.collectADCSamplesBlock.analogBlock.analogModel.asInstanceOf[AnalogModel[T]].connectionCheckMap.foreach { case (str, (el, maxVal)) => 
+      poke(checkedPorts(str), maxVal)
+
+      println(str)
+    }
+  }
+    
+
+    
+
+
+
+
+
+
+
+
   import dspblocks.fft.FFASTTopParams._
   
   // Clk gen reset
@@ -578,6 +630,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 // -------------------------------- GENERAL READ AND WRITE TESTS
 
   setupDebug(usedDebugStates)
+  setupAdcCal()
+  checkConnection()
 
   for (loopNum <- 0 until numLoops) {
     runADC()

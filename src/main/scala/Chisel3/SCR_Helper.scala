@@ -4,13 +4,13 @@ import chisel3._
 abstract class SCRBundle extends Bundle
 
 object SCRHelper {
-  def apply(scr: SCRBundle): Seq[(Element, String)] = {
-    println("Discovered SCR Ports:")
+  def apply(scr: SCRBundle, print: Boolean = true): Seq[(Element, String)] = {
+    if (print) println("Discovered SCR Ports:")
     val scrPorts = getGroundPorts("scr", scr)
     scrPorts.map { case (element, name) =>
       require(element.getWidth <= 64, "Width must be < 64!")
       val newName = name.stripPrefix("scr_")
-      println(s"$newName ${element.getWidth}")
+      if (print) println(s"$newName ${element.getWidth}")
       (element, newName)
     }
   }

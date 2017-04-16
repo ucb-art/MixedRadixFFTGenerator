@@ -130,6 +130,18 @@ object BitsToReal {
 
 class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams) extends Module with RealAnalogAnnotator {
   val io = IO(new AnalogModelIO(adcDataType, ffastParams))
+
+  // Used to double check that connections are OK
+  val excludedConnections = Seq("ADCCLKM", "ADCCLKP", "ADCINM", "ADCINP", "clkout", "adcout", "clkrst")
+  val connectionCheckMap = SCRHelper(io, print = false).filterNot { case (el, str) => 
+    excludedConnections.map(s => str contains s).reduce(_ | _)
+  }.map { case (el, str) => 
+    require(el.isWidthKnown)
+    val maxVal = (1 << el.getWidth) - 1
+    str -> (el, maxVal)
+  }.toMap
+  val eq = connectionCheckMap.map { case (str, (el, maxVal)) => el.asUInt === maxVal.U }.reduce(_ & _)
+
   annotateReal()
   val ffastClkDiv = Module(new FFASTClkDiv(ffastParams))
   ffastClkDiv.io.inClk := (io.ADCCLKP & ~io.ADCCLKM).asClock
@@ -144,7 +156,10 @@ class AnalogModel[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParam
     io.clkout(subsamplingFactor)(ph) := (thisClk.asUInt.toBool | (io.clkrst & io.ADCCLKP)).asClock
     val adc = Module(new FakeADC(adcDataType))
     adc.io.clk := thisClk
-    adc.io.analogIn := RealToBits(io.ADCINP) - RealToBits(io.ADCINM)
+    // TODO: Figure out why I can't plug in contstant directly
+    val zro = Wire(DspReal())
+    zro := DspReal(0.0)
+    adc.io.analogIn := Mux(eq, RealToBits(io.ADCINP) - RealToBits(io.ADCINM), zro)
     io.adcout(subsamplingFactor)(ph) := adc.io.digitalOut
     adc
   }

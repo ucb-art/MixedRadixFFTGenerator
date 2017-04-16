@@ -367,18 +367,25 @@ class FFASTTopWrapper[T <: Data:RealBits](
     val ADCCLKM = Input(Bool())
     val clkrst = Input(Bool())
 
+    // Not critical to local tests
+    val ADCBIAS = Input(Bool())
+    val adcScr = new ADCSCR(ffastParams)
+
   })
     
   SCRHelper(io.scr)
-  SCRHelper(mod.io.adcScr)
+  SCRHelper(io.adcScr)
   SCRHelper(io.adcCalScr)
 
   mod.io.adcCalScr <> io.adcCalScr
+  mod.io.adcScr <> io.adcScr
 
   // WARNING: SCARY: Fast clk + fast clk reset uses Chisel default clock, reset
   mod.io.clkrst := reset
   mod.io.ADCCLKP := clock.asUInt
   mod.io.ADCCLKM := ~clock.asUInt
+
+  mod.io.ADCBIAS := io.ADCBIAS
 
   val adcinp = Wire(Analog(1.W))
   val adcinm = Wire(Analog(1.W))
