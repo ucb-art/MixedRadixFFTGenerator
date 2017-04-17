@@ -118,7 +118,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   // TODO: Don't hard code! (fix by width)
   val adcInInc = 1.0 / (1 << 8) //1.0 / (1 << 8) + 1.0 / (1 << 5)
   // Fastest clk
-  val subsamplingT = c.ffastParams.subSamplingFactors.map(_._2).min
+  val subsamplingT = c.subsamplingT
   val adcInStart = -1.0 //-10000.0
   val checksPerformed = scala.collection.mutable.ArrayBuffer[String]()
 

@@ -223,7 +223,8 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
 
   //val adcCollectRegExpr = Seq.fill(level - 2)("*/").mkString("")
 
-  val rstDly = FFASTTopParams.rstDly 
+  val rstMaxDly = FFASTTopParams.rstMaxDly 
+  val rstMinDly = FFASTTopParams.rstMinDly
 
   val otherConstraints = Seq(
     // Below are top-level ports
@@ -239,8 +240,8 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
     s"  set_input_delay -clock CLK_CPU ${FFASTTopParams.inputDelay} [get_ports io_adcScr*]", 
     "}",
     s"set_clock_groups -asynchronous -group CLK_CPU -group { IOFASTCLK ${adcClkNames.mkString(" ")} }",
-    s"set_max_delay -from [get_ports *clkrst] $rstDly",
-    s"set_min_delay -from [get_ports *clkrst] $rstDly"
+    s"set_max_delay -from [get_ports *clkrst] $rstMaxDly",
+    s"set_min_delay -from [get_ports *clkrst] $rstMinDly"
   )
 
   val constraints = pinsSDC ++ Seq(fastClkSDC) ++ outClkConstraints ++ otherConstraints

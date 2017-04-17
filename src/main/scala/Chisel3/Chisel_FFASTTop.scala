@@ -191,19 +191,19 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
 
 
 ////////////////////////////////////// PEELING MEMORIES
+  // TOOD: DON'T HARD CODE MEMORY EXCEPTIONS, name should be np
   val circularBuffers = ffastParams.subFFTns.map { case np =>
     val n = if (np == 675) 688 else np
-    val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $n)"), n, s"circBuffer_sram_$n"))
-    mod.suggestName(s"cb_$n")
+    val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $np)"), n, s"circBuffer_sram_$n"))
+    mod.suggestName(s"cb_$np")
     mod.io.clk := globalClk
-    n -> mod
+    np -> mod
   }.toMap
   // TODO: Normalized: Different fraction!
   val k = Seq(ffastParams.k, 1952).max
   val n = ffastParams.fftn
   val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
   outIdxsMem.io.clk := globalClk
-
   val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
   outValsMem.io.clk := globalClk
 ////////////////////////////////////// PEELING MEMORIES
@@ -451,11 +451,11 @@ class FFASTTopWrapper[T <: Data:RealBits](
   mod.io.stateMachineReset := io.stateMachineReset
 
   // Fake subsampling clk derived from 10G
-  val subsamplingT = ffastParams.subSamplingFactors.map(_._2).min
-  val clkDivFake = Module(new SEClkDivider(divBy = subsamplingT, phases = Seq(0)))
+  val subsamplingT = ffastParams.subSamplingFactors.map(_._2).min - 1
+  val clkDivFake = Module(new SEClkDivider(divBy = subsamplingT, phases = Seq(0, 4)))
   clkDivFake.io.reset := reset
   clkDivFake.io.inClk := clock
-  mod.io.extSlowClk := clkDivFake.io.outClks(0)
+  mod.io.extSlowClk := clkDivFake.io.outClks(4)
   
   // TODO: Doesn't do anything...
   annotateClkPort(clock, 
