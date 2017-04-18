@@ -243,7 +243,7 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
     s"set_max_delay -from [get_ports *clkrst] $rstMaxDly",
     s"set_min_delay -from [get_ports *clkrst] $rstMinDly",
     s"set_clock_uncertainty 0.1 [all_clocks]",
-    s"set_max_transition 0.03 -clock_path [ get_clocks clkout_*_* ]"
+    s"set_max_transition 0.06 -clock_path [ get_clocks clkout_*_* ]"
   )
 
   val constraints = pinsSDC ++ Seq(fastClkSDC) ++ outClkConstraints ++ otherConstraints
