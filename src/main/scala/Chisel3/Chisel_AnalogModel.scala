@@ -241,7 +241,8 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
     "}",
     s"set_clock_groups -asynchronous -group CLK_CPU -group { IOFASTCLK ${adcClkNames.mkString(" ")} }",
     s"set_max_delay -from [get_ports *clkrst] $rstMaxDly",
-    s"set_min_delay -from [get_ports *clkrst] $rstMinDly"
+    s"set_min_delay -from [get_ports *clkrst] $rstMinDly",
+    s"set_clock_uncertainty 0.1 [all_clocks]"
   )
 
   val constraints = pinsSDC ++ Seq(fastClkSDC) ++ outClkConstraints ++ otherConstraints
