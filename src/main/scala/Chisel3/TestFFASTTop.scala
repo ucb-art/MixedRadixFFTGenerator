@@ -148,7 +148,15 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   }
 
   // TODO: Combine with dsptools' checkDecimal
-  def compare(exp: Seq[Complex], out: Seq[Complex], tag: (Int, Int), fixTolOverride: Int = -1, test: String = "", print: Boolean = false) = {
+  def compare(
+      exp: Seq[Complex], 
+      out: Seq[Complex], 
+      tag: (Int, Int), 
+      fixTolOverride: Int = -1, 
+      test: String = "", 
+      print: Boolean = false, 
+      zeroThresholdPwr: Double = 1,
+      disp: Boolean = false) = {
 
     val fft = tag._1
     val ph = tag._2
@@ -198,6 +206,11 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     }
 
     val (expectPasses, maxErrors) = exp.zip(out).zipWithIndex.map { case ((e, o), i) =>
+
+      val magSq = o.real * o.real + o.imag * o.imag
+      if (magSq > zeroThresholdPwr && disp)
+        println(s"FFT: $fft Ph: $ph Index: $i MagSq: $magSq")  
+        
       val realDelta = math.abs(e.real - o.real)
       val imagDelta = math.abs(e.imag - o.imag)
       val pass = updatableDspVerbose.withValue(false) {
@@ -666,34 +679,6 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   }
   clearResults() 
 
-// -------------------------------- ADC -> FFT OUTPUT TESTS
-
-  setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
-
-  // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
-  val inLarge = FFTTestVectors.createInput(c.ffastParams.fftn, fracBits = adcBP)
-  val inLargeReal = inLarge.map(x => x.real)
-  runADC(customInput = Some(inLargeReal))
-  runDebug("ADCCollectDebug")
-  // TODO: Don't use complex
-  val adcInInitialIdx = checkADCResults(s"FFTN ${c.ffastParams.fftn} In", customInput = Some(inLargeReal), skip = true).real.toInt
-  runDebug("FFTDebug")
-
-  peekedResults.toSeq foreach { case ((n, ph), outVals) =>
-    val subsamplingFactor = c.ffastParams.subSamplingFactors(n)
-    // TODO: Convert everything to this (easy to understand)
-    val rotatedIn = inLarge.drop(adcInInitialIdx) ++ inLarge.take(adcInInitialIdx)
-    val subsampledIn = rotatedIn.drop(ph).grouped(subsamplingFactor).map(_.head).toSeq
-    require(subsampledIn.length == n, s"# of subsampled inputs should be $n")
-    compare(
-      exp = FFTTestVectors.createOutput(subsampledIn), 
-      out = outVals.toSeq.take(n), 
-      tag = (n, ph), 
-      test = "Subsampled and Delayed FFTs", 
-      fixTolOverride = fpBP + 1)
-  }
-  clearResults()
-
 // -------------------------------- FOR ROCKET-CHIP TESTING
 
   // Skip ADC Collect state for basic debug, since ADC isn't hooked up
@@ -713,5 +698,54 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   println("\n\n *************************************************** \n\n")
   checksPerformed.toSeq foreach { x => println(x) }
+
+// -------------------------------- ADC -> FFT OUTPUT TESTS
+
+  setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
+
+  // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
+  val inLarge = FFTTestVectors.createInput(c.ffastParams.fftn, fracBits = adcBP)
+  val inLargeReal = inLarge.map(x => x.real)
+  runADC(customInput = Some(inLargeReal))
+  runDebug("ADCCollectDebug")
+  // TODO: Don't use complex
+  val adcInInitialIdx = checkADCResults(s"FFTN ${c.ffastParams.fftn} In", customInput = Some(inLargeReal), skip = true).real.toInt
+  runDebug("FFTDebug")
+
+  peekedResults.toSeq.sortBy { case ((n, ph), outVals) => (n, ph) }. foreach { case ((n, ph), outVals) =>
+    val subsamplingFactor = c.ffastParams.subSamplingFactors(n)
+    // TODO: Convert everything to this (easy to understand)
+    val rotatedIn = inLarge.drop(adcInInitialIdx) ++ inLarge.take(adcInInitialIdx)
+    val subsampledIn = rotatedIn.drop(ph).grouped(subsamplingFactor).map(_.head).toSeq
+    require(subsampledIn.length == n, s"# of subsampled inputs should be $n")
+    println(s"FFT: $n Ph: $ph (Normalized)")
+    val fftThreshold = 1.toDouble / math.pow(n, 2).toDouble
+    val (expectedOut, expectedOutIdx) = FFTTestVectors.createOutputInt(subsampledIn, zeroThresholdPwr = fftThreshold, disp = true)
+    compare(
+      exp = expectedOut, 
+      out = outVals.toSeq.take(n), 
+      tag = (n, ph), 
+      test = "Subsampled and Delayed FFTs", 
+      fixTolOverride = fpBP + 1,
+      zeroThresholdPwr = 1,
+      disp = true)
+
+  }
+
+  val fftLargeThreshold = 1.toDouble / math.pow(c.ffastParams.fftn, 2).toDouble
+  val fftLargeOutIdxs = FFTTestVectors.expectedSubSampleLocations(inLarge, zeroThresholdPwr = fftLargeThreshold, disp = true)
+
+  val mapBinToSubFFTIdx = PeelingScheduling.getBinToSubFFTIdxMap(c.ffastParams)
+
+  val binToSubFFTIdxExpected = for (fullFFTBin <- fftLargeOutIdxs ; subFFT <- c.ffastParams.subFFTns) yield {
+    val o = mapBinToSubFFTIdx(fullFFTBin)(subFFT)
+    ((fullFFTBin, subFFT), o)
+  }
+
+  binToSubFFTIdxExpected.sortBy { case ((fullFFTBin, subFFT), subFFTIdx) => (subFFT, subFFTIdx) }. foreach { case ((fullFFTBin, subFFT), subFFTIdx) =>
+    println(s"Sub FFT: $subFFT Full FFT Bin: $fullFFTBin Sub FFT Index: $subFFTIdx")
+  }
+
+  clearResults()
 
 }

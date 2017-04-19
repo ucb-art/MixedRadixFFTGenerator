@@ -26,9 +26,29 @@ object FFTTestVectors {
     }
   }
 
-  def createOutput(in: Seq[Complex]): Seq[Complex] = {
+  def createOutput(in: Seq[Complex], zeroThresholdPwr: Double = 1, disp: Boolean = false): Seq[Complex] = {
+    createOutputInt(in, zeroThresholdPwr, disp)._1
+  }
+
+  def createOutputInt(in: Seq[Complex], zeroThresholdPwr: Double = 1, disp: Boolean = false): (Seq[Complex], Seq[Int]) = {
     val inFormatted = DenseVector(in.toArray)
-    fourierTr(inFormatted).toArray.toSeq
+    val out = fourierTr(inFormatted).toArray.toSeq
+    val fft = out.length
+
+    val nonZeroIdxs = out.zipWithIndex.map { case (o, i) => 
+      val magSq = (o.real * o.real + o.imag * o.imag)/(fft * fft).toDouble
+      if (magSq > zeroThresholdPwr) {
+        if (disp) println(s"FFT: $fft Index: $i MagSq Norm: $magSq") 
+        i 
+      }
+      else -1
+    }.filter(_ != -1)
+
+    (out, nonZeroIdxs)
+  }
+
+  def expectedSubSampleLocations(in: Seq[Complex], zeroThresholdPwr: Double = 1, disp: Boolean = false): Seq[Int] = {
+    createOutputInt(in, zeroThresholdPwr, disp)._2
   }
 
 } 
