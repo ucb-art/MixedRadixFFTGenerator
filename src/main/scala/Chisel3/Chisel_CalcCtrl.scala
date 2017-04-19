@@ -253,7 +253,7 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
 
 /////////////////////////////
     
-    io.stateInfo.skipToEnd := false.B
+    // io.stateInfo.skipToEnd := false.B
     // Done after last write: delay through this module + mem read out + butterfly delay
     io.stateInfo.done := ShiftRegister(
       in = calcDone, 

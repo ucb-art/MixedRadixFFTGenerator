@@ -137,7 +137,7 @@ class Debug[T <: Data:RealBits](
   // withClockAndReset(io.clk, io.stateInfo.start) {
 
     io.scr.currentState := io.currentState
-    io.stateInfo.skipToEnd := false.B
+    // io.stateInfo.skipToEnd := false.B
 
     // Assumes you'll never be reading the same time you write in this state -- writing has precedence
     val getAllCPUwes = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 

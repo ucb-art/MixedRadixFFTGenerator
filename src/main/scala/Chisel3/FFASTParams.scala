@@ -8,7 +8,7 @@ object FFASTTopParams {
   val adcDataType = FixedPoint(9.W, 8.BP)
   val dspDataType = FixedPoint(20.W, 10.BP)
   val delays = Seq(Seq(0, 1), Seq(6, 9), Seq(12, 19))
-  val maxNumPeels = 0
+  val maxNumPeels = 12
 
   val ffastParams = FFASTParams(
     fftn = 21600,

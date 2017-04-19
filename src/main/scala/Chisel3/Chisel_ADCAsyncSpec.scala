@@ -40,7 +40,7 @@ class StateTransitionIO extends Bundle {
   // Tells the external state machine that when this state is done, it should go to the last
   // debug state (done w/ calc)
   // In general, should be high when done is high
-  val skipToEnd = Output(Bool())
+  // val skipToEnd = Output(Bool())
 }
 
 // TODO: Find some better way to pass in params
@@ -197,7 +197,7 @@ class CollectADCSamples[T <: Data:RealBits](
   annotateReal()
 
   // Should not jump to the last state if done with this state
-  io.stateInfo.skipToEnd := false.B
+  // io.stateInfo.skipToEnd := false.B
 
   // Default memory access
   // Note: this state never requires reading from memory

@@ -14,6 +14,93 @@ import barstools.tapeout.transforms._
 
 import chisel3.util.ShiftRegister
 
+//////////////
+// NOT SYNTHESIZABLE
+class FFASTTopWrapper[T <: Data:RealBits](
+    val adcDataType: T, 
+    val dspDataType: T, 
+    val ffastParams: FFASTParams, 
+    maxNumPeels: Int,
+    useBlackBox: Boolean = true) extends TopModule(usePads = false) with AnalogAnnotator {
+
+  (adcDataType, dspDataType) match {
+    case (adc: FixedPoint, dsp: FixedPoint) => 
+      println(s"ADC Width: ${adc.getWidth}. ADC Fractional Width: ${adc.binaryPoint.get}")
+      println(s"DSP Width: ${dsp.getWidth}. DSP Fractional Width: ${dsp.binaryPoint.get}")
+    case (_, _) =>
+  }
+
+  println(s"FFAST Params: ${ffastParams.toString}")
+  println(s"Max # Peeling Iterations: $maxNumPeels")
+  if (useBlackBox) println("Using analog black box!")
+
+  // Need to annotate top-level clk when using clk div
+  val mod = 
+    Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
+  
+  val io = IO(new Bundle { 
+
+    val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, mod.numStates)
+    val adcCalScr = new ADCCalSCR(adcDataType, ffastParams)
+    val peelScr = new PeelingSCR(dspDataType, ffastParams)
+
+    // Connect to core reset
+    // Connect to core clk
+    val stateMachineReset = Input(Bool())
+
+    val ADCINP = Input(DspReal())
+    val ADCINM = Input(DspReal())
+    val ADCCLKP = Input(Bool())
+    val ADCCLKM = Input(Bool())
+    val clkrst = Input(Bool())
+
+    // Not critical to local tests
+    val ADCBIAS = Input(Bool())
+    val adcScr = new ADCSCR(ffastParams)
+
+  })
+
+  mod.io.peelScr <> io.peelScr
+  mod.io.adcCalScr <> io.adcCalScr
+  mod.io.adcScr <> io.adcScr
+
+  // WARNING: SCARY: Fast clk + fast clk reset uses Chisel default clock, reset
+  mod.io.clkrst := reset
+  mod.io.ADCCLKP := clock.asUInt
+  mod.io.ADCCLKM := ~clock.asUInt
+
+  mod.io.ADCBIAS := io.ADCBIAS
+
+  val adcinp = Wire(Analog(1.W))
+  val adcinm = Wire(Analog(1.W))
+
+  renameAnalog(adcinp, "wire\n`ifndef SYNTHESIS\n  real\n`endif\n       ")
+  renameAnalog(adcinm, "wire\n`ifndef SYNTHESIS\n  real\n`endif\n       ")
+
+  attach(adcinp, BitsToReal(io.ADCINP))
+  attach(adcinm, BitsToReal(io.ADCINM))
+
+  attach(mod.io.ADCINP, adcinp)
+  attach(mod.io.ADCINM, adcinm)
+
+  mod.io.scr <> io.scr
+  mod.io.stateMachineReset := io.stateMachineReset
+
+  // Fake subsampling clk derived from 10G
+  val subsamplingT = ffastParams.subSamplingFactors.map(_._2).min - 1
+  val clkDivFake = Module(new SEClkDivider(divBy = subsamplingT, phases = Seq(0, 4)))
+  clkDivFake.io.reset := reset
+  clkDivFake.io.inClk := clock
+  mod.io.extSlowClk := clkDivFake.io.outClks(4)
+  
+  // TODO: Doesn't do anything...
+  annotateClkPort(clock, 
+    id = "clock", // not in io bundle
+    sink = Sink(Some(ClkSrc(period = 5.0)))
+  )
+
+}
+
 // TODO: Suggest better names???
 // TODO: Use Array.range(), etc.
 
@@ -41,6 +128,7 @@ class FFASTTopIO[T <: Data:RealBits](
   val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, numStates)
   val adcScr = new ADCSCR(ffastParams)
   val adcCalScr = new ADCCalSCR(adcDataType, ffastParams)
+  val peelScr = new PeelingSCR(dspDataType, ffastParams)
 
   override def cloneType = 
     (new FFASTTopIO(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, numStates, subFFTnsColMaxs)).asInstanceOf[this.type]
@@ -60,11 +148,12 @@ class FFASTTop[T <: Data:RealBits](
 
 ////////////////// STATE MACHINE
 
+  val peelStateNames = if (maxNumPeels == 0) Seq[String]() else (0 until maxNumPeels).map(nP => s"Peel${nP}")
   val basicStateNames = Seq(
     "ADCCollect",
-    "FFT" //,
-    //"PopulateNonZerotons"
-  ) ++ (if (maxNumPeels == 0) Seq.empty else Seq(0 until maxNumPeels).map(n => s"Peel$n"))
+    "FFT",
+    "PopulateNonZerotons"
+  ) ++ peelStateNames
   val stateNames = basicStateNames.map(state => Seq(state, s"${state}Debug")).flatten ++ Seq("reset")
   require(stateNames.distinct.length == stateNames.length, "State names must be unique!")
 
@@ -72,7 +161,6 @@ class FFASTTop[T <: Data:RealBits](
   
   // TODO: Unnecessary???
   val statesInt = stateNames.zipWithIndex.map { case (name, idx) => name -> idx }.toMap
-  val states = stateNames.zipWithIndex.map { case (name, idx) => name -> idx.U }.toMap
 
   // Reset is not a state you enter -- only a state you leave
   // After last debug, return back to ADCCollect
@@ -91,7 +179,7 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   val io = IO(
     new FFASTTopIO(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, numStates, subFFTnsColMaxs))
 
-  val scrInfo = (SCRHelper(io.scr) ++ SCRHelper(io.adcScr) ++ SCRHelper(io.adcCalScr)).map { case (el, str) => str }
+  val scrInfo = (SCRHelper(io.scr) ++ SCRHelper(io.adcScr) ++ SCRHelper(io.adcCalScr) ++ SCRHelper(io.peelScr)).map { case (el, str) => str }
   require(scrInfo.distinct.length == scrInfo.length, "All SCR entry names must be distinct!")
 
   annotateReal()
@@ -165,7 +253,7 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
       subFFTnsColMaxs,
       memOutDelay = memOutDelay,
       idxToBankAddrDelay = inputSubFFTIdxToBankAddrLUT.moduleDelay
-      )
+    )
   )
 
   debugBlock.io.scr <> io.scr
@@ -174,54 +262,17 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   debugBlock.io.adcIdxToBankAddr.bankAddrs := inputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
   debugBlock.io.postFFTIdxToBankAddr.bankAddrs := outputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
 
+  val peelingBlock = Module(
+    new Peeling(
+      dspDataType,
+      ffastParams,
+      subFFTnsColMaxs
+    )
+  )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-////////////////////////////////////// PEELING MEMORIES
-  // TOOD: DON'T HARD CODE MEMORY EXCEPTIONS, name should be np
-  val circularBuffers = ffastParams.subFFTns.map { case np =>
-    val n = if (np == 675) 688 else np
-    val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $np)"), n, s"circBuffer_sram_$n"))
-    mod.suggestName(s"cb_$np")
-    mod.io.clk := globalClk
-    np -> mod
-  }.toMap
-  // TODO: Normalized: Different fraction!
-  val k = Seq(ffastParams.k, 1952).max
-  val n = ffastParams.fftn
-  val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
-  outIdxsMem.io.clk := globalClk
-  val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
-  outValsMem.io.clk := globalClk
-////////////////////////////////////// PEELING MEMORIES
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  peelingBlock.io.peelScr <> io.peelScr 
+  peelingBlock.io.clk := globalClk
+  peelingBlock.io.idxToBankAddr.bankAddrs := outputSubFFTIdxToBankAddrLUT.io.pack.bankAddrs 
 
   // TODO: This DspComplex[T] vs. T being DspComplex thing is driving me crazy -- make consistent!
   def connectToMem(
@@ -234,62 +285,54 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
     }
   }
 
-  // TODO: Add more!
-  when(currentState === states("ADCCollect")) {
+  val currentStateBools = stateNames.zipWithIndex.map { case (name, idx) => name -> (currentState === idx.U) }.toMap
+
+  val isAPeelState = (Seq("PopulateNonZerotons") ++ peelStateNames).map(name => currentStateBools(name)).reduce(_ | _)
+
+  when(currentStateBools("ADCCollect")) {
     connectToMem(dataMems, collectADCSamplesBlock.io.dataToMemory, collectADCSamplesBlock.io.dataFromMemory)
-  } .elsewhen(currentState === states("FFT")) {
-    ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+  } .elsewhen(currentStateBools("FFT")) {
+    ffastParams.getSubFFTDelayKeys foreach { case (n, ph) => 
       dataMems(n, ph).io.i := subFFTs(n).io.dataToMemory(ph)
       subFFTs(n).io.dataFromMemory(ph) <> dataMems(n, ph).io.o
     }
+  } .elsewhen(isAPeelState) {
+    connectToMem(dataMems, peelingBlock.io.dataToMemory, peelingBlock.io.dataFromMemory)
   } .otherwise {
     connectToMem(dataMems, debugBlock.io.dataToMemory, debugBlock.io.dataFromMemory)
   }
 
-  def connectLUTIdxsToDefault(idxs: CustomIndexedBundle[UInt]): Unit = {
-    idxs.elements foreach { case (idx, port) => 
-      port := 0.U
-    }
-  }
-
-  // TODO: Change when I write peel
   // Currently, only used for debug
   // FFT and before: use default
-  outputSubFFTIdxToBankAddrLUT.io.pack.idxs := debugBlock.io.postFFTIdxToBankAddr.idxs
-
-  when(currentState === states("ADCCollect")) {
-    inputSubFFTIdxToBankAddrLUT.io.pack.idxs := collectADCSamplesBlock.io.idxToBankAddr.idxs  
-  } .elsewhen(currentState === states("ADCCollectDebug")) {
-    inputSubFFTIdxToBankAddrLUT.io.pack.idxs := debugBlock.io.adcIdxToBankAddr.idxs
+  when(isAPeelState) {
+    outputSubFFTIdxToBankAddrLUT.io.pack.idxs := peelingBlock.io.idxToBankAddr.idxs
   } .otherwise {
-    // This LUT is only ever used for ADC Input + Debug right after
-    connectLUTIdxsToDefault(inputSubFFTIdxToBankAddrLUT.io.pack.idxs)
+    outputSubFFTIdxToBankAddrLUT.io.pack.idxs := debugBlock.io.postFFTIdxToBankAddr.idxs
   }
 
-  // TODO: Any way to automate this more?
-  /*
-  stateNames.map { 
-    case name: String if name == "ADCCollect" => name -> collectADCSamplesBlock
-    case name: String if name == "FFT" => throw new Exception("Not valid state!")
-    case name: String if name == "PopulateNonZerotons" => throw new Exception("Not valid state!")
-    case name: String if name.endsWidth("Debug") => name -> debugBlock
-    case name: String if name.startsWith("Peel") => throw new Exception("Not valid state!")
-  }
-  */
-
+  // This LUT is only ever used for ADC Input + Debug right after
+  when(currentStateBools("ADCCollect")) {
+    inputSubFFTIdxToBankAddrLUT.io.pack.idxs := collectADCSamplesBlock.io.idxToBankAddr.idxs  
+  } .otherwise {
+    inputSubFFTIdxToBankAddrLUT.io.pack.idxs := debugBlock.io.adcIdxToBankAddr.idxs
+  } 
+    
   val done = Wire(Bool())
-  val currentStateBools = stateNames.zipWithIndex.map { case (name, idx) => name -> (currentState === idx.U) }.toMap
   val nextStateWithoutSkipToEnd = Wire(UInt(range"[0, $numStates)"))
 
   // TODO: Should be last debug
   val lastState = basicStateNames.last + "Debug"
-  when(currentStateBools("reset") | currentStateBools(lastState)) {
-    nextStateWithoutSkipToEnd := states("ADCCollect")
+
+  require(lastState == s"Peel${maxNumPeels - 1}Debug")
+  val stateResetCond = currentStateBools("reset") | currentStateBools(lastState)
+  when(stateResetCond) {
+    nextStateWithoutSkipToEnd := statesInt("ADCCollect").U
   } .otherwise {
     nextStateWithoutSkipToEnd := currentState +& 1.U
   }
 
-  // TODO: When done + skip to end (peel only), nextState is different
+  // TODO: When done + skip to end (peel only), nextState is different -- or just waste # peel cycles
+  // with done always raised
   // TODO: Convert to enable?
   val nextState = nextStateWithoutSkipToEnd
   currentState := Mux(done, nextState, currentState)
@@ -301,166 +344,43 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   // ADC: if 1, then leave state
   collectADCSamplesBlock.io.skipADC := io.scr.debugStates(statesInt("ADCCollect"))
 
-  when (currentStateBools("reset")) {
+  val isADebugState = basicStateNames.map(state => currentStateBools(s"${state}Debug")).reduce(_ | _)
+  val isANormalState = basicStateNames.map(state => currentStateBools(state)).reduce(_ | _)
 
-    done := true.B
-    collectADCSamplesBlock.io.stateInfo.start := done
-    collectADCSamplesBlock.io.stateInfo.inState := false.B 
-    debugBlock.io.stateInfo.start := false.B
-    debugBlock.io.stateInfo.inState := false.B 
-    // TODO: Make sub ADC wrapper?
-    subFFTs foreach { case (name, mod) => 
-      mod.io.stateInfo.start := false.B
-      mod.io.stateInfo.inState := false.B 
-    }
-
-  } .elsewhen (currentStateBools("ADCCollect")) {
-
+  when (currentStateBools("ADCCollect")) {
     done := collectADCSamplesBlock.io.stateInfo.done 
-    collectADCSamplesBlock.io.stateInfo.start := false.B 
-    collectADCSamplesBlock.io.stateInfo.inState := true.B 
-    debugBlock.io.stateInfo.start := done
-    debugBlock.io.stateInfo.inState := false.B 
-    subFFTs foreach { case (name, mod) => 
-      mod.io.stateInfo.start := false.B
-      mod.io.stateInfo.inState := false.B 
-    }
-
-  } .elsewhen (currentStateBools("ADCCollectDebug")) {
-
+  } .elsewhen (isADebugState) {
     done := debugBlock.io.stateInfo.done 
-    collectADCSamplesBlock.io.stateInfo.start := false.B
-    collectADCSamplesBlock.io.stateInfo.inState := false.B 
-    debugBlock.io.stateInfo.start := false.B
-    debugBlock.io.stateInfo.inState := true.B 
-    subFFTs foreach { case (name, mod) => 
-      mod.io.stateInfo.start := done
-      mod.io.stateInfo.inState := false.B 
-    }
-
   } .elsewhen (currentStateBools("FFT")) {
-
     // Done when ALL sub-FFTs finish
     done := subFFTs.map { case (name, mod) => mod.io.stateInfo.done }.reduce(_ & _)
-    collectADCSamplesBlock.io.stateInfo.start := false.B
-    collectADCSamplesBlock.io.stateInfo.inState := false.B 
-    debugBlock.io.stateInfo.start := done
-    debugBlock.io.stateInfo.inState := false.B 
-    subFFTs foreach { case (name, mod) => 
-      mod.io.stateInfo.start := false.B
-      mod.io.stateInfo.inState := true.B 
-    }
-
-  } .elsewhen (currentStateBools("FFTDebug")) {
-
-    done := debugBlock.io.stateInfo.done 
-    // TODO: Change -- here we assume this is the last state
-    collectADCSamplesBlock.io.stateInfo.start := done
-    collectADCSamplesBlock.io.stateInfo.inState := false.B 
-    debugBlock.io.stateInfo.start := false.B
-    debugBlock.io.stateInfo.inState := true.B 
-    subFFTs foreach { case (name, mod) => 
-      mod.io.stateInfo.start := false.B
-      mod.io.stateInfo.inState := false.B 
-    }
-
-  } .otherwise { // SHOULD NEVER GET HERE
-
-    done := false.B 
-    collectADCSamplesBlock.io.stateInfo.start := false.B 
-    collectADCSamplesBlock.io.stateInfo.inState := false.B
-    debugBlock.io.stateInfo.start := false.B
-    debugBlock.io.stateInfo.inState := false.B
-    subFFTs foreach { case (name, mod) => 
-      mod.io.stateInfo.start := false.B
-      mod.io.stateInfo.inState := false.B 
-    }
-
+  } .elsewhen (isAPeelState) {
+    done := peelingBlock.io.stateInfo.done
+  } .otherwise {
+    // Reset or never
+    done := true.B 
   }
 
-}
+  collectADCSamplesBlock.io.stateInfo.start := stateResetCond & done
+  collectADCSamplesBlock.io.stateInfo.inState := currentStateBools("ADCCollect")
 
-//////////////
-// NOT SYNTHESIZABLE
-class FFASTTopWrapper[T <: Data:RealBits](
-    val adcDataType: T, 
-    val dspDataType: T, 
-    val ffastParams: FFASTParams, 
-    maxNumPeels: Int,
-    useBlackBox: Boolean = true) extends TopModule(usePads = false) with AnalogAnnotator {
+  debugBlock.io.stateInfo.start := isANormalState & done
+  debugBlock.io.stateInfo.inState := isADebugState
 
-  (adcDataType, dspDataType) match {
-    case (adc: FixedPoint, dsp: FixedPoint) => 
-      println(s"ADC Width: ${adc.getWidth}. ADC Fractional Width: ${adc.binaryPoint.get}")
-      println(s"DSP Width: ${dsp.getWidth}. DSP Fractional Width: ${dsp.binaryPoint.get}")
-    case (_, _) =>
+  val startFFT = currentStateBools("ADCCollectDebug") & done
+  subFFTs foreach { case (name, mod) => 
+    mod.io.stateInfo.start := startFFT
+    mod.io.stateInfo.inState := currentStateBools("FFT")
   }
 
-  println(s"FFAST Params: ${ffastParams.toString}")
-  println(s"Max # Peeling Iterations: $maxNumPeels")
-  if (useBlackBox) println("Using analog black box!")
+  // TODO: Somewhat redundant
+  val prePeel = (
+    Seq("FFT", "PopulateNonZerotons") ++ peelStateNames.filter(_ != s"Peel${maxNumPeels - 1}")
+  ).map(name => currentStateBools(s"${name}Debug")).reduce(_ | _)
+  peelingBlock.io.stateInfo.start := prePeel & done
+  peelingBlock.io.stateInfo.inState := isAPeelState
 
-  // Need to annotate top-level clk when using clk div
-  val mod = 
-    Module(new FFASTTop(adcDataType = adcDataType, dspDataType = dspDataType, ffastParams, maxNumPeels, useBlackBox))
-  
-  val io = IO(new Bundle { 
-
-    val scr = new ControlStatusIO(DspComplex(dspDataType), ffastParams, mod.numStates)
-    val adcCalScr = new ADCCalSCR(adcDataType, ffastParams)
-
-    // Connect to core reset
-    // Connect to core clk
-    val stateMachineReset = Input(Bool())
-
-    val ADCINP = Input(DspReal())
-    val ADCINM = Input(DspReal())
-    val ADCCLKP = Input(Bool())
-    val ADCCLKM = Input(Bool())
-    val clkrst = Input(Bool())
-
-    // Not critical to local tests
-    val ADCBIAS = Input(Bool())
-    val adcScr = new ADCSCR(ffastParams)
-
-  })
-
-  mod.io.adcCalScr <> io.adcCalScr
-  mod.io.adcScr <> io.adcScr
-
-  // WARNING: SCARY: Fast clk + fast clk reset uses Chisel default clock, reset
-  mod.io.clkrst := reset
-  mod.io.ADCCLKP := clock.asUInt
-  mod.io.ADCCLKM := ~clock.asUInt
-
-  mod.io.ADCBIAS := io.ADCBIAS
-
-  val adcinp = Wire(Analog(1.W))
-  val adcinm = Wire(Analog(1.W))
-
-  renameAnalog(adcinp, "wire\n`ifndef SYNTHESIS\n  real\n`endif\n       ")
-  renameAnalog(adcinm, "wire\n`ifndef SYNTHESIS\n  real\n`endif\n       ")
-
-  attach(adcinp, BitsToReal(io.ADCINP))
-  attach(adcinm, BitsToReal(io.ADCINM))
-
-  attach(mod.io.ADCINP, adcinp)
-  attach(mod.io.ADCINM, adcinm)
-
-  mod.io.scr <> io.scr
-  mod.io.stateMachineReset := io.stateMachineReset
-
-  // Fake subsampling clk derived from 10G
-  val subsamplingT = ffastParams.subSamplingFactors.map(_._2).min - 1
-  val clkDivFake = Module(new SEClkDivider(divBy = subsamplingT, phases = Seq(0, 4)))
-  clkDivFake.io.reset := reset
-  clkDivFake.io.inClk := clock
-  mod.io.extSlowClk := clkDivFake.io.outClks(4)
-  
-  // TODO: Doesn't do anything...
-  annotateClkPort(clock, 
-    id = "clock", // not in io bundle
-    sink = Sink(Some(ClkSrc(period = 5.0)))
-  )
+  // TODO: Somewhat redundant
+  peelingBlock.io.resetPeel := currentStateBools("FFTDebug") & done
 
 }
