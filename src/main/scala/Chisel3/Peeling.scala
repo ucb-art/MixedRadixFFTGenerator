@@ -5,6 +5,7 @@ import chisel3.experimental._
 import dsptools.numbers._
 import dsptools.numbers.implicits._
 import barstools.tapeout.transforms._
+import chisel3.util._
 
 object FFTNormalization {
   def getNormalizationBits(ffastParams: FFASTParams): Int = {
@@ -142,8 +143,203 @@ class PeelingIO[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams,
   override def cloneType = (new PeelingIO(dspDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
 }
 
-class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, subFFTnsColMaxs: Map[Int, Seq[Int]]) extends Module {
+// TODO: Hard coded idx to bank addr delay 
+@chiselName
+class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, subFFTnsColMaxs: Map[Int, Seq[Int]], memOutDelay: Int) extends Module {
   val io = IO(new PeelingIO(dspDataType, ffastParams, subFFTnsColMaxs))
+  val done = Wire(Bool())
+  io.stateInfo.done := done
+
+  // TODO: Probably should separate out
+  withClock(io.clk) {
+    
+    // TODO: Redundant
+    // TODO: Can combine? Peeling + initial search
+    // Reset has precedence
+    val isInitialSearch = withReset(io.resetPeel) { RegEnable(next = false.B, init = true.B, enable = done) }
+    val normalPeel = io.stateInfo.inState & ~isInitialSearch
+
+    val maxSubFFT = ffastParams.subFFTns.max
+    val initialCount = Wire(UInt(range"[0, $maxSubFFT]"))
+    val isMaxInitialCount = initialCount === maxSubFFT.U
+    val initialCountEn = ~isMaxInitialCount
+    initialCount := withReset(io.resetPeel) { RegEnable(next = initialCount + 1.U, init = 0.U, enable = initialCountEn) }
+
+    FFASTMemOutputLanes.connectToDefault(io.dataFromMemory, ffastParams)
+    FFASTMemInputLanes.connectToDefault(io.dataToMemory, ffastParams)
+
+    val initialRE = ffastParams.subFFTns.map { case n =>
+      // TODO: Parameterize
+      // Match Idx -> Bank Addr delay
+      val re = 
+        if (n == ffastParams.subFFTns.max) 
+          RegNext(initialCountEn)
+        else 
+          RegNExt(initialCount < n)
+      n -> re
+    }.toMap
+
+    // In initial: increment bottom every time non-zeroton detected
+    // In normal peeling: 
+    // B > T: length = B - T + 1
+    // B < T: length = length @ end of previous peeling iteration + (B - T) + 1
+    // TODO: Update
+    val cbLength = ffastParams.subFFTns.map { case n =>
+      val o =
+        if (n == 675) 10
+        else if (n == 800) 11
+        else 12
+      n -> o
+    }.toMap
+
+    val idxToSubFFTMap = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) => idx -> n}.toMap
+
+    // TODO: Don't hard code
+    val peelingDelay = memOutDelay + 5
+    val stallCount = Wire(UInt(range"[0, $peelingDelay]"))
+    val stallMaxed = stallCount === peelingDelay.U
+
+    val currentSubFFTBools = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) => 
+      val o = withReset(io.stateInfo.start) { 
+        if (idx == 0) RegInit(init = true.B)
+        else RegInit(init = false.B)
+      }
+      n -> o
+    }.toMap
+
+    val currentSubFFTCBlen = Mux1H(currentSubFFTBools.toSeq.map(_._2).zip(cbLength.toSeq.map(_._2)))
+
+    val currentSubFFTUpdate = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) =>
+      val currentSubFFTUpdateN = Wire(Bool())
+      // TODO: Scan?
+      val currentSubFFTBoolsNextN = if (idx == 0) false.B else currentSubFFTBools.toSeq(idx - 1)._2
+      currentSubFFTBools(n) := Mux(currentSubFFTUpdateN, currentSubFFTBoolsNextN, currentSubFFTBools(n))
+      currentSubFFTUpdateN
+    }
+
+    val peelingCount = Wire(UInt(range"[0, $maxSubFFT)"))
+    val isMaxPeelingCount = peelingCount === (currentSubFFTCBlen - 1.U)
+
+
+
+
+
+
+
+
+
+    // update ismaxpeelingcount, stallcount - 1
+
+
+
+   
+
+
+
+
+
+
+
+    
+      
+      
+ 
+ 
+      count := withReset(io.stateInfo.start) { 
+        RegEnable(next = count + 1.U, init = 0.U, enable = normalPeel & ~isMaxCount) 
+      }
+
+    }
+
+
+
+
+
+
+
+    
+    
+    
+    val stallCountNext = Mux(stallMaxed, Mux(stageCountEnable, 0.U, stallCount), stallCount + 1.U)
+    stallCount := withReset(io.stateInfo.start) { RegEnable(stallCountNext, init = peelingDelay.U, enable = normalPeel) }
+
+
+
+
+
+  
+  }
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+    ffastParams.subFFTns.map { case n => 
+      
+      // Delay 0
+      io.idxToBankAddr.idxs(n) := initialCount
+      // Delay 1 (LUT outputs registered)
+      val bankAddr = io.idxToBankAddr.bankAddrs(n)
+
+      ffastParams.adcDelays foreach { case ph =>
+        io.dataFromMemory(n)(ph)(0).loc.addr := bankAddr.addr
+        io.dataFromMemory(n)(ph)(0).loc.bank := bankAddr.bank
+        io.dataFromMemory(n)(ph)(0).re := re
+      }
+
+
+
+      
+
+
+
+
+
+     
+      
+      n -> 
+    }
+
+
+
+
+
+ io.dataToMemory(n)(ph)(0).we := RegNext(delayedValid & (~isMaxCount))
+
+     
+      
+
+
+
+
+  }
+
+
+
+
+
+  
+
+
+
+
+
+
+
   io.stateInfo.done := true.B
 }
 
@@ -152,7 +348,6 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 /*
 
-set / reset 0th (reset on done)
 skiptoend
 
 ////////////////////////////////////// PEELING MEMORIES

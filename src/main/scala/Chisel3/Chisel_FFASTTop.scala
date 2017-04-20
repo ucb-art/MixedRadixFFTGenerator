@@ -266,7 +266,8 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
     new Peeling(
       dspDataType,
       ffastParams,
-      subFFTnsColMaxs
+      subFFTnsColMaxs,
+      memOutDelay
     )
   )
 

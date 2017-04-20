@@ -196,7 +196,8 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
       if (ffastParams.adcDelays.contains(clkDelay)) {
         Seq(
           // Don't need set input delay on ADC out b/c inormation provided by Lib
-          s"create_generated_clock -name clkout_${divBy}_${clkDelay} -source $$pin_inClk -edges {${edges.mkString(" ")}} [get_pins -hier ${sdcRegExpr}clkout_${divBy}_${clkDelay}]"
+          s"create_generated_clock -name clkout_${divBy}_${clkDelay} -source $$pin_inClk -edges {${edges.mkString(" ")}} [get_pins -hier ${sdcRegExpr}clkout_${divBy}_${clkDelay}]",
+          s"set_max_fanout 4.0 [get_pins -hier ${sdcRegExpr}clkout_${divBy}_${clkDelay}]"
         )
       }
       else {  
@@ -263,21 +264,6 @@ class AnalogModelWrapperIO[T <: Data:RealBits](adcDataType: => T, ffastParams: F
     Output(new ValidIO(adcDataType)), ffastParams.adcDelays), ffastParams.subFFTns)
   override def cloneType = (new AnalogModelWrapperIO(adcDataType, ffastParams)).asInstanceOf[this.type]
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 @chiselName
 class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTParams, useBlackBox: Boolean) extends Module with RealAnalogAnnotator {

@@ -297,12 +297,13 @@ class CollectADCSamples[T <: Data:RealBits](
       // @ count n, hold
       val count = Wire(UInt(range"[0, $n]"))
       val isMaxCount = count === n.U
-      val countNext = Mux(isMaxCount, n.U, count +& 1.U)
+      val isNotMaxCount = ~isMaxCount
+      val en = delayedValid & (~isMaxCount)
       // First time deq valid happens corresponds to data 0
       // which means that it goes to idx one the next time data is received (data 1)
-      count := RegEnable(next = countNext, init = 0.U, enable = delayedValid)
+      count := RegEnable(next = count + 1.U, init = 0.U, enable = en)
       // Delayed to match Idx -> Bank, Addr LUT + Calibration delay
-      io.dataToMemory(n)(ph)(0).we := RegNext(delayedValid & (~isMaxCount))
+      io.dataToMemory(n)(ph)(0).we := RegNext(en)
       // TODO: Is # of lanes always == # of banks?
       // Address associated with *current* count
       (((n, ph) -> count), isMaxCount)
