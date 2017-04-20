@@ -173,6 +173,7 @@ class CalcCtrl(fftParams: FactorizationParams, fftType: FFTType, memOutDelay: In
 
     val stallCount = Wire(UInt(range"[0, $peAndMemOutDly]"))
     val stallMaxed = stallCount === peAndMemOutDly.U
+    // TODO: Merge some of these
     val stallCountNext = Mux(stallMaxed, Mux(stageCountEnable, 0.U, stallCount), stallCount + 1.U)
     stallCount := RegEnable(stallCountNext, init = peAndMemOutDly.U, enable = io.stateInfo.inState)
 
