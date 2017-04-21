@@ -8,6 +8,8 @@ import barstools.tapeout.transforms._
 import chisel3.util._
 import dsptools.{hasContext, DspContext}
 
+// TODO: Note: Initial search step is kind of costly/extraneous
+
 object FFTNormalization {
   def getNormalizationBits(ffastParams: FFASTParams): Int = {
     // TODO: Don't take max of sub FFTns in case they cross power of 2 boundaries
@@ -166,8 +168,9 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
   // TODO: Don't hard code
   val idxToBankAddrDelay = 1
-  val peelingDelay = idxToBankAddrDelay + memOutDelay + 5
-  val initialSearchDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + 2
+  val zerotonDelay = 2
+  val peelingDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + 5
+  val initialSearchDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + zerotonDelay
 
   val io = IO(new PeelingIO(dspDataType, ffastParams, subFFTnsColMaxs))
 
@@ -200,6 +203,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     val initialCount = Wire(UInt(range"[0, $maxSubFFT)"))
     val isMaxInitialCount = initialCount === (maxSubFFT - 1).U
     val initialCountEn = ~isMaxInitialCount
+    // Not delayed!
     initialCount := withReset(io.resetPeel) { RegEnable(next = initialCount + 1.U, init = 0.U, enable = initialCountEn) }
 
     // Technically, done should go high on last valid clk cycle to indicate transition
@@ -321,65 +325,158 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
    
     done := Mux(isInitialSearch, initialSearchDone, peelingIterDone)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     val fftOutNormalized = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
       val in = dataFromMemory(n)(ph)
       val pwr2 = 1 << FFTNormalization.getNormalizationBits(ffastParams)
-      val normalizationFactor = in.fromDouble(pwr2.toDouble / n)
-      val norm = dataFromMemory(n)(ph) context_* normalizationFactor
-      norm.suggestName(s"fftOutNormalized_$n_$ph")
+      val normalizationFactor = in.real.fromDouble(pwr2.toDouble / n)
+      val ir = Mux1H(Seq(isInitialSearch -> in.real))
+      val ii = Mux1H(Seq(isInitialSearch -> in.imag))
+      val normR = ir context_* normalizationFactor
+      val normI = ii context_* normalizationFactor
+      val norm = Wire(dataFromMemory(n)(ph).cloneType)
+      norm.real := normR
+      norm.imag := normI
+      norm.suggestName(s"fftOutNormalized_${n}_${ph}")
       (n, ph) -> norm
+    }.toMap
+
+    val dataFromMemoryPeeling = Wire(dataFromMemory.cloneType)
+
+    // TODO: Can probably get rid of several sets of registers
+    ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
+      // TODO: Match delay?
+      dataFromMemoryPeeling(n)(ph) := Mux(isInitialSearch, fftOutNormalized(n, ph), dataFromMemory(n)(ph)))
     }
 
+    val isZeroton = ffastParams.subFFTns.map { case n =>
+      val mod = Module(new Zeroton(dspDataType, ffastParams))
+      mod.suggestName(s"zerotonDetector$n")
+      mod.io.clk := io.clk
+      mod.io.bin := dataFromMemoryPeeling(n)
+      mod.io.zeroThresholdPwr := io.peelScr.zeroThresholdPwr(n)
+      // TODO: Don't do require; set
+      require(mod.moduleDelay == zerotonDelay)
+      val isZeroton = mod.io.isZeroton
+      isZeroton.suggestName("isZeroton$n")
+      n -> isZeroton
+    }.toMap
 
-    // in general in
+    // Should align with the right enables
+    val initialCountDelayed = ShiftRegister(initialCount, initialSearchDelay)
 
+//****************---    // TODO: For normal peeling! --> only update current n
+    val updateBottomPointers = ffastParams.subFFTns.map { case n =>
+      // For initial search, enable when non zeroton detected
+      // Should be lined up!
+      val updateBP = ~isZeroton(n) & isInitialSearch & initialWE(n) 
+      updateBP.suggestName(s"updateBP$n")
+      n -> updateBP 
+    }.toMap
 
+    val bottomPointers = ffastParams.subFFTns.map { case n =>
+      val bPointer = Wire(UInt(range"[0, $n]")) 
+      bPointer.suggestName(s"bPointer$n")
+      n -> bPointer
+    }.toMap
 
+    val cbEmpty == ffastParams.subFFTns.map { case n =>
+      val cbE = bottomPointers(n) === n.U 
+      cbE.suggestName(s"cbEmpty$n")
+      n -> cbE
+    }.toMap
 
+    val bottomPointersNext = ffastParams.subFFTns.map { case n =>
+      // TODO: Probably don't need subtract -- renormalize in other direction (store cbLength - 1)
+      val currentCBMax = cbLength(n) - 1.U
+      // Should not have to worry about wrapping in initialization code
+      val bPointerIsMax = Mux(normalPeel, bottomPointers(n) === currentCBMax, bottomPointers(n) === n.U)        
+      val bPointerNext = Mux(bPointerIsMax, 0.U, bottomPointers(n) + 1.U)
+      bPointerNext.suggestName(s"bpNext$n")
+      n -> bPointerNext
+    }.toSeq
 
-
-
-
-
-
-
-
-
-
-
-val initialRE = ffastParams.subFFTns.map { case n =>
-      // TODO: Parameterize
-      // Match Idx -> Bank Addr delay
-      val re = withReset(io.stateInfo.start) {
-        if (n == ffastParams.subFFTns.max) 
-          RegNext(~initialSearchDoneNoDelay, init = false.B)
-        else 
-          RegNext(initialCount < n, init = false.B)
+    ffastParams.subFFTns.foreach { case n => 
+      bottomPointers(n) := withReset(io.resetPeel) { 
+        RegEnable(next = bottomPointersNext(n), init = n.U, enable = updateBottomPointers(n))
       }
-      re.suggestName(s"initialRE$n")
-      n -> re
+    }
+
+    ////////////////////////////////////// PEELING MEMORIES
+    // TOOD: DON'T HARD CODE MEMORY EXCEPTIONS, name should be np
+    val circularBuffers = ffastParams.subFFTns.map { case np =>
+      val n = if (np == 675) 688 else np
+      val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $np)"), n, s"circBuffer_sram_$n"))
+      mod.suggestName(s"cb_$np")
+      mod.io.waddr := bottomPointersNext(np)
+      mod.io.we := updateBottomPointers(np)
+      mod.io.clk := globalClk
+      np -> mod
     }.toMap
 
 
 
 
+
+
+
+
+
+
+
+                                                                                                             
+                                                                                                                                                                            
+                                                                                                                                                                                                                                            
+
+
+                                                                                                                                                                       
+
+//****************---    // TODO: For normal peeling! --> only update current n
+
+
+  // only fornormal
+  val raddr = Input(UInt(range"[0, $depth)"))
+  val re = Input(Bool())
+  val dout = Output(dataType)
+
+
+
+
+  val din = Input(dataType)
+  = initialCount else dout delayed if on current one
+  
+
+val peelingDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + 5
+
+
+    // TODO: Normalized: Different fraction!
+    val k = Seq(ffastParams.k, 1952).max
+    val n = ffastParams.fftn
+    val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
+    outIdxsMem.io.clk := globalClk
+    val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
+    outValsMem.io.clk := globalClk
+ 
+
+
+
+
+
+
+    // initialSearchEnable -> write to bPointerNext --> idx == initialCount delayed
+
+
+
+
+
+
+
+
+
+    // if b = n, then 0 length
+
+    // ismultiton
+
+    // no singletons/zerotons detected
 
     ffastParams.subFFTns.map { case n => 
       // Delay 0
@@ -397,74 +494,7 @@ val initialRE = ffastParams.subFFTns.map { case n =>
     }
 
 
-
-
-
-
-
-
-
-    val zerotonDetectors = ffastParams.subFFTns.map { case n =>
-      val mod = Module(new Zeroton(dspDataType, ffastParams))
-      mod.suggestName(s"zerotonDetector$n")
-      mod.io.clk := io.clk
-      mod.io.bin := 
-      mod.io.zeroThresholdPwr := io.peelingScr.zeroTHresholdPwr(n)
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-    val bottomPointers = ffastParams.subFFTns.map { case n => 
-      val bPointer = Wire(UInt(range"[0, $n)")) 
-      // TODO: Probably don't need subtract -- renormalize in other direction (store cbLength - 1)
-      val currentCBMax = cbLength(n) - 1.U
-      val bPointerIsMax = Mux(isInitialSearch, bPointer === (n - 1).U, currentCBMax == bPointer)
-      val bPointerNext = Mux(bPointerIsMax, 0.U, bPointer + 1.U)
-      // For initial search, enable when non zeroton detected
-      val initialSearchEnable = ~zerotonDetectors(n).io.isZeroton & isInitialSearch
-      val o = withReset(io.resetPeel) { 
-        RegEnable(next = bPointerNext, init = 0.U, enable = )
-      }
-      o.suggestName(s"cbLength$n") 
-      n -> o
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // CURRENT FFT -> PICK RIGHT BINS, PICK RIGHT THRESHOLDS
-// for initial -> 3 in parallel
-
-
-/*
-
-class ZerotonIO[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams) extends Bundle {
-  
-  val isZeroton = Output(Bool())
-  override def cloneType = (new ZerotonIO(dspDataType ffastParams)).asInstanceOf[this.type]
-}  
-*/
-
 
 ////////// WARNING PLACEHOLDER
     cbLengthNext foreach { case (n, o) =>
@@ -478,63 +508,17 @@ class ZerotonIO[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams)
 }
 
 
-
-
-
-
-
-
-  
-
-
-
-
-
-
-
 /*
 
-
-
-// DIVIDE APPROPRIATELY
-
-
-    
-
-
-
-
-
     io.dataToMemory(n)(ph)(0).we := RegNext(delayedValid & (~isMaxCount))
-
-     
       
 */
-
-
-
 
 /*
 
 skiptoend
 
-////////////////////////////////////// PEELING MEMORIES
-  // TOOD: DON'T HARD CODE MEMORY EXCEPTIONS, name should be np
-  val circularBuffers = ffastParams.subFFTns.map { case np =>
-    val n = if (np == 675) 688 else np
-    val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $np)"), n, s"circBuffer_sram_$n"))
-    mod.suggestName(s"cb_$np")
-    mod.io.clk := globalClk
-    np -> mod
-  }.toMap
-  // TODO: Normalized: Different fraction!
-  val k = Seq(ffastParams.k, 1952).max
-  val n = ffastParams.fftn
-  val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
-  outIdxsMem.io.clk := globalClk
-  val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
-  outValsMem.io.clk := globalClk
-////////////////////////////////////// PEELING MEMORIES
+
 
 */
 
