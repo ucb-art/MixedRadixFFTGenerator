@@ -135,12 +135,11 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
   val ffastOutNumFound = Output(ffastOutRIdx.cloneType)
 
   // DEBUG
-  val cbTopPointer = new CustomIndexedBundle(ffastParams.subFFTns.map(subn => subn -> Output(UInt(range"[0, $subn)"))): _*)
-  val cbBottomPointer = Output(cbTopPointer.cloneType)
-  val currentStageInitialBufferLength = Output(cbTopPointer.cloneType)
+  val cbLength = new CustomIndexedBundle(ffastParams.subFFTns.map(subn => subn -> Output(UInt(range"[0, $subn]"))): _*)
 
   val cbRIdxFromCPU = Input(UInt(range"[0, $maxSubFFT)"))
-  val cbSubBinToCPU = Output(cbTopPointer.cloneType)
+  // TODO: Overprovisions by + 1
+  val cbSubBinToCPU = Output(cbLength.cloneType)
   val cbREFromCPU = Input(Bool())
   val cbREToCPU = Output(Bool())
 
@@ -159,6 +158,8 @@ class PeelingIO[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams,
   val dataFromMemory = Flipped(FFASTMemOutputLanes(dspDataType, ffastParams))
   val idxToBankAddr = Flipped(new SubFFTIdxToBankAddrLUTsIO(subFFTnsColMaxs))
 
+  val skipToEnd = Output(Bool())
+
   override def cloneType = (new PeelingIO(dspDataType, ffastParams, subFFTnsColMaxs)).asInstanceOf[this.type]
 }
 
@@ -169,8 +170,25 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
   // TODO: Don't hard code
   val idxToBankAddrDelay = 1
   val zerotonDelay = 2
-  val peelingDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + 5
+  val singletonEstimatorDelay = 3
+  val binToSubFFTIdxDelay = 3
+  val peelSubDelay = 3
   val initialSearchDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + zerotonDelay
+
+  // CB Memory -> Idx to Bank Address -> Main Memory -> Is Zeroton?
+  //                                                                -> Singleton Estimator (loc, val, isSingle) -> Bin To Sub FFT Idx -> Idx to Bank Address (others) -> Main Memory (others) -> Peel Subtraction
+  //                                                                                                                                                                                          -> Zeroton (others)
+  val peelingDelayParts = Seq(
+    memOutDelay, 
+    idxToBankAddrDelay, 
+    memOutDelay, 
+    zerotonDelay, 
+    singletonEstimatorDelay, 
+    binToSubFFTIdxDelay, 
+    idxToBankAddrDelay, 
+    memOutDelay, 
+    peelSubDelay)                           // Should be longer than zeroton estimator delay
+  val peelingDelay = peelingDelayParts.sum
 
   val io = IO(new PeelingIO(dspDataType, ffastParams, subFFTnsColMaxs))
 
@@ -208,8 +226,9 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
     // Technically, done should go high on last valid clk cycle to indicate transition
     // However, "doneNoDelay" goes high on the cycle after that -- one less pipeline should be used
-    val initialSearchDoneNoDelay = withReset(io.resetPeel) { RegNext(isMaxInitialCount, init = false.B) } 
-    val initialSearchDone = withReset(io.resetPeel) {
+    // TODO: isInitialSearch necessary???
+    val initialSearchDoneNoDelay = withReset(io.stateInfo.start) { RegEnable(next = isMaxInitialCount, init = false.B, enable = isInitialSearch) } 
+    val initialSearchDone = withReset(io.stateInfo.start) {
       ShiftRegister(
         in = initialSearchDoneNoDelay, 
         n = initialSearchDelay - 1, 
@@ -257,19 +276,6 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       n -> o
     }.toMap
 
-    val cbLength = ffastParams.subFFTns.map { case n =>
-      val o = withReset(io.resetPeel) { 
-        RegEnable(next = cbLengthNext(n), init = 0.U, enable = currentSubFFTUpdate | initialSearchDone)
-      }
-      o.suggestName(s"cbLength$n") 
-      n -> o
-    }.toMap
-
-    val idxToSubFFTMap = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) => idx -> n }.toMap
-
-    val stallCount = Wire(UInt(range"[0, $peelingDelay]"))
-    val stallMaxed = stallCount === peelingDelay.U
-
     val currentSubFFTBools = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) => 
       val o = withReset(io.stateInfo.start) { 
         if (idx == 0) RegInit(init = true.B)
@@ -278,6 +284,42 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       o.suggestName(s"currSubFFTBool$n")
       n -> o
     }.toMap
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+    val updateCBLength = ffastParams.subFFTns.map { case n =>
+      // Initial search --> checks things in parallel
+      // Normal peeling -> checks sub FFTs one by one
+      val o = (currentSubFFTUpdate & currentSubFFTBools(n)) | initialSearchDone
+      o.suggestName(s"updateCBLength$n")
+      n -> o
+    }.toMap
+
+    val cbLength = ffastParams.subFFTns.map { case n =>
+      val o = withReset(io.resetPeel) { 
+        RegEnable(next = cbLengthNext(n), init = 0.U, enable = updateCBLength(n))
+      }
+      o.suggestName(s"cbLength$n") 
+      io.peelScr.cbLength(n) := o
+      n -> o
+    }.toMap
+
+    val idxToSubFFTMap = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) => idx -> n }.toMap
+
+    val stallCount = Wire(UInt(range"[0, $peelingDelay]"))
+    val stallMaxed = stallCount === peelingDelay.U
 
     val currentSubFFTCBlen = Mux1H(currentSubFFTBools.toSeq.map(_._2).zip(cbLength.toSeq.map(_._2)))
     require(currentSubFFTBools.toSeq.map(_._1) == cbLength.toSeq.map(_._1), "Must be ordered!")
@@ -292,10 +334,22 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     val isMaxPeelingCount = peelingCount === (currentSubFFTCBlen - 1.U)
 
     // Note: Also where you update new length for next iteration
-    currentSubFFTUpdate := isMaxPeelingCount & (stallCount === (peelingDelay - 1).U)
+    // TODO: Not sure if normalPeel condition is necessary
+    currentSubFFTUpdate := isMaxPeelingCount & (stallCount === (peelingDelay - 1).U) & normalPeel
 
     peelingCount := withReset(io.stateInfo.start | currentSubFFTUpdate) { 
       RegEnable(next = peelingCount + 1.U, init = 0.U, enable = normalPeel & ~isMaxPeelingCount) 
+    }
+
+    val peelingPartsEnable = peelingDelayParts.scanLeft(stallMaxed) { case (accumDelay, nextShift) => 
+      withReset(io.stateInfo.start) {
+        ShiftRegister(
+          in = accumDelay, 
+          n = nextShift,
+          resetData = false.B,
+          en = normalPeel
+        ) 
+      }
     }
 
     val stallCountNext = Mux(stallMaxed, 0.U, stallCount + 1.U)
@@ -345,7 +399,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     // TODO: Can probably get rid of several sets of registers
     ffastParams.getSubFFTDelayKeys.foreach { case (n, ph) => 
       // TODO: Match delay?
-      dataFromMemoryPeeling(n)(ph) := Mux(isInitialSearch, fftOutNormalized(n, ph), dataFromMemory(n)(ph)))
+      dataFromMemoryPeeling(n)(ph) := Mux(isInitialSearch, fftOutNormalized(n, ph), dataFromMemory(n)(ph))
     }
 
     val isZeroton = ffastParams.subFFTns.map { case n =>
@@ -364,11 +418,13 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     // Should align with the right enables
     val initialCountDelayed = ShiftRegister(initialCount, initialSearchDelay)
 
-//****************---    // TODO: For normal peeling! --> only update current n
+    val isMultiton = Wire(Bool())
+    val multitonUpdate = peelingPartsEnable.last & isMultiton
+    // For normal peeling! --> only update current n
     val updateBottomPointers = ffastParams.subFFTns.map { case n =>
       // For initial search, enable when non zeroton detected
       // Should be lined up!
-      val updateBP = ~isZeroton(n) & isInitialSearch & initialWE(n) 
+      val updateBP = Mux(isInitialSearch, ~isZeroton(n) & initialWE(n), currentSubFFTBools(n) & multitonUpdate)
       updateBP.suggestName(s"updateBP$n")
       n -> updateBP 
     }.toMap
@@ -379,7 +435,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       n -> bPointer
     }.toMap
 
-    val cbEmpty == ffastParams.subFFTns.map { case n =>
+    val cbEmpty = ffastParams.subFFTns.map { case n =>
       val cbE = bottomPointers(n) === n.U 
       cbE.suggestName(s"cbEmpty$n")
       n -> cbE
@@ -393,7 +449,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       val bPointerNext = Mux(bPointerIsMax, 0.U, bottomPointers(n) + 1.U)
       bPointerNext.suggestName(s"bpNext$n")
       n -> bPointerNext
-    }.toSeq
+    }.toMap
 
     ffastParams.subFFTns.foreach { case n => 
       bottomPointers(n) := withReset(io.resetPeel) { 
@@ -401,18 +457,88 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       }
     }
 
+    // Only allow SCR reading in debug
+    io.peelScr.cbREToCPU := withReset(io.stateInfo.done) {
+      ShiftRegister(io.peelScr.cbREFromCPU, memOutDelay, resetData = false.B, en = true.B)
+    }
+
+    val cbraddr = Mux(normalPeel, peelingCount, io.peelScr.cbRIdxFromCPU)
+
     ////////////////////////////////////// PEELING MEMORIES
     // TOOD: DON'T HARD CODE MEMORY EXCEPTIONS, name should be np
-    val circularBuffers = ffastParams.subFFTns.map { case np =>
+    val circularBuffersSubFFTIdx = ffastParams.subFFTns.map { case np =>
       val n = if (np == 675) 688 else np
       val mod = Module(new WriteBeforeReadMem(UInt(range"[0, $np)"), n, s"circBuffer_sram_$n"))
       mod.suggestName(s"cb_$np")
       mod.io.waddr := bottomPointersNext(np)
       mod.io.we := updateBottomPointers(np)
-      mod.io.clk := globalClk
-      np -> mod
+      mod.io.clk := io.clk
+      // In normal peeling mode, if the sub FFT bin tested was a multiton, put its index back into the 
+      // circular buffer. In initial search mode, if the (sequentially searched) sub FFT bin is 
+      // not a zero-ton, add to the circular buffer
+      val delayedSubFFTIdx = ShiftRegister(mod.io.dout, peelingDelayParts.tail.sum)
+      mod.io.din := Mux(normalPeel, delayedSubFFTIdx, initialCountDelayed)
+
+      // Only read in normal peeling mode OR debug
+      mod.io.raddr := cbraddr
+      mod.io.re := Mux(normalPeel, peelingPartsEnable.head & currentSubFFTBools(np), io.peelScr.cbREFromCPU)
+      // TODO: Separate out normal, initial, debug states
+      io.peelScr.cbSubBinToCPU(np) := Mux1H(Seq(~io.stateInfo.inState -> mod.io.dout)) 
+      np -> mod.io.dout
     }.toMap
 
+    ffastParams.subFFTns.foreach { case n =>
+      val temp = Mux(updateBottomPointers(n), bottomPointersNext(n), bottomPointers(n))
+      cbLengthNext(n) := Mux(temp === n.U, 0.U, temp + 1.U)
+    }
+
+    val lengthUnchanged = ffastParams.subFFTns.map { case n =>
+      val lengthUnchangedN = cbLengthNext(n) === cbLength(n)  
+      lengthUnchangedN.suggestName(s"lengthUnchanged$n")
+      n -> lengthUnchangedN
+    }.toMap
+
+    // Done --> circular buffer length doesn't change between iterations
+    // Note that you must also consider whether the bottom pointer should be updated, since it's possible
+    // that all entries are multitons -> bottom pointer keeps moving until it's back to its original place [i.e. peeler is stuck]
+    val subFFTPeelDone = ffastParams.subFFTns.map { case n =>
+      val o = withReset(io.resetPeel) {
+        RegEnable(next = true.B, init = false.B, enable = lengthUnchanged(n) & ~updateBottomPointers(n) & updateCBLength(n))
+      }
+      o.suggestName(s"subFFTPeelDone$n")
+      n -> o
+    }.toMap
+
+    val subFFTStuckAtEnd = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) =>
+      val o = Wire(Bool())
+      if (idx == ffastParams.subFFTns.length - 1) {
+        // Always updating last sub FFT CB @ last cycle of state
+        o := lengthUnchanged(n) & updateBottomPointers(n)
+      }
+      else {
+        // Note: for initial search: If it should be non-empty, length will definitely have changed (not stuck)
+        // If length hasn't changed, it's b/c it's empty (update pointer = false)
+        o := RegEnable(next = lengthUnchanged(n) & updateBottomPointers(n), enable = updateCBLength(n))
+      }
+      o.suggestName(s"subFFTStuckAtEnd$n")
+      n -> o
+    }.toMap
+
+    val skipToEnd = withReset(io.resetPeel) { 
+      // Done if all are either stuck or empty buffers
+      val skip = subFFTPeelDone.map(_._2).zip(subFFTStuckAtEnd.map(_._2)).map { case (peelDone, stuck) => peelDone | stuck }.reduce(_ & _)
+      RegEnable(next = true.B, init = false.B, enable = skip)
+    }
+
+    io.skipToEnd := skipToEnd
+
+
+
+
+
+
+
+}}
 
 
 
@@ -423,30 +549,21 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 
 
-                                                                                                             
-                                                                                                                                                                            
-                                                                                                                                                                                                                                            
-
-
-                                                                                                                                                                       
-
-//****************---    // TODO: For normal peeling! --> only update current n
-
-
-  // only fornormal
-  val raddr = Input(UInt(range"[0, $depth)"))
-  val re = Input(Bool())
-  val dout = Output(dataType)
 
 
 
-
-  val din = Input(dataType)
-  = initialCount else dout delayed if on current one
+    
   
 
-val peelingDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + 5
 
+ 
+  
+/*
+    
+    
+    // zeroton -> just changes counter; doesn't write 
+    // don't even stall when sub fft done
+    
 
     // TODO: Normalized: Different fraction!
     val k = Seq(ffastParams.k, 1952).max
@@ -455,28 +572,6 @@ val peelingDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + 5
     outIdxsMem.io.clk := globalClk
     val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
     outValsMem.io.clk := globalClk
- 
-
-
-
-
-
-
-    // initialSearchEnable -> write to bPointerNext --> idx == initialCount delayed
-
-
-
-
-
-
-
-
-
-    // if b = n, then 0 length
-
-    // ismultiton
-
-    // no singletons/zerotons detected
 
     ffastParams.subFFTns.map { case n => 
       // Delay 0
@@ -493,33 +588,8 @@ val peelingDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + 5
       n -> 
     }
 
-
-// CURRENT FFT -> PICK RIGHT BINS, PICK RIGHT THRESHOLDS
-
-////////// WARNING PLACEHOLDER
-    cbLengthNext foreach { case (n, o) =>
-      if (n == 675) o := 10.U
-      else if (n == 800) o := 11.U
-      else o := 12.U
-    }
+    // CURRENT FFT -> PICK RIGHT BINS, PICK RIGHT THRESHOLDS ; SCR ; is multiton
+    // io.dataToMemory(n)(ph)(0).we := RegNext(delayedValid & (~isMaxCount))
 
   }
-
-}
-
-
-/*
-
-    io.dataToMemory(n)(ph)(0).we := RegNext(delayedValid & (~isMaxCount))
-      
-*/
-
-/*
-
-skiptoend
-
-
-
-*/
-
-
+}*/

@@ -335,7 +335,7 @@ val subFFTnsColMaxs = inputSubFFTIdxToBankAddrLUT.io.pack.subFFTnsColMaxs
   // TODO: When done + skip to end (peel only), nextState is different -- or just waste # peel cycles
   // with done always raised
   // TODO: Convert to enable?
-  val nextState = nextStateWithoutSkipToEnd
+  val nextState = Mux(peelingBlock.io.skipToEnd & isAPeelState, statesInt(lastState).U, nextStateWithoutSkipToEnd)
   currentState := Mux(done, nextState, currentState)
 
   // TODO: Make state machine smarter...
