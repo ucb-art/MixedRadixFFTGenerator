@@ -544,7 +544,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 
 
-
+/*
 // current is zeroton -> don't write (delay x + y)
 // current is singleton -> write 0
 // current is multiton = !zeroton & !singleton -> don't write (delay y)
@@ -610,6 +610,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
     // all multiton -> should never write
     // all zeroton -> ??
+    */
 
   }
 }

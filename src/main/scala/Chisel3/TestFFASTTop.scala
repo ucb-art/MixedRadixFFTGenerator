@@ -636,6 +636,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   setupAdcCal()
   checkConnection()
 
+/*
   for (loopNum <- 0 until numLoops) {
     runADC()
     // Always run ADCCollectDebug -- gives you a sense of how to calculate stuff afterwards
@@ -698,7 +699,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   println("\n\n *************************************************** \n\n")
   checksPerformed.toSeq foreach { x => println(x) }
-
+*/
 // -------------------------------- ADC -> FFT OUTPUT TESTS
 
   setupDebug(Seq("ADCCollectDebug", "FFTDebug"))

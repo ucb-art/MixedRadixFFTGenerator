@@ -38,7 +38,7 @@ object FFTTestVectors {
     val nonZeroIdxs = out.zipWithIndex.map { case (o, i) => 
       val magSq = (o.real * o.real + o.imag * o.imag)/(fft * fft).toDouble
       if (magSq > zeroThresholdPwr) {
-        if (disp) println(s"FFT: $fft Index: $i MagSq Norm: $magSq") 
+        if (disp) println(s"FFT: $fft Index: $i MagSq Norm: $magSq Normalized Output: ${o.real / fft} + ${o.imag / fft} i") 
         i 
       }
       else -1

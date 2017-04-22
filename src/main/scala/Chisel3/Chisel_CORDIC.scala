@@ -9,10 +9,12 @@ import org.scalatest.{FlatSpec, Matchers}
 import dsptools.{DspTester, DspTesterOptionsManager}
 import barstools.tapeout.TestParams
 
+// TODO: Clean up stall stuff from 290C, make rotation/vectoring runtime programmable
+
 // See http://www.andraka.com/files/crdcsrvy.pdf
 
 // x + i * y
-case class CordicParams[T <: Data:RealBits](xyType: T, unrollingFactor: Double) {
+case class CordicParams[T <: Data:RealBits](xyType: T, numPipes: Int, isRotation: Boolean) {
   
   val angleTypeTemp = xyType match {
     case _: DspReal => throw new Exception("CORDIC doesn't work with real types!")
@@ -24,18 +26,24 @@ case class CordicParams[T <: Data:RealBits](xyType: T, unrollingFactor: Double) 
       require(s.widthKnown, "xy type width unknown")
       s
   }
+
   val angleType = angleTypeTemp.asInstanceOf[T]
 
   val xyWidth = xyType.getWidth
   val angleWidth = angleType.getWidth
-  val totalIterations = xyWidth
-  // unrollingFactor = 0 -> no unfolding (1 stage)
-  // unrollingFactor = 1 -> complete unfolding (iterations # of stages)
-  val numStages = if (unrollingFactor > 0) math.ceil(totalIterations * unrollingFactor).toInt else 1
-  val numIterationsPerStage = totalIterations / numStages
-  // Want to distribute iterations as evenly as possibly (difference of 1 max)
-  // i.e. if leftoveriterations is non-zero, stages will have different #'s of iterations
-  val leftoverIterations = totalIterations % numStages
+  val numStages = xyWidth
+
+  // Spread out pipeline delay
+  private val numZeroPipes = numStages / numPipes - 1
+  private val tempPipes = Seq.fill(numPipes)(Seq.fill(numZeroPipes)(0) ++ Seq(1))
+  private val leftOverZeroPipes = numStages - tempPipes.flatten.length
+  val cordicDelays = tempPipes.zipWithIndex.map { case (pipe, idx) =>
+    if (idx < leftOverZeroPipes)
+      Seq(0) ++ pipe
+    else
+      pipe
+  }.reverse.flatten
+  require(cordicDelays.length == numStages)
 
 }
 
@@ -45,8 +53,7 @@ class CordicIOCore[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Bu
   // Angle is signed (modulo 2Pi)
   val angle = Input(cordicParams.angleType)
   // true = rotation; false = vectoring
-  val isRotation = Input(Bool())
-  val valid = Input(Bool())
+  // val isRotation = Input(Bool())
   override def cloneType = (new CordicIOCore(cordicParams)).asInstanceOf[this.type]
 }
 
@@ -54,7 +61,6 @@ class CordicIO[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Bundle
   val in = new CordicIOCore(cordicParams)
   val out = Flipped(new CordicIOCore(cordicParams))
   val clk = Input(Clock())
-  val reset = Input(Bool())
   override def cloneType = (new CordicIO(cordicParams)).asInstanceOf[this.type]
 }
 
@@ -69,7 +75,9 @@ class CordicIO[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Bundle
 // y' = -y
 // z' = z - Pi
 @chiselName
-class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module {
+class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module with DelayTracking {
+
+  val moduleDelay = cordicParams.numPipes
   
   val io = IO(new CordicIO(cordicParams))
 
@@ -89,38 +97,23 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module {
   val threeHalvesPi = halfPi * 3
   val angleZeroTo2Pi = io.in.angle.asUInt
 
-  val correctInput = Mux(
-    io.in.isRotation,
-    (angleZeroTo2Pi > halfPi.U) & (angleZeroTo2Pi < threeHalvesPi.U),
-    io.in.x.signBit
-  )
-
-  // Distribute "leftover iterations" properly total # of iterations 
-  // doesn't divide # of stages evenly (extras given to front stages)
-  val stageIterations = (0 until cordicParams.numStages).map { case stage => 
-    if (stage < cordicParams.leftoverIterations) 
-      cordicParams.numIterationsPerStage + 1
+  val correctInput = 
+    if (cordicParams.isRotation)
+      (angleZeroTo2Pi > halfPi.U) & (angleZeroTo2Pi < threeHalvesPi.U)
     else
-      cordicParams.numIterationsPerStage
-  }
-
-  // Each stage starts at offset based off of how many iterations have been previously done
-  // Initial stage has offset 0 from default value
-  val stageOffset = stageIterations.init.scanLeft(0) { case (accum, next) => accum + next }
+      io.in.x.signBit
 
   // CORDIC is more bit-level, so do everything as SInt
   val sintCordicParams = cordicParams.copy(
     xyType = SInt(cordicParams.xyWidth.W)
   )
 
-  val cordicStages = stageIterations.zip(stageOffset).map { case (iterations, offset) => 
-    Module(new CordicStage(sintCordicParams, offset = offset, iterations = iterations))
-  }
+  val cordicStages = cordicParams.cordicDelays.zipWithIndex.map { case (numPipes, idx) =>
+    Module(new CordicStage(sintCordicParams, offset = idx, numPipes = numPipes))
+  } 
 
   // Assign first stage inputs to top level inputs
   // TODO: This doesn't bit grow
-  cordicStages(0).io.in.isRotation := io.in.isRotation
-  cordicStages(0).io.in.valid := io.in.valid
   cordicStages(0).io.in.x := Mux(correctInput, -io.in.x, io.in.x).asUInt.asSInt
   cordicStages(0).io.in.y := Mux(correctInput, -io.in.y, io.in.y).asUInt.asSInt
   // Note that for -Pi, overflow is OK, b/c -Pi and +Pi take you to the same place
@@ -129,10 +122,7 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module {
 
   (0 until cordicParams.numStages) foreach { case stage =>
     cordicStages(stage).io.clk := io.clk
-    cordicStages(stage).io.reset := io.reset
     if (stage == cordicParams.numStages - 1) {
-      io.out.isRotation := cordicStages(stage).io.out.isRotation
-      io.out.valid := cordicStages(stage).io.out.valid
       io.out.x := cordicParams.xyType.fromBits(cordicStages(stage).io.out.x.asUInt)
       io.out.y := cordicParams.xyType.fromBits(cordicStages(stage).io.out.y.asUInt)
       io.out.angle := cordicParams.angleType.fromBits(cordicStages(stage).io.out.angle.asUInt)
@@ -151,13 +141,13 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module {
 //   and computation will start again *if* the input is valid
 
 @chiselName
-class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int, iterations: Int) extends Module {
+class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int, numPipes: Int) extends Module {
   require(offset >= 0)
-  require(iterations >= 1)
+  require(numPipes >= 0)
 
   val io = IO(new CordicIO(cordicParams))
 
-  withClockAndReset(io.clk, io.reset) {
+  withClock(io.clk) {
 
     // z == angle
     // x(i + 1) = x(i) - y(i) * d(i) * 2^(-i)
@@ -167,85 +157,28 @@ class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int
     // For ROTATION: d(i)=-1 if z(i) < 0, +1 otherwise
     // For VECTORING: d(i)=+1 if y(i) < 0, -1 otherwise
 
-    // TODO: Make this clearer? -- do my usual way; this = remnants from class project
-    val countReset = Wire(Bool())
-    val count = withClockAndReset(io.clk, countReset) {
-      RegInit(0.U(BigInt(iterations - 1).bitLength.W))
-    }
-    val countIsMax = count === (iterations - 1).U
-    val countIsZero = count === 0.U
-    count := count + 1.U
-    countReset := countIsMax || (countIsZero && ~(io.in.valid))
-
-    // Valid should only be high for 1 clk cycle
-    val valid = {
-      val next = 
-        if (iterations == 1) io.in.valid
-        else countIsMax
-      RegNext(next = next, init = false.B)
-    }
-    io.out.valid := valid
-
-    // Mode needs to be registered for pipelining in case
-    // stage isn't done processing previous data/mode when a new mode comes in
-    val regIsRotation = RegEnable(next = io.in.isRotation, enable = countIsZero) 
-    io.out.isRotation := regIsRotation
-
-    // When performing calculations, curr__ is = input __ during the 0th count
-    // but is = the registered value in the block during all subsequent counts
-    // since the values are always updated on the next clk cycle after 
-    // a condition is satisfied
-    val currIsRotation = Mux(countIsZero, io.in.isRotation, regIsRotation)
-    val regX = Reg(t = cordicParams.xyType)
-    val regY = Reg(t = cordicParams.xyType)
-    val regAngle = Reg(t = cordicParams.angleType)
-    val currX = Mux(countIsZero, io.in.x, regX)
-    val currY = Mux(countIsZero, io.in.y, regY)
-    val currAngle = Mux(countIsZero, io.in.angle, regAngle)
-
-    // TODO: This won't bit grow, so what's a sufficient # of bits?
-    // Barrel shifter
-    val maxShift = offset + iterations - 1
-    val shift = Wire(UInt(range"[0, $maxShift]"))
-    shift := offset.U + count
-
-    // Need to offset which shift is being done depending on which iteration the stage
-    // is currently processing
-    val y2i = currY >> shift
-    val x2i = currX >> shift
+    val y2i = io.in.y >> offset.U
+    val x2i = io.in.x >> offset.U
 
     // Check the MSB of Z or Y when in ROTATION/VECTORING mode to determine sign
-    val dSel = Mux(currIsRotation, ~(currAngle.signBit), currY.signBit)
+    val dSel = 
+      if (cordicParams.isRotation) ~io.in.angle.signBit
+      else io.in.y.signBit
 
     // atan output is from -pi / 2 to pi / 2
     // TODO: Lots of clean up wrt data types
-    val (angleLUTVals, widths) =
-      (0 until iterations).map { case i => 
-        val const = math.atan(math.pow(2, -(offset + i))) 
-        val constNormalizedTo2Pi = const / (2 * math.Pi)
-        val sintConst = math.round(constNormalizedTo2Pi * (1 << cordicParams.angleWidth))
-        val width = BigInt(sintConst).bitLength + 1
-        (sintConst, width)
-      }.unzip
-    // TODO: Convert to LUT? / use width
-    val lutMaxWidth = widths.max
-    val angleLUT = Vec(angleLUTVals.map(v => 
-      cordicParams.angleType.fromDoubleWithFixedWidth(v)
-    ))
-    val angleLUTout = angleLUT(count)
+    val constNormalizedTo2Pi = math.atan(math.pow(2, -offset))  / (2 * math.Pi)
+    val sintConst = math.round(constNormalizedTo2Pi * (1 << cordicParams.angleWidth))
+    val angleChoice = cordicParams.angleType.fromDouble(sintConst)
+    val angleChoiceOpposite = cordicParams.angleType.fromDouble(-sintConst)
 
     val dy2i = Mux(dSel, -y2i, y2i)
     val dx2i = Mux(dSel, x2i, -x2i)
-    val dAngle = Mux(dSel, -angleLUTout, angleLUTout)
+    val dAngle = Mux(dSel, angleChoiceOpposite, angleChoice)
 
-    regY := currY + dx2i
-    regX := currX + dy2i
-    // TODO: Remove hack
-    regAngle := currAngle + dAngle
-
-    io.out.x := regX
-    io.out.y := regY
-    io.out.angle := regAngle
+    io.out.x := ShiftRegister(io.in.x + dy2i, numPipes)
+    io.out.y := ShiftRegister(io.in.y + dx2i, numPipes)
+    io.out.angle := ShiftRegister(io.in.angle + dAngle, numPipes)
 
     // Note: -pi, pi are the same thing, so overflow with multiplication by a negative is OK
   }
@@ -264,7 +197,8 @@ class CordicSpec extends FlatSpec with Matchers {
     )
     val params = CordicParams(
       xyType = FixedPoint(23.W, 21.BP),
-      unrollingFactor = 0
+      numPipes = 3,
+      isRotation = true
     )
     
     dsptools.Driver.execute(() => 
@@ -282,16 +216,28 @@ class CordicWrapper[T <: Data:RealBits](cordicParams: CordicParams[T]) extends c
   mod.io.in := io.in
   io.out := mod.io.out
   mod.io.clk := clock
-  mod.io.reset := reset
 }
 
 // TODO: Have this calculate x, y?
 case class CordicTests(x: Double, y: Double, r: Double, theta: Double)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
   // Have step size be half of 1 bin 
   val fftn = 21600
-  val stepSize = 1.toDouble / fftn * 2 * math.Pi / 2
+  val stepSize = 2160.toDouble / fftn * 2 * math.Pi / 2
   val magnitudes = Seq(0.01, 0.1, 1.0)
   val angles = -math.Pi until math.Pi by stepSize
   val tests = for (r <- magnitudes; theta <- angles) yield {
@@ -302,26 +248,21 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
 
   println("Number of angles tested: " + angles.length)
 
-  updatableDspVerbose.withValue(false) {
+  updatableDspVerbose.withValue(true) {
     for (t <- tests) {
       poke(c.io.in.x, t.x)
       poke(c.io.in.y, t.y)
       poke(c.io.in.angle, 0.0)
-      poke(c.io.in.isRotation, false)
-      poke(c.io.in.valid, true)
       step(1)
-      poke(c.io.in.valid, false)
-      while(!peek(c.io.out.valid)) {
-        step(1)
-      }
-      expect(c.io.out.angle, t.theta / math.Pi)
+      peek(c.io.out.angle)
+      //step(c.mod.moduleDelay)
+      //expect(c.io.out.angle, t.theta / math.Pi)
       // Note: theta = math.atan2(y, x)
     }
   }
 
 }
 
-// TODO: remove all pipeline regs
 // is the last angle meaningful?
 // renormalize memory -- also renormalize this (asUInt)
 // is mod 2Pi correct for SInt? 
