@@ -276,7 +276,7 @@ class CordicSpecO extends FlatSpec with Matchers {
   }
 }
 
-class CordicWrapperO[T <: Data:RealBits](cordicParams: CordicParamsO[T]) extends chisel3.Module {
+class CordicWrapperO[T <: Data:RealBits](val cordicParams: CordicParamsO[T]) extends chisel3.Module {
   val io = IO(new CordicIOO(cordicParams))
   val mod = Module(new CordicO(cordicParams))
   mod.io.in := io.in
@@ -286,9 +286,13 @@ class CordicWrapperO[T <: Data:RealBits](cordicParams: CordicParamsO[T]) extends
 }
 
 class CordicTesterO[T <: Data:RealBits](c:CordicWrapperO[T]) extends DspTester(c) {
+
+  val an = (0 to c.cordicParams.totalIterations).map(i => math.sqrt(1 + math.pow(2,-2 * i))).reduceLeft(_ * _)
+  println(s"Cordic gain: $an")
+
   // Have step size be half of 1 bin 
   val fftn = 21600
-  val stepSize = 1.toDouble / fftn * 2 * math.Pi / 2
+  val stepSize = 2160.toDouble / fftn * 2 * math.Pi / 2
   val magnitudes = Seq(0.01, 0.1, 1.0)
   val angles = -math.Pi until math.Pi by stepSize
   val tests = for (r <- magnitudes; theta <- angles) yield {
@@ -301,17 +305,31 @@ class CordicTesterO[T <: Data:RealBits](c:CordicWrapperO[T]) extends DspTester(c
 
   updatableDspVerbose.withValue(false) {
     for (t <- tests) {
-      poke(c.io.in.x, t.x)
+      /* poke(c.io.in.x, t.x)
       poke(c.io.in.y, t.y)
       poke(c.io.in.angle, 0.0)
-      poke(c.io.in.isRotation, false)
+      poke(c.io.in.isRotation, false) */
+
+      poke(c.io.in.x, t.r / an)
+      poke(c.io.in.y, 0.0)
+      poke(c.io.in.angle, t.theta / math.Pi)
+      poke(c.io.in.isRotation, true)
+
       poke(c.io.in.valid, true)
       step(1)
       poke(c.io.in.valid, false)
       while(!peek(c.io.out.valid)) {
         step(1)
       }
-      expect(c.io.out.angle, t.theta / math.Pi)
+
+      // expect(c.io.out.angle, t.theta / math.Pi)
+
+      expect(c.io.out.x, t.x)
+      expect(c.io.out.y, t.y)
+      updatableDspVerbose.withValue(true) {
+        peek(c.io.out.angle)
+      }
+
       // Note: theta = math.atan2(y, x)
     }
   }

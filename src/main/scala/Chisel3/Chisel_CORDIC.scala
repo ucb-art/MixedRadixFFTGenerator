@@ -99,17 +99,93 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module w
   // i.e. looking at [-pi, pi) vs. [0, 2pi)
 
   // let's be consistent and represent as unsigned [0, 2pi) as a reference
-  val halfPi = 1 << (cordicParams.angleWidth - 2)
-  val pi = 1 << (cordicParams.angleWidth - 1)
-  val threeHalvesPi = halfPi * 3
+  // TODO: Require width known
+  val halfPiInt = 1 << (cordicParams.angleWidth - 2)
+  val halfPi = (halfPiInt).U(io.in.angle.getWidth.W)
+  val pi = (1 << (cordicParams.angleWidth - 1)).S
+  val threeHalvesPi = (halfPiInt * 3).U(io.in.angle.getWidth.W)
+  require(BigInt(halfPiInt * 3).bitLength == io.in.angle.getWidth)
   val angleZeroTo2Pi = io.in.angle.asUInt
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+class UIntGT(width: Int) extends Module {
+  val io = IO(new Bundle {
+    val a = Input(UInt(width.W))
+    val b = Input(UInt(width.W))
+    val out = Output(Bool())
+  })
+  io.out := (io.a) > (io.b)
+}
+
+
+
+
+
+  val hp3 = Wire(angleZeroTo2Pi.cloneType)
+  hp3 := threeHalvesPi
+
+  val halp = (angleZeroTo2Pi < hp3) & true.B
+
+  
+ val gt = Module(new UIntGT(angleZeroTo2Pi.getWidth))
+  gt.io.a := angleZeroTo2Pi.asUInt
+  gt.io.b := hp3.asUInt
+
+
+
+
+
+
+
+
+
+
 
   val correctInput = {
     if (cordicParams.isRotation)
-      (angleZeroTo2Pi > halfPi.U) & (angleZeroTo2Pi < threeHalvesPi.U)
+      (angleZeroTo2Pi > halfPi) && (angleZeroTo2Pi < threeHalvesPi)
     else
       io.in.x.signBit
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // CORDIC is more bit-level, so do everything as SInt
   val sintCordicParams = cordicParams.copy(
@@ -126,7 +202,7 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module w
   cordicStages(0).io.in.y := Mux(correctInput, -io.in.y, io.in.y).asUInt.asSInt
   // Note that for -Pi, overflow is OK, b/c -Pi and +Pi take you to the same place
   cordicStages(0).io.in.angle := 
-    Mux(correctInput, io.in.angle.asUInt.asSInt - pi.S, io.in.angle.asUInt.asSInt)
+    Mux(correctInput, io.in.angle.asUInt.asSInt - pi, io.in.angle.asUInt.asSInt)
 
   (0 until cordicParams.numStages) foreach { case stage =>
     cordicStages(stage).io.clk := io.clk
@@ -194,24 +270,44 @@ class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int
 }
 
 class CordicSpec extends FlatSpec with Matchers {
+
+  import dspblocks.fft.FFASTTopParams._
+
+  val optV = TestParams.optionsBTolWaveformTB(
+    lsbs = 8, 
+    outDir = "test_run_dir/CordicVTB", 
+    genVerilogTB = false
+  )
+  val optR = TestParams.optionsBTolWaveformTB(
+    lsbs = 8, 
+    outDir = "test_run_dir/CordicRTB", 
+    genVerilogTB = false
+  )
+  val params = CordicParams(
+    xyType = FixedPoint(23.W, 21.BP),
+    numPipes = 0,
+    isRotation = false
+  )
+
   behavior of "Cordic"
-  it should "pass tests" in {
+  it should "pass vectoring tests" in {
 
-    import dspblocks.fft.FFASTTopParams._
+    println("Testing Vectoring! Rectangular (X, Y) to polar (r, angle)")
 
-    val opt = TestParams.optionsBTolWaveformTB(
-      lsbs = 8, 
-      outDir = "test_run_dir/CordicTB", 
-      genVerilogTB = false
-    )
-    val params = CordicParams(
-      xyType = FixedPoint(23.W, 21.BP),
-      numPipes = 3,
-      isRotation = false
-    )
-    
     dsptools.Driver.execute(() => 
-      new CordicWrapper(params), opt
+      new CordicWrapper(params), optV
+    ) { c =>
+      new CordicTester(c)
+    } should be (true)
+
+  }
+
+  it should "pass rotation tests" in {
+
+    println("Testing Rotation! Polar (r, angle) to rectangular (X, Y)")
+
+    dsptools.Driver.execute(() => 
+      new CordicWrapper(params.copy(isRotation = true)), optR
     ) { c =>
       new CordicTester(c)
     } should be (true)
@@ -219,7 +315,7 @@ class CordicSpec extends FlatSpec with Matchers {
   }
 }
 
-class CordicWrapper[T <: Data:RealBits](cordicParams: CordicParams[T]) extends chisel3.Module {
+class CordicWrapper[T <: Data:RealBits](val cordicParams: CordicParams[T]) extends chisel3.Module {
   val io = IO(new CordicIO(cordicParams))
   val mod = Module(new Cordic(cordicParams))
   mod.io.in := io.in
@@ -230,54 +326,65 @@ class CordicWrapper[T <: Data:RealBits](cordicParams: CordicParams[T]) extends c
 // TODO: Have this calculate x, y?
 case class CordicTests(x: Double, y: Double, r: Double, theta: Double)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
+
+  // Cordic has gain -> normalize back down
+  val an = (0 to c.cordicParams.numStages).map(i => math.sqrt(1 + math.pow(2,-2 * i))).reduceLeft(_ * _)
+  println(s"Cordic gain: $an")
+
   // Have step size be half of 1 bin 
   val fftn = 21600
-  val stepSize = 1.toDouble / fftn * 2 * math.Pi / 2
+  val stepSize = 2160.toDouble / fftn * 2 * math.Pi / 2
   val magnitudes = Seq(0.01, 0.1, 1.0)
   val angles = -math.Pi until math.Pi by stepSize
-  val tests = for (r <- magnitudes; theta <- angles) yield {
+  val testsT = for (r <- magnitudes; theta <- angles) yield {
     val x = r * math.cos(theta)
     val y = r * math.sin(theta)
     CordicTests(x, y, r, theta)
   }
+  val tests = testsT ++ testsT.take(c.mod.moduleDelay)
 
   println("Number of angles tested: " + angles.length)
 
   updatableDspVerbose.withValue(false) {
-    for (t <- tests) {
-      poke(c.io.in.x, t.x)
-      poke(c.io.in.y, t.y)
-      poke(c.io.in.angle, 0.0)
-      //step(1)
-      //peek(c.io.out.angle)
-      step(c.mod.moduleDelay)
-      expect(c.io.out.angle, t.theta / math.Pi)
+    for ((t, idx) <- tests.zipWithIndex) {
+      if (!c.cordicParams.isRotation) {
+        poke(c.io.in.x, t.x)
+        poke(c.io.in.y, t.y)
+        poke(c.io.in.angle, 0.0)
+        if (idx >= c.mod.moduleDelay)
+          expect(c.io.out.angle, tests(idx-c.mod.moduleDelay).theta / math.Pi)
+      }
+      else {
+        poke(c.io.in.x, t.r / an)
+        poke(c.io.in.y, 0.0)
+        poke(c.io.in.angle, t.theta / math.Pi)
+        if (idx >= c.mod.moduleDelay) {
+          println(s"Input angle (normalized to Pi) was: ${t.theta / math.Pi}")
+          expect(c.io.out.x, tests(idx - c.mod.moduleDelay).x)
+          expect(c.io.out.y, tests(idx - c.mod.moduleDelay).y)
+          updatableDspVerbose.withValue(true) {
+            peek(c.io.out.angle)
+          }
+        }
+      }
+      step(1)
       // Note: theta = math.atan2(y, x)
     }
   }
 
 }
 
-// is the last angle meaningful?
-// renormalize memory -- also renormalize this (asUInt)
-// is mod 2Pi correct for SInt? 
+
+
+
+
+
+
+// sign, unsigned --> input is unsigned how to handle? 
+// output should also be unsigned
+// broken for -Pi to -Pi/2 (?)
+// numpipes
+// normalize ???
+// TODO: Is the last angle meaningful?
+// TODO: Is mod 2Pi correct for SInt? 

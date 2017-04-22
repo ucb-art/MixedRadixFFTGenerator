@@ -595,6 +595,10 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 }}    
 
+
+// if any done -> early terminate
+// if all stuck -> early terminate
+
     // TODO: Normalized: Different fraction!
     val k = Seq(ffastParams.k, 1952).max
     val n = ffastParams.fftn
