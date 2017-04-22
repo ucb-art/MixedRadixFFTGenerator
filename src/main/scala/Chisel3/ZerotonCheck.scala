@@ -15,7 +15,7 @@ import dsptools.{hasContext, DspContext}
 class ZerotonIO[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams) extends Bundle {
   val clk = Input(Clock())
   val bin = Input(CustomIndexedBundle(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.adcDelays))
-  val zeroThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
+  val sigThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
   val isZeroton = Output(Bool())
   override def cloneType = (new ZerotonIO(dspDataType, ffastParams)).asInstanceOf[this.type]
 }  
@@ -68,7 +68,7 @@ class Zeroton[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams) e
     val binPwrs = io.bin.elements.map { case (name, binV) => AbsSq(binV) }.toSeq
     val sumPwrs = ShiftRegister(SumScalars(binPwrs), customAddPipes)
     // Should already account for numDelays in threshold
-    io.isZeroton := sumPwrs < io.zeroThresholdPwr
+    io.isZeroton := sumPwrs < io.sigThresholdPwr
   }
 
 }

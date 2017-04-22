@@ -404,7 +404,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       mod.suggestName(s"zerotonDetector$n")
       mod.io.clk := io.clk
       mod.io.bin := dataFromMemoryPeeling(n)
-      mod.io.zeroThresholdPwr := io.peelScr.zeroThresholdPwr(n)
+      mod.io.sigThresholdPwr := io.peelScr.sigThresholdPwr(n)
       // TODO: Don't do require; set
       require(mod.moduleDelay == zerotonDelay)
       val isZeroton = mod.io.isZeroton
@@ -544,6 +544,14 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 
 
+
+// current is zeroton -> don't write (delay x + y)
+// current is singleton -> write 0
+// current is multiton = !zeroton & !singleton -> don't write (delay y)
+
+// current is singleton & this isn't zeroton (i.e. singleton or multiton) -> write
+// current is singleton & this is zeroton -> don't write
+// current is zeroton/multiton -> don't write
 
 
 
