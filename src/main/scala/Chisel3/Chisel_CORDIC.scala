@@ -34,8 +34,15 @@ case class CordicParams[T <: Data:RealBits](xyType: T, numPipes: Int, isRotation
   val numStages = xyWidth
 
   // Spread out pipeline delay
-  private val numZeroPipes = numStages / numPipes - 1
-  private val tempPipes = Seq.fill(numPipes)(Seq.fill(numZeroPipes)(0) ++ Seq(1))
+  private val tempPipes = {
+    if (numPipes != 0) {
+      val numZeroPipes = numStages / numPipes - 1
+      Seq.fill(numPipes)(Seq.fill(numZeroPipes)(0) ++ Seq(1))
+    }
+    else {
+      Seq(Seq.fill(numStages)(0))
+    }
+  }
   private val leftOverZeroPipes = numStages - tempPipes.flatten.length
   val cordicDelays = tempPipes.zipWithIndex.map { case (pipe, idx) =>
     if (idx < leftOverZeroPipes)
@@ -97,11 +104,12 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module w
   val threeHalvesPi = halfPi * 3
   val angleZeroTo2Pi = io.in.angle.asUInt
 
-  val correctInput = 
+  val correctInput = {
     if (cordicParams.isRotation)
       (angleZeroTo2Pi > halfPi.U) & (angleZeroTo2Pi < threeHalvesPi.U)
     else
       io.in.x.signBit
+  }
 
   // CORDIC is more bit-level, so do everything as SInt
   val sintCordicParams = cordicParams.copy(
@@ -162,13 +170,14 @@ class CordicStage[T <: Data:RealBits](cordicParams: CordicParams[T], offset: Int
 
     // Check the MSB of Z or Y when in ROTATION/VECTORING mode to determine sign
     val dSel = 
-      if (cordicParams.isRotation) ~io.in.angle.signBit
+      if (cordicParams.isRotation) ~(io.in.angle.signBit)
       else io.in.y.signBit
 
     // atan output is from -pi / 2 to pi / 2
     // TODO: Lots of clean up wrt data types
     val constNormalizedTo2Pi = math.atan(math.pow(2, -offset))  / (2 * math.Pi)
     val sintConst = math.round(constNormalizedTo2Pi * (1 << cordicParams.angleWidth))
+    
     val angleChoice = cordicParams.angleType.fromDouble(sintConst)
     val angleChoiceOpposite = cordicParams.angleType.fromDouble(-sintConst)
 
@@ -198,7 +207,7 @@ class CordicSpec extends FlatSpec with Matchers {
     val params = CordicParams(
       xyType = FixedPoint(23.W, 21.BP),
       numPipes = 3,
-      isRotation = true
+      isRotation = false
     )
     
     dsptools.Driver.execute(() => 
@@ -234,10 +243,16 @@ case class CordicTests(x: Double, y: Double, r: Double, theta: Double)
 
 
 
+
+
+
+
+
+
 class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
   // Have step size be half of 1 bin 
   val fftn = 21600
-  val stepSize = 2160.toDouble / fftn * 2 * math.Pi / 2
+  val stepSize = 1.toDouble / fftn * 2 * math.Pi / 2
   val magnitudes = Seq(0.01, 0.1, 1.0)
   val angles = -math.Pi until math.Pi by stepSize
   val tests = for (r <- magnitudes; theta <- angles) yield {
@@ -248,15 +263,15 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
 
   println("Number of angles tested: " + angles.length)
 
-  updatableDspVerbose.withValue(true) {
+  updatableDspVerbose.withValue(false) {
     for (t <- tests) {
       poke(c.io.in.x, t.x)
       poke(c.io.in.y, t.y)
       poke(c.io.in.angle, 0.0)
-      step(1)
-      peek(c.io.out.angle)
-      //step(c.mod.moduleDelay)
-      //expect(c.io.out.angle, t.theta / math.Pi)
+      //step(1)
+      //peek(c.io.out.angle)
+      step(c.mod.moduleDelay)
+      expect(c.io.out.angle, t.theta / math.Pi)
       // Note: theta = math.atan2(y, x)
     }
   }
