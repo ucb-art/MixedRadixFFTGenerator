@@ -251,59 +251,105 @@ class CordicSpec extends FlatSpec with Matchers {
   }
 }
 
-class CordicWrapper[T <: Data:RealBits](val cordicParams: CordicParams[T]) extends chisel3.Module {
+case class AngleForms[T <: Data:RealBits](negPiToPi: T, zeroTo2Pi: T)
+
+object GetAngle {
+  def apply[T <: Data:RealBits](complex: DspComplex[T], clk: Clock, numPipes: Int): AngleForms[T] = {
+    val params = CordicParams(complex.real.cloneType, numPipes, isRotation = false)
+    val mod = Module(new Cordic(params))
+    mod.suggestName("cordicGetAngle")
+    mod.io.clk := clk
+    mod.io.in.x := complex.real
+    mod.io.in.y := complex.imag
+    mod.io.in.angle := complex.real.fromDouble(0.0)
+    
+
+
+
+    // TODO: Can you shorten these ops? (redundant since 2's complement should directly work with this angle translation stuff)
+    val pi2 = (1 << (params.angleWidth)).U((params.angleWidth + 1).W)
+    val rotatedAngleOut = params.outAngleType.fromBits(pi2) + mod.io.out.angle
+    val outAngleIsNegative = mod.io.out.angle.signBit
+    val normalizeZeroTo2Pi = Mux(outAngleIsNegative, rotatedAngleOut, mod.io.out.angle).asUInt.asSInt >> 1 
+    
+
+
+    val t1 = Wire(UInt(params.angleType.getWidth.W))
+    t1 := mod.io.out.angle.asUInt
+    val t2 = Cat(false.B, t1(t1.getWidth - 1, 1))  //t1 >> 1
+
+    println(s" t2 width: ${t2.getWidth}")
+
+    val outZeroTo2Pi = params.angleType.fromBits(t2) //params.angleType.fromBits(normalizeZeroTo2Pi.asUInt)
+    println(s"out width: ${outZeroTo2Pi.getWidth}")
 
 
 
 
 
 
-  val io = IO(new Bundle {
-    val in = new CordicIOCore(cordicParams)
-    val out = Flipped(new CordicIOCore(cordicParams))
+
+
+
+
+    AngleForms(mod.io.out.angle, outZeroTo2Pi)
   }
+}
 
+object RotateComplex { 
+  def apply[T <: Data:RealBits](complex: DspComplex[T], angle: T, clk: Clock, numPipes: Int): DspComplex[T] = {
+    // TODO: Don't hard code delay!
+    require(numPipes >= 1)
+    val params = CordicParams(complex.real.cloneType, numPipes - 1, isRotation = true)
+    val mod = Module(new Cordic(params))
+    mod.suggestName("cordicRotateComplex")
+    mod.io.clk := clk
+    mod.io.in.x := complex.real
+    mod.io.in.y := complex.imag
 
+    // Convert from [0, 2pi) to [-pi, pi)
+    // Angle MSB always 0 for [0, 2pi) -- wasted since always positive
+    mod.io.in.angle := angle << 1
 
+    val out = Wire(complex.cloneType)
+    // Processing gain
+    val an = (0 to params.numStages).map(i => math.sqrt(1 + math.pow(2, -2 * i))).reduceLeft(_ * _)
+    withClock(clk) {
+      out.real := ShiftRegister(mod.io.out.x * mod.io.out.x.fromDouble(1 / an), 1)
+      out.imag := ShiftRegister(mod.io.out.y * mod.io.out.y.fromDouble(1 / an), 1)
+    }
+    out
+  }
+}
 
-)
-  val mod = Module(new Cordic(cordicParams))
+class CordicWrapper[T <: Data:RealBits](val params: CordicParams[T]) extends chisel3.Module {
+  
+  val io = IO(new Bundle {
+    val in = new CordicIOCore(params)
+    val out = Flipped(new CordicIOCore(params))
+  })
+  
+  val inComplex = Wire(DspComplex(params.xyType))
+  inComplex.real := io.in.x
+  inComplex.imag := io.in.y 
 
-  val an = (0 to cordicParams.numStages).map(i => math.sqrt(1 + math.pow(2,-2 * i))).reduceLeft(_ * _)
-
-  mod.io.in := io.in
-  io.out.x := mod.io.out.x * mod.io.out.x.fromDouble(1 / an)
-  io.out.y := mod.io.out.y * mod.io.out.y.fromDouble(1 / an)
-
-
-
-
-
-
-
-
-
-  val pi2 = (1 << (cordicParams.angleWidth)).U((io.in.angle.getWidth + 1).W)
-  val normalizeZeroTo2Pi = Mux(mod.io.out.angle >= 0, mod.io.out.angle, cordicParams.outAngleType.fromBits(pi2)) 
-  io.out.angle := cordicParams.angleType.fromBits(normalizeZeroTo2Pi.asUInt)
-
-
-
-
-
-
-
-
-
-
-  //io.out := mod.io.out
-  mod.io.clk := clock
+  if (params.isRotation) {
+    val out = RotateComplex(inComplex, io.in.angle, clock, params.numPipes)
+    io.out.x := out.real
+    io.out.y := out.imag
+  }
+  else {
+    val out = GetAngle(inComplex, clock, params.numPipes)
+    io.out.angle := out.zeroTo2Pi
+  }
 }
 
 // TODO: Have this calculate x, y?
 case class CordicTests(x: Double, y: Double, r: Double, thetaPi: Double, theta2Pi: Double)
 
 class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
+
+  val moduleDelay = c.params.numPipes
 
   // Cordic has gain -> normalize back down
   // val an = (0 to c.cordicParams.numStages).map(i => math.sqrt(1 + math.pow(2,-2 * i))).reduceLeft(_ * _)
@@ -320,47 +366,29 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
     val theta2Pi = if (theta < 0) 2 * math.Pi + theta else theta
     CordicTests(x, y, r, thetaPi = theta, theta2Pi = theta2Pi)
   }
-  val tests = testsT ++ testsT.take(c.mod.moduleDelay)
+  val tests = testsT ++ testsT.take(moduleDelay)
 
   println("Number of angles tested: " + angles.length)
 
   updatableDspVerbose.withValue(false) {
     for ((t, idx) <- tests.zipWithIndex) {
-      if (!c.cordicParams.isRotation) {
+      if (!c.params.isRotation) {
         poke(c.io.in.x, t.x)
         poke(c.io.in.y, t.y)
-        poke(c.io.in.angle, 0.0)
-        if (idx >= c.mod.moduleDelay) {
-
-
-
-
-
-
-
-
-
-          println(s"Expected angle: ${tests(idx - c.mod.moduleDelay).theta2Pi / math.Pi}")
-          
-
-
-
-
-
-
-
-
-          expect(c.io.out.angle, tests(idx - c.mod.moduleDelay).thetaPi / math.Pi)
+        if (idx >= moduleDelay) {
+          // WARNING: Small amounts of error cause mapping of something around 0 to 
+          // something around 1 (0, 2pi look the same)
+          expect(c.io.out.angle, tests(idx - moduleDelay).theta2Pi / (2 * math.Pi))
         }
       }
       else {
         poke(c.io.in.x, t.r)
         poke(c.io.in.y, 0.0)
-        poke(c.io.in.angle, t.thetaPi / math.Pi)
-        if (idx >= c.mod.moduleDelay) {
+        poke(c.io.in.angle, t.theta2Pi / (2 * math.Pi))
+        if (idx >= moduleDelay) {
           //println(s"Input angle (normalized to Pi) was: ${t.theta / math.Pi}")
-          expect(c.io.out.x, tests(idx - c.mod.moduleDelay).x)
-          expect(c.io.out.y, tests(idx - c.mod.moduleDelay).y)
+          expect(c.io.out.x, tests(idx - moduleDelay).x)
+          expect(c.io.out.y, tests(idx - moduleDelay).y)
           /*updatableDspVerbose.withValue(true) {
             peek(c.io.out.angle)
           }*/
@@ -372,15 +400,3 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
   }
 
 }
-
-
-
-
-
-
-
-
-// processing gain!!
-// right shift
-// normalize ???
-// TODO: Is mod 2Pi correct for SInt? 
