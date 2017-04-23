@@ -96,7 +96,7 @@ object FFTNormalization {
 }
 
 object DelayOptimization {
-  def apply[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams): T = {
+  def apply[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, fullFraction: Boolean = false): T = {
     val timingResolutionBits = 11
     // TODO: Something more reasonable
     val maxDelayBits = BigInt(ffastParams.adcDelays.max * 8).bitLength + 1
@@ -105,7 +105,11 @@ object DelayOptimization {
         r
       case f: FixedPoint =>
         val delayTypeWidth = maxDelayBits + timingResolutionBits
-        FixedPoint(delayTypeWidth.W, timingResolutionBits.BP)
+        // TODO: Make less arbitrary?
+        if (fullFraction)
+          FixedPoint(delayTypeWidth.W, (delayTypeWidth - 2).BP)
+        else
+          FixedPoint(delayTypeWidth.W, timingResolutionBits.BP)
     }
     delayTypeTemp.asInstanceOf[T]
   }
@@ -125,6 +129,17 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
     Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.subFFTns)
   val delayCalibration = CustomIndexedBundle(
     CustomIndexedBundle(Input(DelayOptimization(dspDataType, ffastParams)), ffastParams.adcDelays), ffastParams.subFFTns)
+
+  // TODO: Generalize, overprovisioning
+  // Note: Calculate externally rather than wasting power
+  val delayCalcConstants = CustomIndexedBundle(
+    CustomIndexedBundle(Seq(
+      Input(DelayOptimization(dspDataType, ffastParams)),
+      Input(DelayOptimization(dspDataType, ffastParams)),
+      Input(DelayOptimization(dspDataType, ffastParams, fullFraction = true))
+    )),
+    ffastParams.subFFTns
+  )
 
   val ffastOutRIdx = Input(UInt(range"[0, $k)"))
   val ffastOutVal = Output(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
@@ -545,6 +560,11 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 
 /*
+
+// can i do zeroton externally only in setup? + i guess for peeling...
+
+
+
 // current is zeroton -> don't write (delay x + y)
 // current is singleton -> write 0
 // current is multiton = !zeroton & !singleton -> don't write (delay y)

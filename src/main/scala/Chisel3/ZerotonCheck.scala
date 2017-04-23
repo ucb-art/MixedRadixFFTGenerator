@@ -7,6 +7,7 @@ import dsptools.numbers.implicits._
 import barstools.tapeout.transforms._
 import chisel3.util._
 import dsptools.{hasContext, DspContext}
+import dsptools._
 
 // WARNING: NEED TO MULTIPLY ZEROTON THRESHOLD BY # OF DELAYS (through rocket-chip)
 // i.e. [average power = Sum(pwr) / numDelays] < zeroThreshold to be considered zeroton
@@ -34,7 +35,7 @@ object SumScalars {
     def groupAndSum(inT: Seq[T]): Seq[T] = {
       inT.grouped(2).map { case e => 
         val out = Wire(inT.head.cloneType)
-        out := e.reduceLeft(_ context_+ _) 
+        out := DspContext.withOverflowType(Grow) { e.reduceLeft(_ context_+ _) }
         out
       }.toSeq
     }

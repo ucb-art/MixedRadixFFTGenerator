@@ -11,11 +11,25 @@ case class FFASTParams(
     sparsityPc: Double  = 0.05
 ) {
 
+  val subFFTnsInverse = subFFTns.map(x => 1.toDouble / x)
+
+  // TODO: Kay
+  val delayDeltas = delays.map(d => d.max - d.min)
+
+  val binTypes = Seq("zero", "single", "multi")
+
+  require(delayDeltas == delayDeltas.sorted, "Deltas should be in increasing size!")
+
+  // TODO: Don't hard code
+  require(delays.length == 3)
+  val delayConstants = Seq(delayDeltas(1).toDouble / delayDeltas(0), delayDeltas(2).toDouble / delayDeltas(1), 1.toDouble / delayDeltas(2))
+
   def k = math.round(sparsityPc * fftn).toInt
 
   def outputType = inputType.opposite
 
   val adcDelays = delays.flatten
+  require(adcDelays.length == delays.length * 2, "More complicated Kay's estimator not supported right now")
 
   // TODO: Switch over to using this everywhere!
   def getSubFFTDelayKeys = {
