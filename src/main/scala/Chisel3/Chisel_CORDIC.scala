@@ -1,5 +1,7 @@
 package dspblocks.fft
 
+// sbt -Dsbt.ivy.home=/tools/projects/angie/FFASTTapeout/fft2-chip/.ivy2 "testOnly dspblocks.fft.CordicSpec" 
+
 import chisel3._
 import chisel3.experimental._
 import dsptools.numbers._
@@ -16,18 +18,19 @@ import barstools.tapeout.TestParams
 // x + i * y
 case class CordicParams[T <: Data:RealBits](xyType: T, numPipes: Int, isRotation: Boolean) {
   
-  val angleTypeTemp = xyType match {
+  val (angleTypeTemp, outAngleTypeTemp) = xyType match {
     case _: DspReal => throw new Exception("CORDIC doesn't work with real types!")
     case _: UInt => throw new Exception("Must be signed!")
     case f: FixedPoint => 
       require(f.widthKnown, "xy type width unknown")
-      FixedPoint(f.getWidth.W, (f.getWidth - 1).BP)
+      (FixedPoint(f.getWidth.W, (f.getWidth - 1).BP), FixedPoint((f.getWidth + 1).W, (f.getWidth - 1).BP))
     case s: SInt => 
       require(s.widthKnown, "xy type width unknown")
-      s
+      (s, SInt((s.getWidth + 1).W))
   }
 
   val angleType = angleTypeTemp.asInstanceOf[T]
+  val outAngleType = outAngleTypeTemp.asInstanceOf[T]
 
   val xyWidth = xyType.getWidth
   val angleWidth = angleType.getWidth
@@ -249,31 +252,73 @@ class CordicSpec extends FlatSpec with Matchers {
 }
 
 class CordicWrapper[T <: Data:RealBits](val cordicParams: CordicParams[T]) extends chisel3.Module {
-  val io = IO(new CordicIO(cordicParams))
+
+
+
+
+
+
+  val io = IO(new Bundle {
+    val in = new CordicIOCore(cordicParams)
+    val out = Flipped(new CordicIOCore(cordicParams))
+  }
+
+
+
+
+)
   val mod = Module(new Cordic(cordicParams))
+
+  val an = (0 to cordicParams.numStages).map(i => math.sqrt(1 + math.pow(2,-2 * i))).reduceLeft(_ * _)
+
   mod.io.in := io.in
-  io.out := mod.io.out
+  io.out.x := mod.io.out.x * mod.io.out.x.fromDouble(1 / an)
+  io.out.y := mod.io.out.y * mod.io.out.y.fromDouble(1 / an)
+
+
+
+
+
+
+
+
+
+  val pi2 = (1 << (cordicParams.angleWidth)).U((io.in.angle.getWidth + 1).W)
+  val normalizeZeroTo2Pi = Mux(mod.io.out.angle >= 0, mod.io.out.angle, cordicParams.outAngleType.fromBits(pi2)) 
+  io.out.angle := cordicParams.angleType.fromBits(normalizeZeroTo2Pi.asUInt)
+
+
+
+
+
+
+
+
+
+
+  //io.out := mod.io.out
   mod.io.clk := clock
 }
 
 // TODO: Have this calculate x, y?
-case class CordicTests(x: Double, y: Double, r: Double, theta: Double)
+case class CordicTests(x: Double, y: Double, r: Double, thetaPi: Double, theta2Pi: Double)
 
 class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) {
 
   // Cordic has gain -> normalize back down
-  val an = (0 to c.cordicParams.numStages).map(i => math.sqrt(1 + math.pow(2,-2 * i))).reduceLeft(_ * _)
-  println(s"Cordic gain: $an")
+  // val an = (0 to c.cordicParams.numStages).map(i => math.sqrt(1 + math.pow(2,-2 * i))).reduceLeft(_ * _)
+  // println(s"Cordic gain: $an")
 
   // Have step size be half of 1 bin 
   val fftn = 21600
-  val stepSize = 1.toDouble / fftn * 2 * math.Pi / 2
+  val stepSize = 2160.toDouble / fftn * 2 * math.Pi / 2
   val magnitudes = Seq(0.01, 0.1, 1.0)
   val angles = -math.Pi until math.Pi by stepSize
   val testsT = for (r <- magnitudes; theta <- angles) yield {
     val x = r * math.cos(theta)
     val y = r * math.sin(theta)
-    CordicTests(x, y, r, theta)
+    val theta2Pi = if (theta < 0) 2 * math.Pi + theta else theta
+    CordicTests(x, y, r, thetaPi = theta, theta2Pi = theta2Pi)
   }
   val tests = testsT ++ testsT.take(c.mod.moduleDelay)
 
@@ -285,13 +330,33 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
         poke(c.io.in.x, t.x)
         poke(c.io.in.y, t.y)
         poke(c.io.in.angle, 0.0)
-        if (idx >= c.mod.moduleDelay)
-          expect(c.io.out.angle, tests(idx-c.mod.moduleDelay).theta / math.Pi)
+        if (idx >= c.mod.moduleDelay) {
+
+
+
+
+
+
+
+
+
+          println(s"Expected angle: ${tests(idx - c.mod.moduleDelay).theta2Pi / math.Pi}")
+          
+
+
+
+
+
+
+
+
+          expect(c.io.out.angle, tests(idx - c.mod.moduleDelay).thetaPi / math.Pi)
+        }
       }
       else {
-        poke(c.io.in.x, t.r / an)
+        poke(c.io.in.x, t.r)
         poke(c.io.in.y, 0.0)
-        poke(c.io.in.angle, t.theta / math.Pi)
+        poke(c.io.in.angle, t.thetaPi / math.Pi)
         if (idx >= c.mod.moduleDelay) {
           //println(s"Input angle (normalized to Pi) was: ${t.theta / math.Pi}")
           expect(c.io.out.x, tests(idx - c.mod.moduleDelay).x)
@@ -316,6 +381,6 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
 
 
 // processing gain!!
-// sbt -Dsbt.ivy.home=/tools/projects/angie/FFASTTapeout/fft2-chip/.ivy2 "testOnly dspblocks.fft.CordicSpec" 
+// right shift
 // normalize ???
 // TODO: Is mod 2Pi correct for SInt? 

@@ -66,9 +66,11 @@ class RX_ADC_TOP_IO extends Bundle with PeripheryAmyBundle {
   val rx_adc13_out_lsb = Output(UInt(memWidth.W))
 }
 
-class AmyScr extends SCRBundle {
+class AmyScanScr extends SCRBundle {
   val rx_adc_scan_bank = Vec(15, Input(UInt(scanWidth.W)))
-  
+}
+
+class AmyScr extends SCRBundle {
   val rx_adc0_out_sar = Output(Vec(scrSplit, UInt(scrWidth.W)))
   val rx_adc1_out_sar = Output(Vec(scrSplit, UInt(scrWidth.W)))
   val rx_adc2_out_sar = Output(Vec(scrSplit, UInt(scrWidth.W)))
@@ -93,6 +95,7 @@ class AmyScr extends SCRBundle {
 
 class AmyAdcIo extends Bundle with PeripheryAmyBundle {
   val scr = new AmyScr
+  val scanScr = new AmyScanScr
   val rx_adc_mem_clk_out = Output(Clock())
   // WARNING: scr inputs/outputs should already be synchronized to this clk
 }
@@ -221,6 +224,7 @@ endmodule
 class AmyWrapperWrapper extends chisel3.Module {
   val io = IO(new Bundle {
     val scr = new AmyScr
+    val scanScr = new AmyScanScr
     val rx_adc_mem_clk_out = Output(Bool())
     val RX_ADC_RST_ACTHIGH = Input(Bool())
     val RX_ADC_MEM_WRITE_EN = Input(Bool())
@@ -232,6 +236,7 @@ class AmyWrapperWrapper extends chisel3.Module {
   io.rx_adc_mem_clk_out := mod.io.rx_adc_mem_clk_out.asUInt
   mod.io.RX_ADC_CLK_10G_P := clock.asUInt
   mod.io.scr <> io.scr
+  mod.io.scanScr <> io.scanScr
 }
 
 class AmySpec extends FlatSpec with Matchers {
@@ -299,7 +304,7 @@ class AmyWrapper(useBlackBox: Boolean) extends chisel3.Module {
   amyBlackBox.io.RX_ADC_SCAN_IN := io.RX_ADC_SCAN_IN
   amyBlackBox.io.RX_ADC_SCAN_EN := io.RX_ADC_SCAN_EN
   amyBlackBox.io.RX_ADC_MEM_WRITE_EN := io.RX_ADC_MEM_WRITE_EN
-  amyBlackBox.io.rx_adc_scan_bank := io.scr.rx_adc_scan_bank
+  amyBlackBox.io.rx_adc_scan_bank := io.scanScr.rx_adc_scan_bank
   io.RX_ADC_DIG_OUT := amyBlackBox.io.RX_ADC_DIG_OUT
   io.RX_ADC_VCO_P_OUT := amyBlackBox.io.RX_ADC_VCO_P_OUT
   io.RX_ADC_VCO_N_OUT := amyBlackBox.io.RX_ADC_VCO_N_OUT
