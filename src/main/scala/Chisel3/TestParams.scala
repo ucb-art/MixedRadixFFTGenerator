@@ -65,13 +65,16 @@ object TestParams {
     testerOptions = testerOptionsGlobal.copy(waveform = Some(new java.io.File("test_run_dir/waveform.vcd")))
   }
 
-  def optionsBTolWaveformTB(lsbs: Int, outDir: String = "", genVerilogTB: Boolean = true) = {
+  def optionsBTolWaveformTB(lsbs: Int, outDir: String = "", genVerilogTB: Boolean = true, backend: String = "verilator") = {
     new DspTesterOptionsManager {
       dspTesterOptions = DspTesterOptions(
           fixTolLSBs = lsbs,
           genVerilogTb = genVerilogTB,
           isVerbose = true)
-      testerOptions = testerOptionsGlobal.copy(waveform = Some(new java.io.File("test_run_dir/waveform.vcd")))
+      testerOptions = testerOptionsGlobal.copy(
+        waveform = Some(new java.io.File("test_run_dir/waveform.vcd")),
+        backendName = backend
+      )
       commonOptions = CommonOptions(
         // globalLogLevel = LogLevel.Info,
         targetDirName = outDir

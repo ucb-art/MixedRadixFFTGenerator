@@ -192,6 +192,10 @@ end
 wire [9:0] mul;
 assign mul = 10;
 
+assign RX_ADC_DIG_OUT   = 1'b0;
+assign RX_ADC_VCO_P_OUT = 1'b0;
+assign RX_ADC_VCO_N_OUT = 1'b0;
+
 always @(negedge rx_adc_mem_clk_out) begin
     rx_adc0_out_sar <= rx_adc0_out_sar * mul;
     rx_adc0_out_vcop <= rx_adc0_out_vcop * mul;

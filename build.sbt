@@ -39,15 +39,6 @@ val fftPrjSettings = Project.defaultSettings ++ Seq(
 
 // lazy val ChiselDSP = ProjectRef(file("ChiselDSP"), "chisel-dsp")
 
-// ARBOR for Matlab interfaces + Type classes
-/*
-val arborVersion = "13b02578d48034f35fbd4f555e1316890b518b5d"
-lazy val arbor = ProjectRef(
-  uri("ssh://git@github.com/ucb-art/arbor.git#%s".format(arborVersion)),
-  "root"
-)
-*/
-
 // Generator
 
 lazy val fft = Project(
@@ -58,8 +49,8 @@ lazy val fft = Project(
 // .dependsOn(ChiselDSP)
 
 
-libraryDependencies ++= dependencies
-scalacOptions ++= ops
+// libraryDependencies ++= dependencies
+// scalacOptions ++= ops
 
 // Define default sbt run main class
 // mainClass in (Compile, run) := Some("FFT.MainWithMatlab")

@@ -133,8 +133,17 @@ class UIntGT(width: Int) extends Module {
     val a = Input(UInt(width.W))
     val b = Input(UInt(width.W))
     val out = Output(Bool())
+    val out2 = Output(Bool())
+    val c = Output(SInt((width + 1).W))
   })
-  io.out := (io.a) > (io.b)
+  val tempa = Cat(false.B, io.a.asUInt)
+  val tempb = Cat(false.B, io.b.asUInt)
+  io.out :=  io.a.asSInt >= io.b.asSInt //io.a.asSInt >= io.b.asSInt
+  val t = io.a.asSInt -& io.b.asSInt
+  io.c := t
+
+  // 1 = overflow
+  io.out2 := t(t.getWidth - 1)
 }
 
 
@@ -163,7 +172,7 @@ class UIntGT(width: Int) extends Module {
 
   val correctInput = {
     if (cordicParams.isRotation)
-      (angleZeroTo2Pi > halfPi) && (angleZeroTo2Pi < threeHalvesPi)
+      (angleZeroTo2Pi > halfPi) && ((angleZeroTo2Pi < threeHalvesPi) | (io.in.angle.asUInt.asSInt < threeHalvesPi.asSInt))
     else
       io.in.x.signBit
   }
@@ -381,6 +390,9 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
 
 
 
+
+
+// sbt -Dsbt.ivy.home=/tools/projects/angie/FFASTTapeout/fft2-chip/.ivy2 "testOnly dspblocks.fft.CordicSpec" 
 // sign, unsigned --> input is unsigned how to handle? 
 // output should also be unsigned
 // broken for -Pi to -Pi/2 (?)

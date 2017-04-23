@@ -85,7 +85,7 @@ class RealToBits extends BlackBox {
     s"""
     |module RealToBits(
     |  input real in,
-    |  output [63:0] out);
+    |  output reg [63:0] out);
     |  always @* begin
     |    out = $$realtobits(in);
     |  end

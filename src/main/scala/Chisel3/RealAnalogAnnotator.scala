@@ -14,7 +14,7 @@ trait RealAnalogAnnotator extends AnalogAnnotator { self: chisel3.Module =>
       case (_, d) => {
         d match {
           case a: Analog =>
-            renameAnalog(a, "input\n`ifndef SYNTHESIS\n  real\n`endif\n       ")
+            renameAnalog(a, "  input `ifndef SYNTHESIS real `endif  ")
           case _ =>
         }
       }
