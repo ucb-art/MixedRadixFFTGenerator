@@ -33,8 +33,12 @@ class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFAS
     ffastParams.adcDelays
   )
 
+  // Zero Threshold * # delays
   val zeroThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
+  // Sig Threshold * # delays
   val sigThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
+  // Sig Threshold
+  val sigThresholdPwrNoNormalizationMul = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
 
   // TODO: Generalize
   // Last constant is purely fractional
@@ -232,26 +236,68 @@ class SingletonEstimatorSpec extends FlatSpec with Matchers {
   }
 }
 
-case class SingletonEstimatorTest(subFFT: Int, subFFTIdx: Int, binLoc: Int, isSingleton: Boolean, delayedIns: Map[Int, Complex]) {
+case class SingletonEstimatorTest(
+    ffastParams: FFASTParams, 
+    subFFT: Int, 
+    subFFTIdx: Int, 
+    binLoc: Int, 
+    isSingleton: Boolean, 
+    delayedIns: Map[Int, Complex]) {
+
+  val numDelays = ffastParams.adcDelays.length
+
+  // TODO: Make less arbitrary? Factor in quantization noise, etc.
+  val nf = 20
+  val noiseThresholdPwr = nf * numDelays.toDouble / math.pow(subFFT, 2).toDouble
+  val sigThresholdPwr = nf * 1.toDouble / math.pow(subFFT, 2).toDouble
+
+  val n = ffastParams.fftn
   val subFFTInverse = 1.toDouble / subFFT
   val delays = delayedIns.toSeq.map(_._1)
+  val inBins = delayedIns.toSeq.map(_._2)
+
+  val aVector = delays.map { case d =>
+    val theta = ((binLoc * d) % n) * math.Pi * 2 / n
+    // conjugation removes phase difference
+    Complex(math.cos(theta), math.sin(theta))
+  }
+
+  // Cordic
+  val binSignalSamples = inBins.zip(aVector).map { case (in, a) =>
+    in * a.conjugate
+  }
+
+  val avgBinSignalNotNormalized = binSignalSamples.reduce(_ + _) 
+  val avgBinSignal = avgBinSignalNotNormalized / numDelays
+
+  // Cordic undo
+  val sigOut = aVector.map { case a =>
+    avgBinSignal * a
+  }
+
+  val noise = inBins.zip(sigOut).map { case (a, b) => a - b }
+  val noisePwr = noise.map { case n => n.real * n.real + n.imag + n.imag }.sum
+
+  val sigPwr = avgBinSignal.real * avgBinSignal.real + avgBinSignal.imag * avgBinSignal.imag
+
+  val isZeroton = sigPwr < sigThresholdPwr            // no * # delays
+  val notSingleton = noisePwr > noiseThresholdPwr     // * # delays
+
+  // Priority
+  if (isZeroton)
+    require(!isSingleton)
+  else if (notSingleton)
+    require(!isSingleton, s"Noise power: $noisePwr Noise Threshold $noiseThresholdPwr")
+
 }
 
-
-
-
-
-
-
-
-
-
-
-
+// TODO: See how much waste in delay choices
 class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[T]) extends DspTester(c) {
 
+  val params = c.ffastParams
+
   val tests = Seq(
-    SingletonEstimatorTest(subFFT = 675, subFFTIdx = 135, binLoc = 12960, isSingleton = true,
+    SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 135, binLoc = 12960, isSingleton = true, 
       delayedIns = Seq(
         0 -> Complex(0.09999557432549745, 2.185843291722172E-5),
         1 -> Complex(-0.08087364851509277, -0.05876563484628506),
@@ -260,37 +306,164 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         12 -> Complex(0.030908872124478386, 0.09509897704946693),
         19 -> Complex(-0.08087959862445164, 0.05879325658840878)
       ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 540, binLoc = 8640, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.09999557432549745, -2.185843291722172E-5),
+        1 -> Complex(-0.08087364851509277, 0.05876563484628506),
+        6 -> Complex(-0.0809610863716996, 0.05877587352157287),
+        9 -> Complex(-0.08085895723749413, -0.05880696639231166),
+        12 -> Complex(0.030908872124478386, -0.09509897704946693),
+        19 -> Complex(-0.08087959862445164, -0.05879325658840878)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 405, binLoc = -1, isSingleton = false, 
+      delayedIns = Seq(
+        0 -> Complex(0.20002372523225695, 2.5771843949787107E-5),
+        1 -> Complex(0.015430804872307831, -0.04761434901662145),
+        6 -> Complex(0.06180180142312776, -0.1902114377612409),
+        9 -> Complex(0.015453889148703921, 0.04754759212145481),
+        12 -> Complex(-0.16182547977844977, -0.11761838940287692),
+        19 -> Complex(-0.16182547977844977, -0.11761838940287692)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 270, binLoc = -1, isSingleton = false, 
+      delayedIns = Seq(
+        0 -> Complex(0.20002372523225695, -2.5771843949787107E-5),
+        1 -> Complex(0.015430804872307831, 0.04761434901662145),
+        6 -> Complex(0.06180180142312776, 0.1902114377612409),
+        9 -> Complex(0.015453889148703921, -0.04754759212145481),
+        12 -> Complex(-0.16182547977844977, 0.11761838940287692),
+        19 -> Complex(0.015452438259075718, -0.04754792491323378)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 800, subFFTIdx = 80, binLoc = 6480, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.07505754907026448, -9.88711578327783E-6),
+        1 -> Complex(-0.023162198047061544, 0.07137936586443518),
+        6 -> Complex(0.023160493448060534, -0.07131864130569361),
+        9 -> Complex(-0.02317661804626503, -0.07132915805237064),
+        12 -> Complex(-0.060667534932126094, -0.044049223769062014),
+        19 -> Complex(-0.02316872549407996, -0.07135438671369307)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 800, subFFTIdx = 480, binLoc = 17280, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.12500247748261095, 2.8607824414897095E-6),
+        1 -> Complex(0.03860225387314656, -0.11891074531743032),
+        6 -> Complex(0.038609426789110196, -0.11894520083688347),
+        9 -> Complex(0.038578786103015836, 0.11889660497337433),
+        12 -> Complex(-0.10111928434170041, -0.07343443182412278),
+        19 -> Complex(0.03863143600566978, 0.11888014029688444)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 216, binLoc = 5400, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.014997587916270405, -1.4611794302388653E-5),
+        1 -> Complex(-6.952493157763298E-6, 0.015067300447455209),
+        6 -> Complex(-0.014982188601721572, 3.037222301300927E-5),
+        9 -> Complex(-5.3238053424849465E-6, 0.015026578117480456),
+        12 -> Complex(0.015010575985506246, 7.99244820256777E-6),
+        19 -> Complex(-6.17468272969233E-6, -0.015025849049659945)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 648, binLoc = 16200, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.014997587916270405, 1.4611794302393147E-5),
+        1 -> Complex(-6.9524931577585786E-6, -0.015067300447455209),
+        6 -> Complex(-0.01498218860172157, -3.0372223013014434E-5),
+        9 -> Complex(-5.323805342480474E-6, -0.015026578117480456),
+        12 -> Complex(0.015010575985506246, -7.992448202562405E-6),
+        19 -> Complex(-6.174682729697717E-6, 0.015025849049659945)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 0, binLoc = -1, isSingleton = false, 
+      delayedIns = Seq(
+        0 -> Complex(0.45000915072857706, 0.0),
+        1 -> Complex(-0.08454147427239703, 0.0),
+        6 -> Complex(-0.08451047324270698, 0.0),
+        9 -> Complex(-0.08447385513496702, 0.0),
+        12 -> Complex(-0.1404173939445729, 0.0),
+        19 -> Complex(-0.0846333604191663, 0.0)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 432, binLoc = -1, isSingleton = false, 
+      delayedIns = Seq(
+        0 -> Complex(0.15001938066981324, 2.3250113254411374E-17),
+        1 -> Complex(-0.046318679343542335, -9.193632866316897E-18),
+        6 -> Complex(0.046315616172956556, 7.228343884938407E-18),
+        9 -> Complex(-0.046298964461923026, -8.72782748850831E-18),
+        12 -> Complex(-0.12137921154023056, -2.557713236165341E-17),
+        19 -> Complex(-0.04637789800562247, -9.937516023550007E-18)
+      ).toMap
     )
   )
 
-  for ((t, idx) <- tests.zipWithIndex) {
-    t.delayedIns.toSeq foreach { case (dly, in) =>
-      poke(c.io.delayedIns(dly), in)
+
+
+
+
+
+
+
+
+
+  
+  val moduleDelay = c.mod.moduleDelay
+  for (idx <- 0 until tests.length ) {//+ moduleDelay) {
+    val t = tests(idx % tests.length)
+    updatableDspVerbose.withValue(false) {
+      t.delayedIns.toSeq foreach { case (dly, in) =>
+        poke(c.io.delayedIns(dly), in)
+        // "Calibration"
+        poke(c.io.delays(dly), dly)
+      }
+      poke(c.io.subFFTIdx, t.subFFTIdx)
+      poke(c.io.subFFT, t.subFFT)
+      poke(c.io.subFFTInverse, t.subFFTInverse)
+      poke(c.io.zeroThresholdPwr, t.noiseThresholdPwr)
+      poke(c.io.sigThresholdPwr, t.sigThresholdPwr)
       // "Calibration"
-      poke(c.io.delays(dly), dly)
+      c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
+        poke(c.io.delayCalcConstants(id), const)
+      }
+
+
+
+
+      step(moduleDelay)
+      //if (idx >= moduleDelay) {
+        val outExpected = tests(idx)// - moduleDelay)
+        if (outExpected.isSingleton) expect(c.io.binLoc, outExpected.binLoc)
+      //}
+      
     }
-    poke(c.io.subFFTIdx, t.subFFTIdx)
-    poke(c.io.subFFT, t.subFFT)
-    poke(c.io.subFFTInverse, t.subFFTInverse)
-
-    val zeroThreshold = c.ffastParams.adcDelays.length.toDouble / math.pow(t.subFFT, 2).toDouble
-    val sigThreshold = zeroThreshold
-    poke(c.io.zeroThresholdPwr, zeroThreshold)
-    poke(c.io.sigThresholdPwr, sigThreshold)
-
-    // "Calibration"
-    c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
-      poke(c.io.delayCalcConstants(id), const)
-    }
-    
-    step(c.mod.moduleDelay)
-
-    peek(c.io.binLoc)
   }
 
 
 
 
+
+
+  
+ 
+
+ 
+    
+    
+
+    
+   
+
+    
+    
+
+    
+  
+
+
+
+
  
 
  
@@ -298,12 +471,19 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
 
 
 
-  // calculatee average
-  //is singleton
-//updatableDspVerbose.withValue(false) {
+
+// if singleton, write 0
+// output should be bin - actually no need for peeled
+
+
+
+
+
+ 
+//
   
   //io.binType := mod.io.binType 
-  //io.binLoc := mod.io.binLoc
+
   //io.binSignal := mod.io.binSignal
   
 }
@@ -320,4 +500,3 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
 
 
 // need to delay loc to match sig + type
-// binType precedence --> zero then single then multi

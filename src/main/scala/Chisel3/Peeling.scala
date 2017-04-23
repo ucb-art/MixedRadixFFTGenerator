@@ -127,6 +127,8 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
     Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.subFFTns)
   val sigThresholdPwr = CustomIndexedBundle(
     Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.subFFTns)
+  val sigThresholdPwrNoNormalizationMul = CustomIndexedBundle(
+    Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.subFFTns)
   val delayCalibration = CustomIndexedBundle(
     CustomIndexedBundle(Input(DelayOptimization(dspDataType, ffastParams)), ffastParams.adcDelays), ffastParams.subFFTns)
 
