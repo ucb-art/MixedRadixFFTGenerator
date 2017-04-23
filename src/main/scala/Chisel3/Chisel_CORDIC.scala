@@ -107,94 +107,18 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module w
   require(BigInt(halfPiInt * 3).bitLength == io.in.angle.getWidth)
   val angleZeroTo2Pi = io.in.angle.asUInt
 
-
-
-
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
- 
-
-
-
-class UIntGT(width: Int) extends Module {
-  val io = IO(new Bundle {
-    val a = Input(UInt(width.W))
-    val b = Input(UInt(width.W))
-    val out = Output(Bool())
-    val out2 = Output(Bool())
-    val c = Output(SInt((width + 1).W))
-  })
-  val tempa = Cat(false.B, io.a.asUInt)
-  val tempb = Cat(false.B, io.b.asUInt)
-  io.out :=  io.a.asSInt >= io.b.asSInt //io.a.asSInt >= io.b.asSInt
-  val t = io.a.asSInt -& io.b.asSInt
-  io.c := t
-
-  // 1 = overflow
-  io.out2 := t(t.getWidth - 1)
-}
-
-
-
-
-
-  val hp3 = Wire(angleZeroTo2Pi.cloneType)
-  hp3 := threeHalvesPi
-
-  val halp = (angleZeroTo2Pi < hp3) & true.B
-
-  
- val gt = Module(new UIntGT(angleZeroTo2Pi.getWidth))
-  gt.io.a := angleZeroTo2Pi.asUInt
-  gt.io.b := hp3.asUInt
-
-
-
-
-
-
-
-
-
-
-
+  // Verilator is dumb. Seems to not properly deal with comparison when signed is cast as unsigned
   val correctInput = {
-    if (cordicParams.isRotation)
-      (angleZeroTo2Pi > halfPi) && ((angleZeroTo2Pi < threeHalvesPi) | (io.in.angle.asUInt.asSInt < threeHalvesPi.asSInt))
+    if (cordicParams.isRotation) {
+      // angle [0, 2pi) < 3pi / 2
+      // angle [-pi, pi) < -pi / 2
+      val lessThan3HalfPiOrig = angleZeroTo2Pi < threeHalvesPi
+      val lessThan3HalfPi = lessThan3HalfPiOrig | (io.in.angle.asUInt.asSInt < threeHalvesPi.asSInt)
+      (angleZeroTo2Pi > halfPi) && lessThan3HalfPi
+    }
     else
       io.in.x.signBit
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   // CORDIC is more bit-level, so do everything as SInt
   val sintCordicParams = cordicParams.copy(
@@ -294,7 +218,7 @@ class CordicSpec extends FlatSpec with Matchers {
   )
   val params = CordicParams(
     xyType = FixedPoint(23.W, 21.BP),
-    numPipes = 0,
+    numPipes = 3,
     isRotation = false
   )
 
@@ -343,7 +267,7 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
 
   // Have step size be half of 1 bin 
   val fftn = 21600
-  val stepSize = 2160.toDouble / fftn * 2 * math.Pi / 2
+  val stepSize = 1.toDouble / fftn * 2 * math.Pi / 2
   val magnitudes = Seq(0.01, 0.1, 1.0)
   val angles = -math.Pi until math.Pi by stepSize
   val testsT = for (r <- magnitudes; theta <- angles) yield {
@@ -369,12 +293,12 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
         poke(c.io.in.y, 0.0)
         poke(c.io.in.angle, t.theta / math.Pi)
         if (idx >= c.mod.moduleDelay) {
-          println(s"Input angle (normalized to Pi) was: ${t.theta / math.Pi}")
+          //println(s"Input angle (normalized to Pi) was: ${t.theta / math.Pi}")
           expect(c.io.out.x, tests(idx - c.mod.moduleDelay).x)
           expect(c.io.out.y, tests(idx - c.mod.moduleDelay).y)
-          updatableDspVerbose.withValue(true) {
+          /*updatableDspVerbose.withValue(true) {
             peek(c.io.out.angle)
-          }
+          }*/
         }
       }
       step(1)
@@ -391,12 +315,7 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
 
 
 
-
+// processing gain!!
 // sbt -Dsbt.ivy.home=/tools/projects/angie/FFASTTapeout/fft2-chip/.ivy2 "testOnly dspblocks.fft.CordicSpec" 
-// sign, unsigned --> input is unsigned how to handle? 
-// output should also be unsigned
-// broken for -Pi to -Pi/2 (?)
-// numpipes
 // normalize ???
-// TODO: Is the last angle meaningful?
 // TODO: Is mod 2Pi correct for SInt? 
