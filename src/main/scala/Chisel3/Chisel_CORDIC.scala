@@ -115,8 +115,7 @@ class Cordic[T <: Data:RealBits](cordicParams: CordicParams[T]) extends Module w
     if (cordicParams.isRotation) {
       // angle [0, 2pi) < 3pi / 2
       // angle [-pi, pi) < -pi / 2
-      val lessThan3HalfPiOrig = angleZeroTo2Pi < threeHalvesPi
-      val lessThan3HalfPi = lessThan3HalfPiOrig | (io.in.angle.asUInt.asSInt < threeHalvesPi.asSInt)
+      val lessThan3HalfPi = angleZeroTo2Pi(angleZeroTo2Pi.getWidth - 1, 0) < threeHalvesPi(threeHalvesPi.getWidth - 1, 0)
       (angleZeroTo2Pi > halfPi) && lessThan3HalfPi
     }
     else
@@ -263,35 +262,11 @@ object GetAngle {
     mod.io.in.y := complex.imag
     mod.io.in.angle := complex.real.fromDouble(0.0)
     
-
-
-
-    // TODO: Can you shorten these ops? (redundant since 2's complement should directly work with this angle translation stuff)
-    val pi2 = (1 << (params.angleWidth)).U((params.angleWidth + 1).W)
-    val rotatedAngleOut = params.outAngleType.fromBits(pi2) + mod.io.out.angle
-    val outAngleIsNegative = mod.io.out.angle.signBit
-    val normalizeZeroTo2Pi = Mux(outAngleIsNegative, rotatedAngleOut, mod.io.out.angle).asUInt.asSInt >> 1 
-    
-
-
-    val t1 = Wire(UInt(params.angleType.getWidth.W))
-    t1 := mod.io.out.angle.asUInt
-    val t2 = Cat(false.B, t1(t1.getWidth - 1, 1))  //t1 >> 1
-
-    println(s" t2 width: ${t2.getWidth}")
-
-    val outZeroTo2Pi = params.angleType.fromBits(t2) //params.angleType.fromBits(normalizeZeroTo2Pi.asUInt)
-    println(s"out width: ${outZeroTo2Pi.getWidth}")
-
-
-
-
-
-
-
-
-
-
+    // Verilator is super silly, gets confused about signs
+    // TODO: Am I wasting precision? (1 bit)
+    val angleAsUInt = mod.io.out.angle.asUInt
+    val angleRightShift1 = Cat(false.B, angleAsUInt(angleAsUInt.getWidth - 1, 1))
+    val outZeroTo2Pi = params.angleType.fromBits(angleRightShift1)
     AngleForms(mod.io.out.angle, outZeroTo2Pi)
   }
 }
@@ -357,7 +332,7 @@ class CordicTester[T <: Data:RealBits](c:CordicWrapper[T]) extends DspTester(c) 
 
   // Have step size be half of 1 bin 
   val fftn = 21600
-  val stepSize = 2160.toDouble / fftn * 2 * math.Pi / 2
+  val stepSize = 1.toDouble / fftn * 2 * math.Pi 
   val magnitudes = Seq(0.01, 0.1, 1.0)
   val angles = -math.Pi until math.Pi by stepSize
   val testsT = for (r <- magnitudes; theta <- angles) yield {
