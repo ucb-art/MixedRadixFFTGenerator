@@ -13,6 +13,7 @@ import dsptools.{hasContext, DspContext}
 import dsptools._
 import breeze.math.Complex
 
+// TODO: Conditionally run if not zeroton
 class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTParams) extends Bundle {
 
   // NOTE: Expects subFFT, subFFTInverse, delays, zeroThresholdPwr, sigThresholdPwr,
@@ -41,6 +42,7 @@ class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFAS
   val zeroThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
   // Sig Threshold (no multiplication by delays)
   val sigThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
+  val sigThresholdPwrMulDlys = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
 
   // TODO: Generalize
   // Last constant is purely fractional
@@ -135,13 +137,13 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
 
   withClock(io.clk) {
 
-    val thetaOver2Pis = ffastParams.delays.map { case d =>              // tx -- ordered by increasing delay deltas
+    val thetaOver2Pis = ffastParams.delays.zipWithIndex.map { case (d, idx) =>              // tx -- ordered by increasing delay deltas
       val dmax = io.delayedIns(d.max)
       val dmin = io.delayedIns(d.min)
       // Result has phase difference of min, max 
       val complexWithPhaseDelta = dmax context_* (dmin.conj())
       val t = GetAngle(complexWithPhaseDelta, io.clk, cordicDelay).zeroTo2Pi
-      t.suggestName("thetaOver2Pis")
+      t.suggestName(s"thetaOver2Pis_${idx}_${t.asInstanceOf[FixedPoint].binaryPoint.get}")
       t
     }
 
@@ -175,6 +177,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
 
     // Should ideally be < 1
     val hT1 = io.delayCalcConstants(2) context_* g
+    hT1.suggestName(s"hT1_${hT1.asInstanceOf[FixedPoint].binaryPoint.get}")
     val hT2 = Wire(cordicParams.outAngleType.cloneType)
     hT2 := hT1
     // TODO: Generalize; won't overflow b/c N isn't near power of 2
@@ -209,6 +212,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     println("Singleton Estimator Node Sizes")
     val debug = Seq("a" -> a, "b" -> b, "c" -> c, "d" -> d, "e" -> e, "f" -> f, "g" -> g, "h" -> h, "i" -> i, "j" -> j, "k" -> k, "l" -> l, "m" -> m, "n" -> n)
     debug foreach { case (name, x) =>
+      x.suggestName(s"${name}_${x.asInstanceOf[FixedPoint].binaryPoint.get}")
       println(s"$name: ${x.getWidth}, ${x.asInstanceOf[FixedPoint].binaryPoint.get}") 
     }
 
@@ -286,6 +290,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     val inverseNumDelays = cordicParams.xyType.fromDouble(1.toDouble / ffastParams.adcDelays.length)
 
     val avgBinSigRealLarge = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).real } )
+    avgBinSigRealLarge.suggestName(s"avgBinSigRealLarge_${avgBinSigRealLarge.asInstanceOf[FixedPoint].binaryPoint.get}")
     val avgBinSigImagLarge = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).imag } )
 
     // println(s"bavgBinSigRealLarge Width: ${avgBinSigRealLarge.getWidth} BinaryPoint: ${avgBinSigRealLarge.asInstanceOf[FixedPoint].binaryPoint.get}")
@@ -314,6 +319,16 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
       delayedInsToMatchSigOut(d) context_- sigOut(d)
     }
 
+    val zerotonCheck = Module(new Zeroton(dspDataType, ffastParams))
+    zerotonCheck.suggestName(s"zerotonDetectorInsideSE")
+    zerotonCheck.io.clk := io.clk
+     ffastParams.adcDelays foreach { case d =>
+      zerotonCheck.io.bin(d) := delayedInsToMatchSigOut(d)
+    }
+    zerotonCheck.io.sigThresholdPwr := io.sigThresholdPwrMulDlys
+    // TODO: More generic!
+    require(zerotonCheck.moduleDelay == (context.numMulPipes + 1), "ZerotonCheck output should align with noisePwr")
+
     // Includes mulPipe
     val noisePwrs = noise.map { n => AbsSq(n) }.toSeq 
     // TODO: Don't hard code
@@ -322,11 +337,12 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     // Same amount of delay as sigOut
     val sigPwr = AbsSq(avgBinSignal)
     // TODO: Don't hard code!
-    val isZeroton = ShiftRegister(sigPwr < io.sigThresholdPwr, context.numMulPipes + 1)
+    val isZeroton = ShiftRegister(sigPwr < io.sigThresholdPwr, context.numMulPipes + 1) & zerotonCheck.io.isZeroton
+
     val notSingleton = noisePwr > io.zeroThresholdPwr
 
     // TODO: Don't need when
-    // Has priority
+    // Has priority   
     when(isZeroton) {
       io.binType("zero") := true.B
       io.binType("single") := false.B
@@ -341,7 +357,6 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
       io.binType("single") := true.B
       io.binType("multi") := false.B
     }
-
     io.binSignal := ShiftRegister(avgBinSignal, moduleDelay - upToAvgSigDelay.sum)
 
   }
@@ -360,6 +375,7 @@ class SingletonEstimatorWrapper[T <: Data:RealBits](val dspDataType: T, val ffas
   mod.io.zeroThresholdPwr := io.zeroThresholdPwr
   mod.io.sigThresholdPwr := io.sigThresholdPwr
   mod.io.delayCalcConstants := io.delayCalcConstants
+  mod.io.sigThresholdPwrMulDlys := io.sigThresholdPwrMulDlys
 
   io.binType := mod.io.binType 
   io.binLoc := mod.io.binLoc
@@ -393,7 +409,9 @@ case class SingletonEstimatorTest(
     subFFTIdx: Int, 
     binLoc: Int, 
     isSingleton: Boolean, 
-    delayedIns: Map[Int, Complex]) {
+    delayedIns: Map[Int, Complex],
+    // TODO: Don't HACK!!!
+    isZero: Boolean = false) {
 
   val numDelays = ffastParams.adcDelays.length
 
@@ -431,6 +449,7 @@ case class SingletonEstimatorTest(
 
   val sigPwr = avgBinSignal.real * avgBinSignal.real + avgBinSignal.imag * avgBinSignal.imag
 
+  // TODO: INCORRECT: SEE CHISEL
   val isZeroton = sigPwr < sigThresholdPwr            // no * # delays
   val notSingleton = noisePwr > noiseThresholdPwr     // * # delays
 
@@ -498,6 +517,17 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         19 -> Complex(-0.02316872549407996, -0.07135438671369307)
       ).toMap
     ),
+    // Check zeroton
+    SingletonEstimatorTest(params, subFFT = 800, subFFTIdx = 432, binLoc = -1, isSingleton = false, isZero = true,
+      delayedIns = Seq(
+        0 -> Complex(1E-8, 1E-8),
+        1 -> Complex(1E-8, 1E-8),
+        6 -> Complex(1E-8, 1E-8),
+        9 -> Complex(1E-8, 1E-8),
+        12 -> Complex(1E-8, 1E-8),
+        19 -> Complex(1E-8, 1E-8)
+      ).toMap
+    ),
     SingletonEstimatorTest(params, subFFT = 800, subFFTIdx = 480, binLoc = 17280, isSingleton = true, 
       delayedIns = Seq( ////***
         0 -> Complex(0.12500247748261095, 2.8607824414897095E-6),
@@ -516,6 +546,17 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         9 -> Complex(-5.3238053424849465E-6, 0.015026578117480456),
         12 -> Complex(0.015010575985506246, 7.99244820256777E-6),
         19 -> Complex(-6.17468272969233E-6, -0.015025849049659945)
+      ).toMap
+    ),
+    // Repeat to double check zeroton/multiton change
+    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 432, binLoc = -1, isSingleton = false, 
+      delayedIns = Seq(
+        0 -> Complex(0.15001938066981324, 2.3250113254411374E-17),
+        1 -> Complex(-0.046318679343542335, -9.193632866316897E-18),
+        6 -> Complex(0.046315616172956556, 7.228343884938407E-18),
+        9 -> Complex(-0.046298964461923026, -8.72782748850831E-18),
+        12 -> Complex(-0.12137921154023056, -2.557713236165341E-17),
+        19 -> Complex(-0.04637789800562247, -9.937516023550007E-18)
       ).toMap
     ),
     SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 0, binLoc = -1, isSingleton = false, 
@@ -547,6 +588,17 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         12 -> Complex(-0.12137921154023056, -2.557713236165341E-17),
         19 -> Complex(-0.04637789800562247, -9.937516023550007E-18)
       ).toMap
+    ),
+    // Check zeroton
+    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 432, binLoc = -1, isSingleton = false, isZero = true,
+      delayedIns = Seq(
+        0 -> Complex(1E-8, 1E-8),
+        1 -> Complex(1E-8, 1E-8),
+        6 -> Complex(1E-8, 1E-8),
+        9 -> Complex(1E-8, 1E-8),
+        12 -> Complex(1E-8, 1E-8),
+        19 -> Complex(1E-8, 1E-8)
+      ).toMap
     )
   )
 
@@ -561,6 +613,7 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
       poke(c.io.subFFTInverse, t.subFFTInverse)
       poke(c.io.zeroThresholdPwr, t.noiseThresholdPwr)
       poke(c.io.sigThresholdPwr, t.sigThresholdPwr)
+      poke(c.io.sigThresholdPwrMulDlys, t.sigThresholdPwr * c.ffastParams.adcDelays.length)
       // "Calibration"
       c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
         poke(c.io.delayCalcConstants(id), const)
@@ -582,9 +635,18 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
             expect(c.io.binLoc, outExpected.binLoc)
             expect(c.io.binSignal, outExpected.avgBinSignal)
             expect(c.io.binType("single"), true)
+            expect(c.io.binType("zero"), false)
+            expect(c.io.binType("multi"), false)
+          }
+          else if (outExpected.isZero) {                          // TODO: DIFFERENT FROM (INCORRECT) IS-ZEROTON
+            expect(c.io.binType("single"), false)
+            expect(c.io.binType("zero"), true)
+            expect(c.io.binType("multi"), false)
           }
           else {
             val passed = expect(c.io.binType("multi"), true)
+            expect(c.io.binType("single"), false)
+            expect(c.io.binType("zero"), false)
             if (!passed) {
               updatableDspVerbose.withValue(true) { 
                 peek(c.io.binSignal) 
