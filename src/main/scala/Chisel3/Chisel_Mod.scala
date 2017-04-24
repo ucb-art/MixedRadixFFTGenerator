@@ -60,7 +60,9 @@ class BarrettReduction(xType: UInt, n: Int, xmax: Option[Int] = None) extends Mo
   withClock(io.clk) {
 
     // In case more info is known, can only use relevant bits
-    val x = Wire(UInt(range"[0, $xmaxFinal]"))
+    // TODO: Something wrong with ranges...
+    val x = Wire(UInt(BigInt(xmaxFinal).bitLength.W))
+    // Wire(UInt(range"[0, $xmaxFinal]"))
     x := io.x
 
     // q = FLOOR((x * m) / 2^k) -- note FLOOR b/c of >> on UInt so q is an integer
@@ -83,6 +85,11 @@ class BarrettReduction(xType: UInt, n: Int, xmax: Option[Int] = None) extends Mo
 }
 
 object ConstantMod {
+  def apply(x: UInt, n: Int, xmax: Int, clk: Clock): UInt = {
+    val (o, m) = apply(x, n, xmax)
+    m.io.clk := clk
+    o
+  }
   def apply(x: UInt, n: Int, xmax: Int): (UInt, BarrettReduction) = apply(x, n, Some(xmax))
   def apply(x: UInt, n: Int, xmax: Option[Int] = None): (UInt, BarrettReduction) = {
     val mod = Module(new BarrettReduction(x, n, xmax))

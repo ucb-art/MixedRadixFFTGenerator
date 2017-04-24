@@ -172,7 +172,7 @@ class TISARADC_SFFT[T <: Data:RealBits](adcDataType: => T, ffastParams: FFASTPar
 
   // This module = 1, then goes up
   // val (level, topMod) = ModuleHierarchy.getHierarchyLevel(1, Some(this))
-  val sdcRegExpr = s"${name}/"
+  val sdcRegExpr = s"*${name}/"
 
   val pinsSDC = Seq(
     s"set pin_inClk [get_pins -hier ${sdcRegExpr}ADCCLKP]"

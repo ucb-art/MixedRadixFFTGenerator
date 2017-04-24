@@ -109,7 +109,27 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
   val toLocDelay = toLDelay ++ Seq(
     context.numMulPipes     // l (includes its delay)
   )
-  val moduleDelay = toLocDelay.sum
+
+  // TODO: Get from Barrett directly
+  val upToSecondCordicDelay = toLocDelay ++ Seq(
+    context.numMulPipes,
+    2 * context.numMulPipes,          // Barrett ,
+    context.numMulPipes,              // Into Cordic
+    cordicDelay
+  )
+ 
+  val upToAvgSigDelay = upToSecondCordicDelay ++ Seq(
+    context.numMulPipes,              // in * a conj
+    context.numMulPipes               // avg sig (sum then multiply)
+  )
+
+  val endDelay = upToAvgSigDelay ++ Seq(
+    context.numMulPipes,              // sigOut delay (complex multiply), sigPwr delay
+    context.numMulPipes,              // AbsSq (noisePwr)                       |
+    1                                 // SumScalars (noisePwr)                  |
+  )
+
+  val moduleDelay = endDelay.sum
 
   val io = IO(new SingletonEstimatorIO(dspDataType, ffastParams))
 
@@ -192,7 +212,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
       println(s"$name: ${x.getWidth}, ${x.asInstanceOf[FixedPoint].binaryPoint.get}") 
     }
 
-    io.binLoc := loc
+    io.binLoc := ShiftRegister(loc, moduleDelay - toLocDelay.sum)
 
     // Successive approximation is recursive
     // theta_x -> CORDIC dumps theta_x / 2pi
@@ -200,7 +220,125 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     // loc_match = round[[loc_3 - subFFTBinIdx] / subFFTLen] * subFFTLen + subFFTBinIdx
     // loc = loc_match + n if loc_match < 0; otherwise loc_match
 
+ // --------------------------- ABOVE HERE IS DEALING WITH LOCATION CALCULATION
+ 
+    // Need to be able to represent 1! (Int width >= 1; not including sign bit)
+    val mag1 = Wire(DspComplex(cordicParams.outAngleType))
+    mag1.real := cordicParams.outAngleType.fromDouble(1.0)
+    mag1.imag := cordicParams.outAngleType.fromDouble(0.0)
+
+    // TODO: Don't hard code type, manual trim
+    val locFixed = loc.asFixed.asInstanceOf[T] 
+    val aVecCordicIn = ffastParams.adcDelays.map { case d =>
+      // WARNING: EXPECTS D IS POSITIVE
+      val mulResult = locFixed context_* io.delays(d)
+      mulResult.suggestName(s"mulResult$d")
+      val temp = mulResult.asUInt
+      // TODO: Make sure it gets the right UInt value (ignores MSB)
+      val locMulDelay = temp(temp.getWidth - 2, 1)
+      locMulDelay.suggestName(s"locMulDelays$d")
+      // TODO: require, asInstanceOf handling ; matches the fact that LSB is dropped
+      val bpShift = mulResult.asInstanceOf[FixedPoint].binaryPoint.get - 1
+      val nWithBPShift = ffastParams.fftn << bpShift
+      val xmaxBR = (ffastParams.fftn * ffastParams.fftn - 1) << bpShift
+      val moddedLocMulDelay = ConstantMod(locMulDelay, nWithBPShift, xmax = xmaxBR, io.clk)
+      moddedLocMulDelay.suggestName(s"moddedLocMulDelay$d")
+      // TODO: Clean up, don't be arbitrary
+      val normalizeDivBy = BigInt(ffastParams.fftn).bitLength - 1
+      // Dividing without losing precision
+      val modOut = (Cat(false.B, moddedLocMulDelay)).asFixedPoint((bpShift + normalizeDivBy).BP)
+      val inverseFFTnBP = cordicParams.angleType.asInstanceOf[FixedPoint].binaryPoint.get
+      val thetaOver2Pi = Wire(cordicParams.angleType)
+      thetaOver2Pi :=  modOut context_* ((1 << normalizeDivBy).toDouble / ffastParams.fftn).F(inverseFFTnBP.BP)
+      thetaOver2Pi.suggestName(s"aVecCordicIn$d")
+      d -> thetaOver2Pi
+    }
+
+    val aVecRectangular = aVecCordicIn.map { case (d, a) =>
+      // To get conjugate
+      // val in = Mux(a === a.fromDouble(0.0), a, a.fromDouble(1.0) context_- a)
+      val o = RotateComplex(mag1, a, io.clk, cordicDelay)
+      // println(s"a_$d Width: ${o.real.getWidth} BinaryPoint: ${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
+      o.suggestName(s"aVecRectangular$d")
+      d -> o
+    }.toMap
+
+    val delayedInsToMatch2CordicOut = ffastParams.adcDelays.map { case d =>
+      d -> ShiftRegister(io.delayedIns(d), upToSecondCordicDelay.sum)
+    }.toMap
+
+    val binSignalSamples = ffastParams.adcDelays.map { case d =>
+      val o = delayedInsToMatch2CordicOut(d) context_* aVecRectangular(d).conj()
+      // println(s"binSignalSamples_$d Width: ${o.real.getWidth} BinaryPoint: ${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
+      o.suggestName(s"binSignalSamples$d")
+      d -> o
+    }.toMap
+
+    // theta = 2pi / n * [(loc * delay) % n]
+    // Cordic input is theta / 2pi -> [(loc * delay) % n] / n
+    // Remove phase due to delay
+    // Average signal
+
+  // --------------------------- ABOVE HERE IS CALCULATING BIN SIGNAL SAMPLES
+
+    val inverseNumDelays = cordicParams.xyType.fromDouble(1.toDouble / ffastParams.adcDelays.length)
+    val avgBinSignalReal = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).real } ) context_* inverseNumDelays
+    val avgBinSignalImag = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).imag } ) context_* inverseNumDelays
+   
+    // TODO: Don't use dspDataType (pass down the one actually being used by this module)
+    val avgBinSignal = Wire(DspComplex(cordicParams.xyType))
+    avgBinSignal.real := avgBinSignalReal
+    avgBinSignal.imag := avgBinSignalImag
+
+
+
+
+
+    val sigOut = ffastParams.adcDelays.map { case d =>
+      avgBinSignal context_* ShiftRegister(aVecRectangular(d), upToAvgSigDelay.sum - upToSecondCordicDelay.sum)
+    }
+    
+
+
+
+  val upToAvgSigDelay = upToSecondCordicDelay ++ Seq(
+    context.numMulPipes,              // in * a conj
+    context.numMulPipes               // avg sig (sum then multiply)
+  )
+
+  val endDelay = upToAvgSigDelay ++ Seq(
+   * context.numMulPipes,              // sigOut delay (complex multiply), sigPwr delay
+    context.numMulPipes,              // AbsSq (noisePwr)                       |
+    1                                 // SumScalars (noisePwr)                  |
+  )
+
+  val moduleDelay = endDelay.sum
+
+
+
+
+
+upToSecondCordicDelay.sum
+
+
+
+
+
+
+/*
+
+
+*/
+
+
+// peeler
+
+
+    
+
   }
+
+  
 
 }
 
@@ -284,7 +422,7 @@ case class SingletonEstimatorTest(
   }
 
   val noise = inBins.zip(sigOut).map { case (a, b) => a - b }
-  val noisePwr = noise.map { case n => n.real * n.real + n.imag + n.imag }.sum
+  val noisePwr = noise.map { case n => n.real * n.real + n.imag * n.imag }.sum
 
   val sigPwr = avgBinSignal.real * avgBinSignal.real + avgBinSignal.imag * avgBinSignal.imag
 
@@ -356,7 +494,7 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
       ).toMap
     ),
     SingletonEstimatorTest(params, subFFT = 800, subFFTIdx = 480, binLoc = 17280, isSingleton = true, 
-      delayedIns = Seq(
+      delayedIns = Seq( ////***
         0 -> Complex(0.12500247748261095, 2.8607824414897095E-6),
         1 -> Complex(0.03860225387314656, -0.11891074531743032),
         6 -> Complex(0.038609426789110196, -0.11894520083688347),
@@ -487,7 +625,7 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
 //io.binType := mod.io.binType 
 //io.binSignal := mod.io.binSignal
 // need to delay loc to match sig + type
-
+// early terminate cordic
 
 
 

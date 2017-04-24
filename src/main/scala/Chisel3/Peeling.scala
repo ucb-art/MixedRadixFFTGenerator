@@ -97,9 +97,9 @@ object FFTNormalization {
 
 object DelayOptimization {
   def apply[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, fullFraction: Boolean = false): T = {
-    val timingResolutionBits = 11
+    val timingResolutionBits = 8
     // TODO: Something more reasonable
-    val maxDelayBits = BigInt(ffastParams.adcDelays.max * 8).bitLength + 1
+    val maxDelayBits = BigInt(ffastParams.adcDelays.max * 4).bitLength + 1
     val delayTypeTemp = dspDataType match {
       case r: DspReal => 
         r
@@ -199,7 +199,6 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     "cb1" -> memOutDelay, 
     "idxToBA1" -> idxToBankAddrDelay, 
     "mainMem1" -> memOutDelay, 
-    "zero1" -> zerotonDelay, 
     "se" -> singletonEstimatorDelay, 
     "binToSubFFTIdx" -> binToSubFFTIdxDelay, 
     "idxToBA2" -> idxToBankAddrDelay, 
