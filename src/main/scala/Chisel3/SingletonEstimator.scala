@@ -13,6 +13,10 @@ import dsptools.{hasContext, DspContext}
 import dsptools._
 import breeze.math.Complex
 
+trait includeClk { 
+  val clk = Input(Clock())
+}
+
 // TODO: Conditionally run if not zeroton
 class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTParams) extends Bundle {
 
@@ -57,8 +61,6 @@ class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFAS
   val binType = new CustomBundle(ffastParams.binTypes.map(_ -> Output(Bool())): _*) 
   val binLoc = Output(UInt(range"[0, $n)"))
   val binSignal = Output(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)))
-  
-  val clk = Input(Clock())
   
   override def cloneType = (new SingletonEstimatorIO(dspDataType, ffastParams)).asInstanceOf[this.type]
 
@@ -133,7 +135,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
 
   val moduleDelay = endDelay.sum
 
-  val io = IO(new SingletonEstimatorIO(dspDataType, ffastParams))
+  val io = IO(new SingletonEstimatorIO(dspDataType, ffastParams) with includeClk)
 
   withClock(io.clk) {
 

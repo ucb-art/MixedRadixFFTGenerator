@@ -160,6 +160,9 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
   val cbREFromCPU = Input(Bool())
   val cbREToCPU = Output(Bool())
 
+  // Access to singleton estimator
+  val singletonEstimator = new SingletonEstimatorIO(dspDataType, ffastParams)  
+
   override def cloneType = (new PeelingSCR(dspDataType, ffastParams)).asInstanceOf[this.type]
 }
 
@@ -560,6 +563,42 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 
 
+
+
+    val singletonEstimator = Module(new SingletonEstimator(dspDataType, ffastParams))
+    //singletonEstimator.io.clk := io.clk
+    //singletonEstimator.io <> io.peelScr.singletonEstimator
+    singletonEstimator.io.clk := io.clk
+
+  singletonEstimator.io.delayedIns := io.peelScr.singletonEstimator.delayedIns
+  singletonEstimator.io.subFFTIdx := io.peelScr.singletonEstimator.subFFTIdx
+  singletonEstimator.io.subFFT := io.peelScr.singletonEstimator.subFFT
+ singletonEstimator.io.subFFTInverse := io.peelScr.singletonEstimator.subFFTInverse
+  singletonEstimator.io.delays := io.peelScr.singletonEstimator.delays
+  singletonEstimator.io.zeroThresholdPwr := io.peelScr.singletonEstimator.zeroThresholdPwr
+  singletonEstimator.io.sigThresholdPwr := io.peelScr.singletonEstimator.sigThresholdPwr
+  singletonEstimator.io.delayCalcConstants := io.peelScr.singletonEstimator.delayCalcConstants
+  singletonEstimator.io.sigThresholdPwrMulDlys := io.peelScr.singletonEstimator.sigThresholdPwrMulDlys
+
+  io.peelScr.singletonEstimator.binType := singletonEstimator.io.binType 
+  io.peelScr.singletonEstimator.binLoc := singletonEstimator.io.binLoc
+  io.peelScr.singletonEstimator.binSignal := singletonEstimator.io.binSignal
+
+
+
+    // TODO: Normalized: Different fraction!
+    val k = Seq(ffastParams.k, 1952).max
+    val n = ffastParams.fftn
+    val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
+    outIdxsMem.io.clk := io.clk
+    val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
+    outValsMem.io.clk := io.clk
+
+
+
+
+
+
 /*
 
 // can i do zeroton externally only in setup? + i guess for peeling...
@@ -620,13 +659,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 // if any done -> early terminate
 // if all stuck -> early terminate
 
-    // TODO: Normalized: Different fraction!
-    val k = Seq(ffastParams.k, 1952).max
-    val n = ffastParams.fftn
-    val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
-    outIdxsMem.io.clk := globalClk
-    val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
-    outValsMem.io.clk := globalClk
+
 
     
 
