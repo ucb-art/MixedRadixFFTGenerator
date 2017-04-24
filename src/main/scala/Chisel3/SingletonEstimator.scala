@@ -14,6 +14,9 @@ import dsptools._
 import breeze.math.Complex
 
 class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTParams) extends Bundle {
+
+  // NOTE: Expects subFFT, subFFTInverse, delays, zeroThresholdPwr, sigThresholdPwr,
+  // delayCalcConstants to be held for duration of FFT
   
   val maxSubFFT = ffastParams.subFFTns.max
   val n = ffastParams.fftn
@@ -25,6 +28,7 @@ class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFAS
     ffastParams.adcDelays
   )
   val subFFTIdx = Input(UInt(range"[0, $maxSubFFT)"))
+  
   val subFFT = Input(UInt(range"[0, $maxSubFFT]"))
   val subFFTInverse = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
 
@@ -35,10 +39,8 @@ class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFAS
 
   // Zero Threshold * # delays
   val zeroThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
-  // Sig Threshold * # delays
+  // Sig Threshold (no multiplication by delays)
   val sigThresholdPwr = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
-  // Sig Threshold
-  val sigThresholdPwrNoNormalizationMul = Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
 
   // TODO: Generalize
   // Last constant is purely fractional
@@ -88,8 +90,8 @@ object FitOps {
 class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTParams) extends Module with DelayTracking with hasContext {
 
   val cordicDelay = 5
-  // TODO: Don't hard code
-  val moduleDelay = Seq(
+  // TODO: Don't hard code, use map
+  val toIDelay = Seq(
     context.numMulPipes,    // get phase diff ***
     cordicDelay,            // cordic ***
     1,                      // a ***
@@ -98,11 +100,16 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     context.numMulPipes,    // e ***
     1,                      // g ***
     context.numMulPipes,    // h / delta3 *
-    context.numMulPipes,    // h * n *
+    context.numMulPipes     // h * n *
+  )
+  val toLDelay = toIDelay ++ Seq( 
     1,                      // i
-    context.numMulPipes,    // j
-    context.numMulPipes     // l
-  ).sum
+    context.numMulPipes     // j
+  )    
+  val toLocDelay = toLDelay ++ Seq(
+    context.numMulPipes     // l (includes its delay)
+  )
+  val moduleDelay = toLocDelay.sum
 
   val io = IO(new SingletonEstimatorIO(dspDataType, ffastParams))
 
@@ -162,7 +169,8 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     // TODO: Check general overflow case -- 21600 is safe
     // TODO: Don't hard code type
     // Sub FFT info should be held for the duration that we care about
-    val i = ShiftRegister(h context_- io.subFFTIdx.asFixed.asInstanceOf[T], 1)
+    val subFFTIdxMatchIDelay = ShiftRegister(io.subFFTIdx.asFixed.asInstanceOf[T], toIDelay.sum)
+    val i = ShiftRegister(h context_- subFFTIdxMatchIDelay, 1)
     val jT = io.subFFTInverse context_* i
     val j = Wire(doNothing.cloneType)
     j := jT
@@ -170,7 +178,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     val l = Wire(nAsFixed.cloneType)
     // TODO: Don't hard code type
     l := k context_* io.subFFT.asFixed.asInstanceOf[T]
-    val m = l context_+ io.subFFTIdx.asFixed.asInstanceOf[T]
+    val m = l context_+ ShiftRegister(subFFTIdxMatchIDelay, toLocDelay.sum - toIDelay.sum)
     val n = Mux(m.signBit, nAsFixed context_+ m, m)
 
     val loc = Wire(io.binLoc.cloneType)
@@ -399,7 +407,40 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
     )
   )
 
+  val moduleDelay = c.mod.moduleDelay
 
+  for (subFFT <- c.ffastParams.subFFTns) {
+    val currentFFTTests = tests.filter(x => x.subFFT == subFFT)
+    // Stuff up top doesn't change
+    val t = currentFFTTests(0)
+    updatableDspVerbose.withValue(false) {
+      poke(c.io.subFFT, t.subFFT)
+      poke(c.io.subFFTInverse, t.subFFTInverse)
+      poke(c.io.zeroThresholdPwr, t.noiseThresholdPwr)
+      poke(c.io.sigThresholdPwr, t.sigThresholdPwr)
+      // "Calibration"
+      c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
+        poke(c.io.delayCalcConstants(id), const)
+      }
+      t.delayedIns.toSeq foreach { case (dly, in) =>
+        poke(c.io.delays(dly), dly)
+      }
+    }
+    for (idx <- 0 until currentFFTTests.length + moduleDelay) {
+      val t = currentFFTTests(idx % currentFFTTests.length)
+      updatableDspVerbose.withValue(false) {
+        t.delayedIns.toSeq foreach { case (dly, in) =>
+          poke(c.io.delayedIns(dly), in)
+        }
+        poke(c.io.subFFTIdx, t.subFFTIdx)
+        if (idx >= moduleDelay) {
+          val outExpected = currentFFTTests(idx - moduleDelay)
+          if (outExpected.isSingleton) expect(c.io.binLoc, outExpected.binLoc)
+        }
+        step(1)   
+      }
+    }
+  }
 
 
 
@@ -409,37 +450,6 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
 
 
   
-  val moduleDelay = c.mod.moduleDelay
-  for (idx <- 0 until tests.length ) {//+ moduleDelay) {
-    val t = tests(idx % tests.length)
-    updatableDspVerbose.withValue(false) {
-      t.delayedIns.toSeq foreach { case (dly, in) =>
-        poke(c.io.delayedIns(dly), in)
-        // "Calibration"
-        poke(c.io.delays(dly), dly)
-      }
-      poke(c.io.subFFTIdx, t.subFFTIdx)
-      poke(c.io.subFFT, t.subFFT)
-      poke(c.io.subFFTInverse, t.subFFTInverse)
-      poke(c.io.zeroThresholdPwr, t.noiseThresholdPwr)
-      poke(c.io.sigThresholdPwr, t.sigThresholdPwr)
-      // "Calibration"
-      c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
-        poke(c.io.delayCalcConstants(id), const)
-      }
-
-
-
-
-      step(moduleDelay)
-      //if (idx >= moduleDelay) {
-        val outExpected = tests(idx)// - moduleDelay)
-        if (outExpected.isSingleton) expect(c.io.binLoc, outExpected.binLoc)
-      //}
-      
-    }
-  }
-
 
 
 
@@ -474,29 +484,16 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
 
 // if singleton, write 0
 // output should be bin - actually no need for peeled
-
+//io.binType := mod.io.binType 
+//io.binSignal := mod.io.binSignal
+// need to delay loc to match sig + type
 
 
 
 
  
-//
-  
-  //io.binType := mod.io.binType 
 
-  //io.binSignal := mod.io.binSignal
+  
+  
   
 }
-
-
-
-
-
-
-
-
-
-
-
-
-// need to delay loc to match sig + type
