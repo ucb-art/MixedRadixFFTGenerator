@@ -17,6 +17,7 @@ trait DelayTracking {
 
 // Barrett reduction (See Wiki)
 // // x % n where n is constant and x can be really big
+@chiselName
 class BarrettReduction(xType: UInt, n: Int, xmax: Option[Int] = None) extends Module with hasContext with DelayTracking {
 
   val moduleDelay = 2 * context.numMulPipes
@@ -69,7 +70,11 @@ class BarrettReduction(xType: UInt, n: Int, xmax: Option[Int] = None) extends Mo
     // r = x - q * n
     // if n <= r, mod is r - n
     // else mod is r
-    val q = (x context_* m.U) >> k
+    require(m > 0)
+    val qT = (x context_* m.U) >> k
+    val q = Wire(qT.cloneType)
+    q := qT
+    q.suggestName(s"q_withM_${m}")
     // r Should never overflow since r will never be negative and is always less than x
     // TODO: Check if this optimization buys you anything (i.e. tools smart enough to figure out)
     val twon = 2 * n

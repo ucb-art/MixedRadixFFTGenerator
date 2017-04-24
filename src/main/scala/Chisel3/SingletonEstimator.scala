@@ -232,25 +232,27 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     val aVecCordicIn = ffastParams.adcDelays.map { case d =>
       // WARNING: EXPECTS D IS POSITIVE
       val mulResult = locFixed context_* io.delays(d)
-      mulResult.suggestName(s"mulResult$d")
+      mulResult.suggestName(s"mulResult_${d}_${mulResult.asInstanceOf[FixedPoint].binaryPoint.get}")
       val temp = mulResult.asUInt
       // TODO: Make sure it gets the right UInt value (ignores MSB)
       val locMulDelay = temp(temp.getWidth - 2, 1)
-      locMulDelay.suggestName(s"locMulDelays$d")
+      locMulDelay.suggestName(s"locMulDelays_$d")
       // TODO: require, asInstanceOf handling ; matches the fact that LSB is dropped
       val bpShift = mulResult.asInstanceOf[FixedPoint].binaryPoint.get - 1
       val nWithBPShift = ffastParams.fftn << bpShift
-      val xmaxBR = (ffastParams.fftn * ffastParams.fftn - 1) << bpShift
+      // TODO: Don't hard code!
+      val xmaxBR = (ffastParams.fftn * ffastParams.adcDelays.max * 4) << bpShift
       val moddedLocMulDelay = ConstantMod(locMulDelay, nWithBPShift, xmax = xmaxBR, io.clk)
-      moddedLocMulDelay.suggestName(s"moddedLocMulDelay$d")
+      moddedLocMulDelay.suggestName(s"moddedLocMulDelay_$d")
       // TODO: Clean up, don't be arbitrary
       val normalizeDivBy = BigInt(ffastParams.fftn).bitLength - 1
       // Dividing without losing precision
       val modOut = (Cat(false.B, moddedLocMulDelay)).asFixedPoint((bpShift + normalizeDivBy).BP)
       val inverseFFTnBP = cordicParams.angleType.asInstanceOf[FixedPoint].binaryPoint.get
-      val thetaOver2Pi = Wire(cordicParams.angleType)
+      val thetaOver2Pi = Wire(cordicParams.outAngleType)
       thetaOver2Pi :=  modOut context_* ((1 << normalizeDivBy).toDouble / ffastParams.fftn).F(inverseFFTnBP.BP)
-      thetaOver2Pi.suggestName(s"aVecCordicIn$d")
+      // println(s"aVecCordicIn_$d Width: ${thetaOver2Pi.getWidth} BinaryPoint: ${thetaOver2Pi.asInstanceOf[FixedPoint].binaryPoint.get}")
+      thetaOver2Pi.suggestName(s"aVecCordicIn_${d}_${thetaOver2Pi.asInstanceOf[FixedPoint].binaryPoint.get}")
       d -> thetaOver2Pi
     }
 
@@ -259,7 +261,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
       // val in = Mux(a === a.fromDouble(0.0), a, a.fromDouble(1.0) context_- a)
       val o = RotateComplex(mag1, a, io.clk, cordicDelay)
       // println(s"a_$d Width: ${o.real.getWidth} BinaryPoint: ${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
-      o.suggestName(s"aVecRectangular$d")
+      o.suggestName(s"aVecRectangular_${d}_${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
       d -> o
     }.toMap
 
@@ -270,7 +272,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     val binSignalSamples = ffastParams.adcDelays.map { case d =>
       val o = delayedInsToMatch2CordicOut(d) context_* aVecRectangular(d).conj()
       // println(s"binSignalSamples_$d Width: ${o.real.getWidth} BinaryPoint: ${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
-      o.suggestName(s"binSignalSamples$d")
+      o.suggestName(s"binSignalSamples_${d}_${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
       d -> o
     }.toMap
 
@@ -282,64 +284,67 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
   // --------------------------- ABOVE HERE IS CALCULATING BIN SIGNAL SAMPLES
 
     val inverseNumDelays = cordicParams.xyType.fromDouble(1.toDouble / ffastParams.adcDelays.length)
-    val avgBinSignalReal = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).real } ) context_* inverseNumDelays
-    val avgBinSignalImag = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).imag } ) context_* inverseNumDelays
+
+    val avgBinSigRealLarge = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).real } )
+    val avgBinSigImagLarge = SumScalars(ffastParams.adcDelays.map { d => binSignalSamples(d).imag } )
+
+    // println(s"bavgBinSigRealLarge Width: ${avgBinSigRealLarge.getWidth} BinaryPoint: ${avgBinSigRealLarge.asInstanceOf[FixedPoint].binaryPoint.get}")
+    val avgBinSignalReal = avgBinSigRealLarge context_* inverseNumDelays
+    val avgBinSignalImag = avgBinSigImagLarge context_* inverseNumDelays
    
     // TODO: Don't use dspDataType (pass down the one actually being used by this module)
     val avgBinSignal = Wire(DspComplex(cordicParams.xyType))
     avgBinSignal.real := avgBinSignalReal
     avgBinSignal.imag := avgBinSignalImag
 
-
-
-
+// ----------
 
     val sigOut = ffastParams.adcDelays.map { case d =>
-      avgBinSignal context_* ShiftRegister(aVecRectangular(d), upToAvgSigDelay.sum - upToSecondCordicDelay.sum)
+      val o = avgBinSignal context_* ShiftRegister(aVecRectangular(d), upToAvgSigDelay.sum - upToSecondCordicDelay.sum)
+      o.suggestName(s"sigOut$d")
+      d -> o
+    }.toMap
+
+    val delayedInsToMatchSigOut = ffastParams.adcDelays.map { case d =>
+      // TODO: Don't hard code sig out delay
+      d -> ShiftRegister(delayedInsToMatch2CordicOut(d), upToAvgSigDelay.sum - upToSecondCordicDelay.sum + context.numMulPipes)
+    }.toMap
+
+    val noise = ffastParams.adcDelays.map { case d =>
+      delayedInsToMatchSigOut(d) context_- sigOut(d)
     }
-    
 
+    // Includes mulPipe
+    val noisePwrs = noise.map { n => AbsSq(n) }.toSeq 
+    // TODO: Don't hard code
+    val noisePwr = ShiftRegister(SumScalars(noisePwrs), 1)
 
+    // Same amount of delay as sigOut
+    val sigPwr = AbsSq(avgBinSignal)
+    // TODO: Don't hard code!
+    val isZeroton = ShiftRegister(sigPwr < io.sigThresholdPwr, context.numMulPipes + 1)
+    val notSingleton = noisePwr > io.zeroThresholdPwr
 
-  val upToAvgSigDelay = upToSecondCordicDelay ++ Seq(
-    context.numMulPipes,              // in * a conj
-    context.numMulPipes               // avg sig (sum then multiply)
-  )
+    // TODO: Don't need when
+    // Has priority
+    when(isZeroton) {
+      io.binType("zero") := true.B
+      io.binType("single") := false.B
+      io.binType("multi") := false.B
+    } .elsewhen(notSingleton) {
+      io.binType("zero") := false.B
+      io.binType("single") := false.B
+      io.binType("multi") := true.B
+    } .otherwise {
+      // Singleton
+      io.binType("zero") := false.B
+      io.binType("single") := true.B
+      io.binType("multi") := false.B
+    }
 
-  val endDelay = upToAvgSigDelay ++ Seq(
-   * context.numMulPipes,              // sigOut delay (complex multiply), sigPwr delay
-    context.numMulPipes,              // AbsSq (noisePwr)                       |
-    1                                 // SumScalars (noisePwr)                  |
-  )
-
-  val moduleDelay = endDelay.sum
-
-
-
-
-
-upToSecondCordicDelay.sum
-
-
-
-
-
-
-/*
-
-
-*/
-
-
-// peeler
-
-
-    
+    io.binSignal := ShiftRegister(avgBinSignal, moduleDelay - upToAvgSigDelay.sum)
 
   }
-
-  
-
 }
 
 class SingletonEstimatorWrapper[T <: Data:RealBits](val dspDataType: T, val ffastParams: FFASTParams) extends chisel3.Module {
@@ -453,16 +458,6 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         19 -> Complex(-0.08087959862445164, 0.05879325658840878)
       ).toMap
     ),
-    SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 540, binLoc = 8640, isSingleton = true, 
-      delayedIns = Seq(
-        0 -> Complex(0.09999557432549745, -2.185843291722172E-5),
-        1 -> Complex(-0.08087364851509277, 0.05876563484628506),
-        6 -> Complex(-0.0809610863716996, 0.05877587352157287),
-        9 -> Complex(-0.08085895723749413, -0.05880696639231166),
-        12 -> Complex(0.030908872124478386, -0.09509897704946693),
-        19 -> Complex(-0.08087959862445164, -0.05879325658840878)
-      ).toMap
-    ),
     SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 405, binLoc = -1, isSingleton = false, 
       delayedIns = Seq(
         0 -> Complex(0.20002372523225695, 2.5771843949787107E-5),
@@ -471,6 +466,16 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         9 -> Complex(0.015453889148703921, 0.04754759212145481),
         12 -> Complex(-0.16182547977844977, -0.11761838940287692),
         19 -> Complex(-0.16182547977844977, -0.11761838940287692)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 540, binLoc = 8640, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.09999557432549745, -2.185843291722172E-5),
+        1 -> Complex(-0.08087364851509277, 0.05876563484628506),
+        6 -> Complex(-0.0809610863716996, 0.05877587352157287),
+        9 -> Complex(-0.08085895723749413, -0.05880696639231166),
+        12 -> Complex(0.030908872124478386, -0.09509897704946693),
+        19 -> Complex(-0.08087959862445164, -0.05879325658840878)
       ).toMap
     ),
     SingletonEstimatorTest(params, subFFT = 675, subFFTIdx = 270, binLoc = -1, isSingleton = false, 
@@ -513,16 +518,6 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         19 -> Complex(-6.17468272969233E-6, -0.015025849049659945)
       ).toMap
     ),
-    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 648, binLoc = 16200, isSingleton = true, 
-      delayedIns = Seq(
-        0 -> Complex(0.014997587916270405, 1.4611794302393147E-5),
-        1 -> Complex(-6.9524931577585786E-6, -0.015067300447455209),
-        6 -> Complex(-0.01498218860172157, -3.0372223013014434E-5),
-        9 -> Complex(-5.323805342480474E-6, -0.015026578117480456),
-        12 -> Complex(0.015010575985506246, -7.992448202562405E-6),
-        19 -> Complex(-6.174682729697717E-6, 0.015025849049659945)
-      ).toMap
-    ),
     SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 0, binLoc = -1, isSingleton = false, 
       delayedIns = Seq(
         0 -> Complex(0.45000915072857706, 0.0),
@@ -531,6 +526,16 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         9 -> Complex(-0.08447385513496702, 0.0),
         12 -> Complex(-0.1404173939445729, 0.0),
         19 -> Complex(-0.0846333604191663, 0.0)
+      ).toMap
+    ),
+    SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 648, binLoc = 16200, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.014997587916270405, 1.4611794302393147E-5),
+        1 -> Complex(-6.9524931577585786E-6, -0.015067300447455209),
+        6 -> Complex(-0.01498218860172157, -3.0372223013014434E-5),
+        9 -> Complex(-5.323805342480474E-6, -0.015026578117480456),
+        12 -> Complex(0.015010575985506246, -7.992448202562405E-6),
+        19 -> Complex(-6.174682729697717E-6, 0.015025849049659945)
       ).toMap
     ),
     SingletonEstimatorTest(params, subFFT = 864, subFFTIdx = 432, binLoc = -1, isSingleton = false, 
@@ -573,65 +578,25 @@ class SingletonEstimatorTester[T <: Data:RealBits](c: SingletonEstimatorWrapper[
         poke(c.io.subFFTIdx, t.subFFTIdx)
         if (idx >= moduleDelay) {
           val outExpected = currentFFTTests(idx - moduleDelay)
-          if (outExpected.isSingleton) expect(c.io.binLoc, outExpected.binLoc)
+          if (outExpected.isSingleton) {
+            expect(c.io.binLoc, outExpected.binLoc)
+            expect(c.io.binSignal, outExpected.avgBinSignal)
+            expect(c.io.binType("single"), true)
+          }
+          else {
+            val passed = expect(c.io.binType("multi"), true)
+            if (!passed) {
+              updatableDspVerbose.withValue(true) { 
+                peek(c.io.binSignal) 
+              }
+              println(s"        From FFT: ${outExpected.subFFT} Idx: ${outExpected.subFFTIdx}")
+              println(s"          Expected Avg Sig (wrong): ${outExpected.avgBinSignal}")
+              println(s"          Expected Noise: ${outExpected.noisePwr}")
+            }
+          }
         }
         step(1)   
       }
     }
   }
-
-
-
-
-
-
-
-
-  
-
-
-
-
-
-  
- 
-
- 
-    
-    
-
-    
-   
-
-    
-    
-
-    
-  
-
-
-
-
- 
-
- 
-
-
-
-
-
-// if singleton, write 0
-// output should be bin - actually no need for peeled
-//io.binType := mod.io.binType 
-//io.binSignal := mod.io.binSignal
-// need to delay loc to match sig + type
-// early terminate cordic
-
-
-
- 
-
-  
-  
-  
 }

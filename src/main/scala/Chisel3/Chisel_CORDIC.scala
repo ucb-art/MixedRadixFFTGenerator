@@ -12,6 +12,7 @@ import dsptools.{DspTester, DspTesterOptionsManager}
 import barstools.tapeout.TestParams
 
 // TODO: Clean up stall stuff from 290C, make rotation/vectoring runtime programmable
+// TODO: Early termination
 
 // See http://www.andraka.com/files/crdcsrvy.pdf
 
