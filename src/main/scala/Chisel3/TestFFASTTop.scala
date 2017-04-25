@@ -611,6 +611,27 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       } 
     }
   }
+
+  def setupPeel(): Unit = {
+    updatableDspVerbose.withValue(false) { 
+      val nf = 20
+      val numDelays = c.ffastParams.adcDelays.length
+      c.ffastParams.subFFTns.foreach { n =>
+        // TODO: Less arbitrary
+        val noiseThresholdPwr = nf * numDelays.toDouble / math.pow(n, 2).toDouble
+        val sigThresholdPwr = nf * 1.toDouble / math.pow(n, 2).toDouble
+        poke(c.io.peelScr.zeroThresholdPwr(n), noiseThresholdPwr)
+        poke(c.io.peelScr.sigThresholdPwr(n), sigThresholdPwr)
+        poke(c.io.peelScr.sigThresholdPwrMulDlys(n), sigThresholdPwr * numDelays)
+        c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
+          poke(c.io.peelScr.delayCalcConstants(n)(id), const)
+        }
+        c.ffastParams.adcDelays foreach { case d =>
+          poke(c.io.peelScr.delayCalibration(n)(d), d.toDouble)
+        }
+      }
+    }
+  }
     
   import dspblocks.fft.FFASTTopParams._
   
@@ -702,7 +723,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 */
 // -------------------------------- ADC -> FFT OUTPUT TESTS
 
-  setupDebug(Seq("ADCCollectDebug", "FFTDebug"))
+  setupDebug(Seq("ADCCollectDebug", "FFTDebug", "PopulateNonZerotonsDebug"))
+  setupPeel()
 
   // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
   val inLarge = FFTTestVectors.createInput(c.ffastParams.fftn, fracBits = adcBP)
@@ -747,6 +769,62 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     println(s"Sub FFT: $subFFT Full FFT Bin: $fullFFTBin Sub FFT Index: $subFFTIdx")
   }
 
+  // TODO: Convert to expect tests
+
+  cycleThroughUntil("PopulateNonZerotonsDebug")
+  updatableDspVerbose.withValue(false) { 
+    poke(c.io.peelScr.cbREFromCPU, true) 
+    poke(c.io.scr.ctrlMemReadFromCPU.re, getAllEnable)
+  }
+
+  c.ffastParams.subFFTns foreach { case n =>
+    println(s"Non-zero bins for FFT $n")
+    c.ffastParams.adcDelays foreach { case ph => 
+      val cbLength = updatableDspVerbose.withValue(false) { peek(c.io.peelScr.cbLength(n)) }
+      (0 until cbLength) foreach { case idx =>
+        updatableDspVerbose.withValue(false) {
+          poke(c.io.peelScr.cbRIdxFromCPU, idx)
+          step(subsamplingT * 4)
+        }
+        val (bin, binSignal) = updatableDspVerbose.withValue(false) {
+          val bin = peek(c.io.peelScr.cbSubBinToCPU(n))
+          poke(c.io.scr.ctrlMemReadFromCPU.rIdx, bin)
+          step(subsamplingT * 4)
+          val bp = c.io.scr.ctrlMemReadToCPU(n)(ph).dout.real.asInstanceOf[FixedPoint].binaryPoint.get
+          val newBP = c.io.scr.ctrlMemReadToCPU(n)(ph).dout.real.asInstanceOf[FixedPoint].getWidth - 1
+          (bin, peek(c.io.scr.ctrlMemReadToCPU(n)(ph).dout) / math.pow(2, newBP - bp))
+        }
+        println(s"    FFT: $n PH: $ph Bin: $bin \t $binSignal")
+      }   
+    }
+  }
+
+  // TODO: Expect, don't hard code
+  val seTest = 
+    SingletonEstimatorTest(c.ffastParams, subFFT = 675, subFFTIdx = 135, binLoc = 12960, isSingleton = true, 
+      delayedIns = Seq(
+        0 -> Complex(0.09999557432549745, 2.185843291722172E-5),
+        1 -> Complex(-0.08087364851509277, -0.05876563484628506),
+        6 -> Complex(-0.0809610863716996, -0.05877587352157287),
+        9 -> Complex(-0.08085895723749413, 0.05880696639231166),
+        12 -> Complex(0.030908872124478386, 0.09509897704946693),
+        19 -> Complex(-0.08087959862445164, 0.05879325658840878)
+      ).toMap
+    )
+
+  poke(c.io.peelScr.singletonEstCurrentFFTBools, 1)
+  poke(c.io.peelScr.singletonEstSubFFTIdx, 135)
+  c.ffastParams.adcDelays.foreach { d =>
+    poke(c.io.peelScr.singletonIns(d), seTest.delayedIns(d))
+  }
+  step(subsamplingT * 70)
+  peek(c.io.peelScr.seBinType("zero"))
+  peek(c.io.peelScr.seBinType("single"))
+  peek(c.io.peelScr.seBinType("multi"))
+  peek(c.io.peelScr.seBinLoc)
+  peek(c.io.peelScr.seBinSignal)
+
+  cycleThroughUntil("ADCCollectDebug")
   clearResults()
 
 }
