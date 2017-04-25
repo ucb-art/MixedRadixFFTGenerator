@@ -127,7 +127,8 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
     Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.subFFTns)
   val sigThresholdPwr = CustomIndexedBundle(
     Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.subFFTns)
-  val sigThresholdPwrNoNormalizationMul = CustomIndexedBundle(
+  // Threshold power * # delays
+  val sigThresholdPwrMulDlys = CustomIndexedBundle(
     Input(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), ffastParams.subFFTns)
   val delayCalibration = CustomIndexedBundle(
     CustomIndexedBundle(Input(DelayOptimization(dspDataType, ffastParams)), ffastParams.adcDelays), ffastParams.subFFTns)
@@ -161,6 +162,17 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
   val cbREToCPU = Output(Bool())
 
   // Access to singleton estimator
+  // Should be one hot
+  val singletonEstCurrentFFTBools = Input(UInt(ffastParams.subFFTns.length.W))
+  val singletonEstSubFFTIdx = Input(UInt(range"[0, $maxSubFFT)"))
+  val singletonIns = CustomIndexedBundle(
+    Input(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))), 
+    ffastParams.adcDelays
+  )
+
+  val seBinType = new CustomBundle(ffastParams.binTypes.map(_ -> Output(Bool())): _*) 
+  val seBinLoc = Output(UInt(range"[0, $n)"))
+  val seBinSignal = Output(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)))
 
   override def cloneType = (new PeelingSCR(dspDataType, ffastParams)).asInstanceOf[this.type]
 }
@@ -421,8 +433,11 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       val mod = Module(new Zeroton(dspDataType, ffastParams))
       mod.suggestName(s"zerotonDetector$n")
       mod.io.clk := io.clk
-      mod.io.bin := Mux1H(Seq(io.stateInfo.inState -> dataFromMemoryPeeling(n)))
-      mod.io.sigThresholdPwr := io.peelScr.sigThresholdPwr(n)
+      // TODO: Prevent bad things from happening
+      ffastParams.adcDelays.map { case d =>
+        mod.io.bin(d) := Mux1H(Seq(io.stateInfo.inState -> dataFromMemoryPeeling(n)(d)))
+      }
+      mod.io.sigThresholdPwr := io.peelScr.sigThresholdPwrMulDlys(n)
       // TODO: Don't do require; set
       require(mod.moduleDelay == zerotonDelay)
       val isZeroton = mod.io.isZeroton
@@ -553,62 +568,64 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
    
 // ------------------------------------------------------------------
 
+    val singletonEstCurrentFFTBools = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) =>
+      n -> io.peelScr.singletonEstCurrentFFTBools(idx)
+    }.toMap   
 
+    val currentSubFFTBoolsFinal = ffastParams.subFFTns.map { case n =>
+      n -> Mux(normalPeeling, currentSubFFTBools(n), singletonEstCurrentFFTBools(n))
+    }
 
+    val currentSubFFT = Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> n.U } )
+    val currentSubFFTIdx = Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> circularBuffersSubFFTIdx(n) } )
+    val currentSubFFTInverse = Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> io.peelScr.subFFTInverse(n) } )
+    
+    // TODO: This is to prevent weirdness; maybe not needed
+    val currentDelays = ffastParams.adcDelays.map { d => 
+      d -> Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> io.peelScr.delayCalibration(n)(d) } )
+    }.toMap
 
+    val singletonEstIn = ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+      (n, ph) -> Mux(normalPeeling, dataFromMemory(n)(ph), io.peelScr.singletonIns(n)(ph))
+    }.toMap
 
-
-  // delay properly
-
-    val currentSubFFT = Mux1H(currentSubFFTBools.toSeq.map { case (n, isN) => isN -> n.U } )
-    val currentSubFFTIdx = Mux1H(currentSubFFTBools.toSeq.map { case (n, isN) => isN -> circularBuffersSubFFTIdx(n) } )
-    val currentSubFFTInverse = Mux1H(currentSubFFTBools.toSeq.map { case (n, isN) => isN -> io.peelScr.subFFTInverse(n) } )
-    val currentDelays = Mux1H(currentSubFFTBools.toSeq.map { case (n, isN) => isN -> io.peelScr.delayCalibration(n) } )
+    val currentFFTIns = ffastParams.adcDelays.map { d => 
+      d -> Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> singletonEstIn(n, d) } )
+    }.toMap
 
     // TODO: Don't do this
     val singletonEstimator = Module(new SingletonEstimator(dspDataType, ffastParams.copy(delays = FFASTTopParams.delays)))
     singletonEstimator.io.clk := io.clk
-    singletonEstimator.io.subFFTIdx := Mux(normalPeeling, currentSubFFTIdx, io.peelScr.singletonEstimator.subFFTIdx)
-    singletonEstimator.io.subFFT := Mux(normalPeeling, currentSubFFT, io.peelScr.singletonEstimator.subFFT)
-    singletonEstimator.io.subFFTInverse := Mux(normalPeeling, currentSubFFTIdx, io.peelScr.singletonEstimator.subFFTInverse)
-
-    val currentFFTIns = Mux1H(currentSubFFTBools.toSeq.map { case (n, isN) => isN -> dataFromMemory(n) } )
-
-
-
-
-
-
-
+    // Need to match data delay
+    singletonEstimator.io.subFFTIdx := ShiftRegister(Mux(normalPeeling, currentSubFFTIdx, io.peelScr.singletonEstSubFFTIdx), idxToBankAddrDelay + memOutDelay)
+    singletonEstimator.io.subFFT := currentSubFFT 
+    singletonEstimator.io.subFFTInverse := currentSubFFTInverse
+    
     ffastParams.adcDelays foreach { case d =>
-      singletonEstimator.io.delays(d) := Mux(normalPeeling, currentDelays(d), io.peelScr.singletonEstimator.delays(d))
-      singletonEstimator.io.delayedIns(d) := Mux(normalPeeling, currentFFTIns(d), io.peelScr.singletonEstimator.delayedIns(d))
+      singletonEstimator.io.delays(d) := currentDelays(d)
+      singletonEstimator.io.delayedIns(d) := currentFFTIns(d)
     }
 
+    val currentZeroThresholdPwr = Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> io.peelScr.zeroThresholdPwr(n) } )
+    val currentSigThresholdPwr = Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> io.peelScr.sigThresholdPwr(n) } )
+    val currentSigThresholdPwrMulDlys = Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> io.peelScr.sigThresholdPwrMulDlys(n) } )
+    val currentDelayCalcConstants = ffastParams.delays.zipWithIndex.map { case (dset, idx) =>
+      idx -> Mux1H(currentSubFFTBoolsFinal.map { case (n, isN) => isN -> io.peelScr.delayCalcConstants(n)(idx) } )
+    }.toMap
 
+    singletonEstimator.io.zeroThresholdPwr := currentZeroThresholdPwr
+    singletonEstimator.io.sigThresholdPwr := currentSigThresholdPwr
+    singletonEstimator.io.sigThresholdPwrMulDlys := currentSigThresholdPwrMulDlys
 
+    ffastParams.delays.zipWithIndex.map { case (dset, idx) =>
+      singletonEstimator.io.delayCalcConstants(idx) := currentDelayCalcConstants(idx)
+    }    
 
+    val notPeeling = ~io.stateInfo.inState
 
-    
-
-
-    
-
-
-  
-  
-
-  singletonEstimator.io.zeroThresholdPwr := io.peelScr.singletonEstimator.zeroThresholdPwr
-  singletonEstimator.io.sigThresholdPwr := io.peelScr.singletonEstimator.sigThresholdPwr
-  singletonEstimator.io.delayCalcConstants := io.peelScr.singletonEstimator.delayCalcConstants
-  singletonEstimator.io.sigThresholdPwrMulDlys := io.peelScr.singletonEstimator.sigThresholdPwrMulDlys
-
-  io.peelScr.singletonEstimator.binType := singletonEstimator.io.binType 
-  io.peelScr.singletonEstimator.binLoc := singletonEstimator.io.binLoc
-  io.peelScr.singletonEstimator.binSignal := singletonEstimator.io.binSignal
-
-singletonEstimator.io.delayCalcConstants(0) := io.peelScr.singletonEstimator.delayCalcConstants(0)
-
+    io.peelScr.seBinType := Mux1H(Seq(notPeeling -> singletonEstimator.io.binType)) 
+    io.peelScr.seBinLoc := Mux1H(Seq(notPeeling -> singletonEstimator.io.binLoc))   
+    io.peelScr.seBinSignal := Mux1H(Seq(notPeeling -> singletonEstimator.io.binSignal))   
 
 
 
@@ -620,10 +637,17 @@ singletonEstimator.io.delayCalcConstants(0) := io.peelScr.singletonEstimator.del
 
 
 
-   val locToSubFFTIdxMod = Module(new BinToSubFFTIdx(ffastParams))
+
+
+    val locToSubFFTIdxMod = Module(new BinToSubFFTIdx(ffastParams))
     locToSubFFTIdxMod.io.clk := io.clk 
     locToSubFFTIdxMod.io.fftBin :=  
 
+    
+    
+
+
+    
 
 
 
@@ -631,42 +655,15 @@ singletonEstimator.io.delayCalcConstants(0) := io.peelScr.singletonEstimator.del
 
 
 
+  //val binLocEarly = Output(UInt(range"[0, $nT)"))
+  //val binSignalEarly = Output(DspComplex(FFTNormalization.getNormalizedDataType(dspDataTypeT, ffastParamsT)))
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-   
-
-*/
-
-
-
-
-
-
-
-
-
-
+// connect up zeroton to memory; check that works (only write for zeroton)
+// check that SE by itself works
+// connect up output memory w/ peel result
 
 
 
@@ -710,9 +707,6 @@ singletonEstimator.io.delayCalcConstants(0) := io.peelScr.singletonEstimator.del
 
 //fftBinToSubFFTIdx
 
-
-
-// add to output
 
 
 
@@ -800,8 +794,8 @@ singletonEstimator.io.delayCalcConstants(0) := io.peelScr.singletonEstimator.del
     // CURRENT FFT -> PICK RIGHT BINS, PICK RIGHT THRESHOLDS ; SCR ; is multiton ; bintoSubFFTIdx%
   
 
-    // all multiton -> should never write
-    // all zeroton -> ??
+  
+  
     */
 
   }
