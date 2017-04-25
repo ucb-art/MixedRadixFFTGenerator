@@ -17,6 +17,16 @@ trait includeClk {
   val clk = Input(Clock())
 }
 
+// TODO: Don't hard code!
+trait includeIntermediates {
+  val ffastParamsT = FFASTTopParams.ffastParams
+  val nT = ffastParamsT.fftn
+  val dspDataTypeT = FFASTTopParams.dspDataType
+
+  val binLocEarly = Output(UInt(range"[0, $nT)"))
+  val binSignalEarly = Output(DspComplex(FFTNormalization.getNormalizedDataType(dspDataTypeT, ffastParamsT)))
+}
+
 // TODO: Conditionally run if not zeroton
 class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTParams) extends Bundle {
 
@@ -50,7 +60,7 @@ class SingletonEstimatorIO[T <: Data:RealBits](dspDataType: T, ffastParams: FFAS
 
   // TODO: Generalize
   // Last constant is purely fractional
-  require(ffastParams.delays.length == 3, "Hard coded for 3 sets of delays right now :(")
+  // require(ffastParams.delays.length == 3, "Hard coded for 3 sets of delays right now :(")
 
   val delayCalcConstants = CustomIndexedBundle(Seq(
     Input(DelayOptimization(dspDataType, ffastParams)),
@@ -89,9 +99,9 @@ object FitOps {
 
 // ------------------
 
-// TODO: Get rid of Get Normalied Data Type
-@chiselName
-class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTParams) extends Module with DelayTracking with hasContext {
+object SingletonEstimatorDelays {
+
+  val context = DspContext.current
 
   val cordicDelay = 5
   // TODO: Don't hard code, use map
@@ -132,10 +142,17 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     context.numMulPipes,              // AbsSq (noisePwr)                       |
     1                                 // SumScalars (noisePwr)                  |
   )
+}
+
+// TODO: Get rid of Get Normalied Data Type
+@chiselName
+class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTParams) extends Module with DelayTracking with hasContext {
+
+  import dspblocks.fft.SingletonEstimatorDelays._
 
   val moduleDelay = endDelay.sum
 
-  val io = IO(new SingletonEstimatorIO(dspDataType, ffastParams) with includeClk)
+  val io = IO(new SingletonEstimatorIO(dspDataType, ffastParams) with includeClk with includeIntermediates)
 
   withClock(io.clk) {
 
@@ -217,6 +234,8 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
       x.suggestName(s"${name}_${x.asInstanceOf[FixedPoint].binaryPoint.get}")
       println(s"$name: ${x.getWidth}, ${x.asInstanceOf[FixedPoint].binaryPoint.get}") 
     }
+
+    io.binLocEarly := loc
 
     io.binLoc := ShiftRegister(loc, moduleDelay - toLocDelay.sum)
 
@@ -360,6 +379,7 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
       io.binType("multi") := false.B
     }
     io.binSignal := ShiftRegister(avgBinSignal, moduleDelay - upToAvgSigDelay.sum)
+    io.binSignalEarly := avgBinSignal
 
   }
 }

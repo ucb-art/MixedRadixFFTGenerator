@@ -20,9 +20,13 @@ case class FFASTParams(
 
   require(delayDeltas == delayDeltas.sorted, "Deltas should be in increasing size!")
 
-  // TODO: Don't hard code
-  require(delays.length == 3)
-  val delayConstants = Seq(delayDeltas(1).toDouble / delayDeltas(0), delayDeltas(2).toDouble / delayDeltas(1), 1.toDouble / delayDeltas(2))
+  // TODO: Don't hard code, remove 1 case
+  require(delays.length == 3 || delays.length == 1)
+  val delayConstants = 
+    if(delays.length == 3)
+      Seq(delayDeltas(1).toDouble / delayDeltas(0), delayDeltas(2).toDouble / delayDeltas(1), 1.toDouble / delayDeltas(2))
+    else
+      Seq(1.toDouble / delayDeltas(0))
 
   def k = math.round(sparsityPc * fftn).toInt
 
