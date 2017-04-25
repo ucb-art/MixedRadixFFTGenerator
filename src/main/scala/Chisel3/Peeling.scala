@@ -127,6 +127,18 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
   val seBinType = new CustomBundle(ffastParams.binTypes.map(_ -> Output(Bool())): _*) 
   val seBinLoc = Output(UInt(range"[0, $n)"))
   val seBinSignal = Output(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)))
+  val seRotatedOuts = CustomIndexedBundle(
+    Output(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))), 
+    ffastParams.adcDelays
+  )
+
+  val numSubFFTs = ffastParams.subFFTns.length
+  val peelDebugFFTIdx = Input(UInt(range"[0, $numSubFFTs)")
+
+  val binMapBinLoc = Input(UInt(range"[0, $n)"))
+  val binMapSubFFTIdx = Output(new CustomIndexedBundle(
+     ffastParams.subFFTns.map(subFFT => subFFT -> UInt(range"[0, $subFFT)")): _*
+  ))
 
   override def cloneType = (new PeelingSCR(dspDataType, ffastParams)).asInstanceOf[this.type]
 }
@@ -667,7 +679,8 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     // TODO: Wasteful: only need 2!
     val locToSubFFTIdxMod = Module(new BinToSubFFTIdx(ffastParams))
     locToSubFFTIdxMod.io.clk := io.clk 
-    locToSubFFTIdxMod.io.fftBin := singletonEstimator.io.binLocEarly
+    locToSubFFTIdxMod.io.fftBin := Mux(normalPeel, singletonEstimator.io.binLocEarly, io.peelScr.binMapBinLoc)
+    io.peelScr.binMapSubFFTIdx := locToSubFFTIdxMod.io.subFFTIdx
 
     ffastParams.subFFTns.map { case n => 
       val peelingIndex = Mux(currentSubFFTBools(n), circularBuffersSubFFTIdx(n), locToSubFFTIdxMod.io.subFFTIdx(n))
@@ -678,6 +691,10 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       val peelingRE = Mux(currentSubFFTBools(n), peelingPartsEnableAtIn("mainMem1"), peelingPartsEnableAtIn("mainMem2"))
       val mainMemRE = Mux(isInitialSearch, initialRE(n), peelingRE)
       mainMemRE.suggestName(s"mainMemRE$n")
+
+// ----------------------------------------------
+
+
 
 
 
@@ -704,29 +721,201 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
         io.dataToMemory(n)(ph)(0).loc.addr := Mux(isInitialSearch, writeAddrInit, writeAddrNorm)
         io.dataToMemory(n)(ph)(0).loc.bank := Mux(isInitialSearch, writeBankInit, writeBankNorm)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // ******************** TODO: FIX
         io.dataToMemory(n)(ph)(0).we := Mux(isInitialSearch, initialWE(n), false.B)  
         dataToMemory(n)(ph) :=  ShiftRegister(fftOutNormalized(n, ph), zerotonDelay)      
       }
     }
+
+
+
+
+
+
+
+
+
+
+// ----------------------------------------------
+
+    // Just to get outAngleType...
+    val cordicParams = singletonEstimator.cordicParams
+    // Need to be able to represent 1! (Int width >= 1; not including sign bit)
+    val mag1 = Wire(DspComplex(cordicParams.outAngleType))
+    mag1.real := cordicParams.outAngleType.fromDouble(1.0)
+    mag1.imag := cordicParams.outAngleType.fromDouble(0.0)
+    val locFixed = singletonEstimator.io.binLocEarly.asFixed.asInstanceOf[T] 
+
+    // TODO: Unnecessary flip
+    // TODO: How to generalize to > 3 Sub FFTs?
+    val reverseSubFFTns = ffastParams.subFFTns.zipWithIndex.reverse
+    val otherSubFFT1Idx = 
+      reverseSubFFTns.tail.foldLeft(reverseSubFFTns.head._2.U) { case (accum, (nextn, idx)) => Mux(~currentSubFFTBools(nextn), idx.U, accum) }
+    val otherSubFFT1NotN = reverseSubFFTns.map { case (n, idx) =>
+      n -> (otherSubFFT1Idx =/= idx.U)
+    }.toMap
+    val otherSubFFT2Idx = Mux1H(
+      reverseSubFFTns.map { case (n, idx) =>
+        (~currentSubFFTBools(n) & otherSubFFT1NotN(n)) -> idx.U
+      }
+    )
+    val otherSubFFTIdxs = Seq(otherSubFFT1Idx, otherSubFFT2Idx)
+
+    // TODO: Make module (redundant w/ Se)
+    // Sub FFT ADCs might have different delays
+    otherSubFFTIdxs.zipWithIndex.foreach { case (otherIdx, idx) =>
+      val otherIdxFinal = Mux(normalPeel, otherIdx, io.peelScr.peelDebugFFTIdx)
+      val otherIdxBools = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) =>
+        n -> (otherIdxFinal === idx.U)
+      }
+      val otherDelays = ffastParams.adcDelays.map { d =>
+        val o = Mux1H(otherIdxBools.map { case (n, isIdx) => isIdx -> io.peelScr.delayCalibration(n)(d) } )
+        o.suggestName(s"otherDelays_${idx}_${d}")
+        d -> o
+      }.toMap
+
+      // TODO: Don't hard code type, manual trim
+      val aVecCordicIn = ffastParams.adcDelays.map { case d =>
+        // WARNING: EXPECTS D IS POSITIVE
+        val mulResult = locFixed context_* otherDelays(d)
+        mulResult.suggestName(s"mulResult_${d}_${mulResult.asInstanceOf[FixedPoint].binaryPoint.get}")
+        val temp = mulResult.asUInt
+        // TODO: Make sure it gets the right UInt value (ignores MSB)
+        val locMulDelay = temp(temp.getWidth - 2, 1)
+        locMulDelay.suggestName(s"locMulDelays_$d")
+        // TODO: require, asInstanceOf handling ; matches the fact that LSB is dropped
+        val bpShift = mulResult.asInstanceOf[FixedPoint].binaryPoint.get - 1
+        val nWithBPShift = ffastParams.fftn << bpShift
+        // TODO: Don't hard code!
+        val xmaxBR = (ffastParams.fftn * ffastParams.adcDelays.max * 4) << bpShift
+        val moddedLocMulDelay = ConstantMod(locMulDelay, nWithBPShift, xmax = xmaxBR, io.clk)
+        moddedLocMulDelay.suggestName(s"moddedLocMulDelay_$d")
+        // TODO: Clean up, don't be arbitrary
+        val normalizeDivBy = BigInt(ffastParams.fftn).bitLength - 1
+        // Dividing without losing precision
+        val modOut = (Cat(false.B, moddedLocMulDelay)).asFixedPoint((bpShift + normalizeDivBy).BP)
+        val inverseFFTnBP = cordicParams.angleType.asInstanceOf[FixedPoint].binaryPoint.get
+        val thetaOver2Pi = Wire(cordicParams.outAngleType)
+        thetaOver2Pi :=  modOut context_* ((1 << normalizeDivBy).toDouble / ffastParams.fftn).F(inverseFFTnBP.BP)
+        // println(s"aVecCordicIn_$d Width: ${thetaOver2Pi.getWidth} BinaryPoint: ${thetaOver2Pi.asInstanceOf[FixedPoint].binaryPoint.get}")
+        thetaOver2Pi.suggestName(s"aVecCordicIn_${d}_${thetaOver2Pi.asInstanceOf[FixedPoint].binaryPoint.get}")
+        d -> thetaOver2Pi
+      }
+
+      val aVecRectangular = aVecCordicIn.map { case (d, a) =>
+        // To get conjugate
+        val o = RotateComplex(mag1, a, io.clk, SingletonEstimatorDelays.cordicDelay)
+        o.suggestName(s"aVecRectangular_${d}_${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
+        d -> o
+      }.toMap
+
+      val toBePeeled = ffastParams.adcDelays.map { case d =>
+        val pipe = SingletonEstimatorDelays.upToAvgSigDelay.sum - SingletonEstimatorDelays.upToSecondCordicDelay.sum
+        val t = ShiftRegister(aVecRectangular(d), pipe).asInstanceOf[DspComplex[FixedPoint]]
+        val o = singletonEstimator.io.binSignalEarly context_* t
+        if (idx == 0)
+          io.peelScr.seRotatedOuts(d) := o
+        o.suggestName(s"toBePeeled_${idx}_${d}")
+        d -> o
+      }.toMap
+
+
+
+
+
+
+
+
+
+
+
+
+// a
+
+
+
+
+
+
+
+
+
+//delay address instead of complex?
+//is zeroton
+
+
+
+      /*
+
+      
+
+      val delayedInsToMatch2CordicOut = ffastParams.adcDelays.map { case d =>
+        d -> ShiftRegister(io.delayedIns(d), upToSecondCordicDelay.sum)
+      }.toMap
+
+  
+
+*/
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+      
+
+
+
+
+  val peelSubDelay = 9
+  val initialSearchDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + zerotonDelay
+
+  // TODO: Don't hard code
+  val earlyLocToPeelEndDelay = 14
+  val locToAvgSignalDelay = 11
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

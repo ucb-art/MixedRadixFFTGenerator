@@ -616,9 +616,9 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     updatableDspVerbose.withValue(false) { 
       val nf = 20
       val numDelays = c.ffastParams.adcDelays.length
-      c.ffastParams.subFFTns.foreach { n =>
+      c.ffastParams.subFFTns.zipWithIndex.foreach { case (n, idx) =>
         // TODO: Less arbitrary
-        val noiseThresholdPwr = nf * numDelays.toDouble / math.pow(n, 2).toDouble
+        val noiseThresholdPwr = 50 * nf * numDelays.toDouble / math.pow(n, 2).toDouble
         val sigThresholdPwr = nf * 1.toDouble / math.pow(n, 2).toDouble
         poke(c.io.peelScr.zeroThresholdPwr(n), noiseThresholdPwr)
         poke(c.io.peelScr.sigThresholdPwr(n), sigThresholdPwr)
@@ -628,6 +628,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         }
         c.ffastParams.adcDelays foreach { case d =>
           poke(c.io.peelScr.delayCalibration(n)(d), d.toDouble)
+          // Senssiitivity to delay offset
+          //poke(c.io.peelScr.delayCalibration(n)(d), d.toDouble + (-1 + idx.toDouble) / 250)
         }
       }
     }

@@ -160,6 +160,9 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
 
   val io = IO(new SingletonEstimatorIO(dspDataType, ffastParams) with includeClk with includeIntermediates)
 
+  // Just to get outAngleType...
+  val cordicParams = CordicParams(io.delayedIns(ffastParams.adcDelays.max).real, 0, false)
+
   withClock(io.clk) {
 
     val thetaOver2Pis = ffastParams.delays.zipWithIndex.map { case (d, idx) =>              // tx -- ordered by increasing delay deltas
@@ -194,9 +197,6 @@ class SingletonEstimator[T <: Data:RealBits](dspDataType: T, ffastParams: FFASTP
     val thetaOver2Pis2Delay = ShiftRegister(thetaOver2Pis(2), 2 * context.numMulPipes + 2)
     val f = (thetaOver2Pis2Delay context_- e).round
     val g = ShiftRegister(thetaOver2Pis2Delay context_- f, 1) 
-
-    // Just to get outAngleType...
-    val cordicParams = CordicParams(io.delayedIns(ffastParams.adcDelays.max).real, 0, false)
     
 // --------------------------
 
