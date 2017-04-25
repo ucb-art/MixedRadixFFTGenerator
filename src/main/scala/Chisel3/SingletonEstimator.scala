@@ -142,6 +142,12 @@ object SingletonEstimatorDelays {
     context.numMulPipes,              // AbsSq (noisePwr)                       |
     1                                 // SumScalars (noisePwr)                  |
   )
+
+  println("Singleton Estimator Delays:")
+  endDelay foreach { case dly =>
+    println(s"  $dly")
+  }
+
 }
 
 // TODO: Get rid of Get Normalied Data Type
