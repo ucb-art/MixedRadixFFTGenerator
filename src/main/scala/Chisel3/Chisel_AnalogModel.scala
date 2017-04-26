@@ -280,8 +280,12 @@ class AnalogModelWrapper[T <: Data:RealBits](adcDataType: => T, ffastParams: FFA
       m.suggestName(analogBlockName)
       m
     }
-    else
-      Module(new AnalogModel(adcDataType, ffastParams))
+    else {
+      val analogBlockName = "analogBlockAngieModel"
+      val m = Module(new AnalogModel(adcDataType, ffastParams))
+      m.suggestName(analogBlockName)
+      m
+    }
 
   analogModel.io.asclkd := io.adcScr.asclkd
   analogModel.io.extsel_clk := io.adcScr.extsel_clk
