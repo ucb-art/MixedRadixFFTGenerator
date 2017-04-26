@@ -861,7 +861,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   else
     println("No false negatives! :)")
 
-  println("Correctly found: " + foundCorrect.mkString(", "))
+  println(s"Correctly found (${foundCorrect.length}): " + foundCorrect.mkString(", "))
 
   cycleThroughUntil("ADCCollectDebug")
   clearResults()

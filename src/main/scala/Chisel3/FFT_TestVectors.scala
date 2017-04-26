@@ -10,7 +10,7 @@ object FFTTestVectors {
   // val fixedRealFreq = Seq(0.2, 0.3, 0.4, 0.25)
 
   val r = new scala.util.Random
-  val numFreq = 70
+  val numFreq = 150 // 216 doesn't work
   val fixedRealAmpT = Seq(0.25, 0.15, 0.2, 0.12, 0.05).map(_ / 2)
   val fixedRealFreq = (0 until numFreq).map(i => r.nextInt(21600 / 2).toDouble / 21600)
   val fixedRealAmp = (Seq.fill(numFreq / fixedRealAmpT.length)(fixedRealAmpT)).flatten
