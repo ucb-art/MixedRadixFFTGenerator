@@ -133,7 +133,7 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
   )
 
   val numSubFFTs = ffastParams.subFFTns.length
-  val peelDebugFFTIdx = Input(UInt(range"[0, $numSubFFTs)")
+  val peelDebugFFTIdx = Input(UInt(range"[0, $numSubFFTs)"))
 
   val binMapBinLoc = Input(UInt(range"[0, $n)"))
   val binMapSubFFTIdx = Output(new CustomIndexedBundle(
@@ -676,10 +676,22 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     io.peelScr.seBinSignal := Mux1H(Seq(notPeeling -> singletonEstimator.io.binSignal))
     isMultiton := singletonEstimator.io.binType("multi")   
 
+    // TODO: Don't hack!!!
+    val matchLocToSigOutDelay = 7
+    val peelingREDelayMatch = ShiftRegister(peelingPartsEnableAtIn("mainMem2"), matchLocToSigOutDelay)
+    val peelingLocDelayCompensation = ShiftRegister(singletonEstimator.io.binLocEarly, matchLocToSigOutDelay)
+    // TODO: Don't hard code; double check
+    // loc -> avg sig 11
+    // loc -> sig out = 12
+    // sig out -> pipeline end = 2 (mul + 1)
+    // loc -> main mem out -> 5 (bin to sub FFT idx, idx to BA, mem out)
+    // match loc -> mem out (5) with loc -> sig out (12)
+    // -----> delay mem out path by 7 (raddr, re)
+
     // TODO: Wasteful: only need 2!
     val locToSubFFTIdxMod = Module(new BinToSubFFTIdx(ffastParams))
     locToSubFFTIdxMod.io.clk := io.clk 
-    locToSubFFTIdxMod.io.fftBin := Mux(normalPeel, singletonEstimator.io.binLocEarly, io.peelScr.binMapBinLoc)
+    locToSubFFTIdxMod.io.fftBin := Mux(normalPeel, peelingLocDelayCompensation, io.peelScr.binMapBinLoc)
     io.peelScr.binMapSubFFTIdx := locToSubFFTIdxMod.io.subFFTIdx
 
     ffastParams.subFFTns.map { case n => 
@@ -688,22 +700,12 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
       io.idxToBankAddr.idxs(n) := Mux(isInitialSearch, initialCount, peelingIndex)
       // Memory accessed at different time depending on if this is the current sub FFT you're looking into
       // vs. another sub FFT that you're peeling from due to results from this current FFT
-      val peelingRE = Mux(currentSubFFTBools(n), peelingPartsEnableAtIn("mainMem1"), peelingPartsEnableAtIn("mainMem2"))
+      // TODO: Don't hack
+      val peelingRE = Mux(currentSubFFTBools(n), peelingPartsEnableAtIn("mainMem1"), peelingREDelayMatch)
       val mainMemRE = Mux(isInitialSearch, initialRE(n), peelingRE)
       mainMemRE.suggestName(s"mainMemRE$n")
 
 // ----------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
 
       // Delay 1 (LUT outputs registered)
       val bankAddr = io.idxToBankAddr.bankAddrs(n)
@@ -716,25 +718,19 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
         val writeBankInit = ShiftRegister(bankAddr.bank, delayDeltaInit)
         val delayDeltaNormal = peelingDelayInputMap("mainMem2") + peelingDelayInputMap("peelEnd")
         require(delayDeltaNormal > delayDeltaInit)
-        val writeAddrNorm = ShiftRegister(writeAddrInit, delayDeltaNormal - delayDeltaInit)
-        val writeBankNorm = ShiftRegister(writeBankInit, delayDeltaNormal - delayDeltaInit)
+        // + 2 for sig out -> peeling end
+        // TODO: Don't hard code!
+        val writeAddrNorm = ShiftRegister(bankAddr.addr, memOutDelay + 2)
+        val writeBankNorm = ShiftRegister(bankAddr.bank, memOutDelay + 2)
+        require(zerotonDelay == 2)
+        // Zeroton calculation should take the same time
+        //val writeAddrNorm = ShiftRegister(writeAddrInit, delayDeltaNormal - delayDeltaInit)
+        //val writeBankNorm = ShiftRegister(writeBankInit, delayDeltaNormal - delayDeltaInit)
         io.dataToMemory(n)(ph)(0).loc.addr := Mux(isInitialSearch, writeAddrInit, writeAddrNorm)
-        io.dataToMemory(n)(ph)(0).loc.bank := Mux(isInitialSearch, writeBankInit, writeBankNorm)
-
-// ******************** TODO: FIX
-        io.dataToMemory(n)(ph)(0).we := Mux(isInitialSearch, initialWE(n), false.B)  
-        dataToMemory(n)(ph) :=  ShiftRegister(fftOutNormalized(n, ph), zerotonDelay)      
+        io.dataToMemory(n)(ph)(0).loc.bank := Mux(isInitialSearch, writeBankInit, writeBankNorm) 
+             
       }
     }
-
-
-
-
-
-
-
-
-
 
 // ----------------------------------------------
 
@@ -763,7 +759,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
     // TODO: Make module (redundant w/ Se)
     // Sub FFT ADCs might have different delays
-    otherSubFFTIdxs.zipWithIndex.foreach { case (otherIdx, idx) =>
+    val toBePeeled = otherSubFFTIdxs.zipWithIndex.map { case (otherIdx, idx) =>
       val otherIdxFinal = Mux(normalPeel, otherIdx, io.peelScr.peelDebugFFTIdx)
       val otherIdxBools = ffastParams.subFFTns.zipWithIndex.map { case (n, idx) =>
         n -> (otherIdxFinal === idx.U)
@@ -815,9 +811,15 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
         val o = singletonEstimator.io.binSignalEarly context_* t
         if (idx == 0)
           io.peelScr.seRotatedOuts(d) := o
-        o.suggestName(s"toBePeeled_${idx}_${d}")
+        o.suggestName(s"toBePeeled_${idx}_${d}_${o.real.asInstanceOf[FixedPoint].binaryPoint.get}")
         d -> o
       }.toMap
+      idx -> toBePeeled
+    }.toMap
+
+    val peelingOutValid = Wire(Bool())
+    peelingOutValid := peelingPartsEnable.last
+    peelingOutValid.suggestName("peelingOutValid")
 
 
 
@@ -827,130 +829,47 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
 
 
+    ffastParams.subFFTns.zipWithIndex.foreach { case (n, idxx) =>
+      ffastParams.adcDelays.foreach { case d =>
+        val peelA = dataFromMemoryPeeling(n)(d)
+        val peelB = Wire(peelA.cloneType)
+        peelB := Mux1H(
+          otherSubFFTIdxs.zipWithIndex.map { case (otherIdx, idxy) =>
+            (otherIdx === idxx.U) -> (toBePeeled(idxy)(d))
+          }
+        )
+        peelB.suggestName(s"peelB_${n}_${d}_${peelB.real.asInstanceOf[FixedPoint].binaryPoint.get}")
+        
+        // To match final peel delay
+        val peelOut = ShiftRegister(peelA context_- peelB, 2)
+        val singletonWrite = currentSubFFTBools(n) & singletonEstimator.io.binType("single")
+        // Write hard 0 if singleton
+        val peelOutFinal = Mux1H(Seq(~singletonWrite -> peelOut))
+        peelOutFinal.suggestName(s"peeledResult_${n}_${d}")
 
+        val toMemInit = ShiftRegister(fftOutNormalized(n, d), zerotonDelay) 
+        dataToMemory(n)(d) := Mux(normalPeel, peelOutFinal, toMemInit)
+        val peelingWE = Mux(currentSubFFTBools(n), singletonEstimator.io.binType("single"), ~isZeroton(n)) 
+ 
+        io.dataToMemory(n)(d)(0).we := Mux(isInitialSearch, initialWE(n), peelingWE) 
 
-
-// a
-
-
-
-
-
-
-
-
-
-//delay address instead of complex?
-//is zeroton
-
-
-
-      /*
-
-      
-
-      val delayedInsToMatch2CordicOut = ffastParams.adcDelays.map { case d =>
-        d -> ShiftRegister(io.delayedIns(d), upToSecondCordicDelay.sum)
-      }.toMap
-
-  
-
-*/
-
-
-
+      }
     }
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-   
-
-
-
-
-
-
-
-
-
-/*
-
-
-
-      
-
-
-
-
-  val peelSubDelay = 9
-  val initialSearchDelay = idxToBankAddrDelay + memOutDelay + context.numMulPipes + zerotonDelay
-
-  // TODO: Don't hard code
-  val earlyLocToPeelEndDelay = 14
-  val locToAvgSignalDelay = 11
-
-
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-double check peelend timing
-hAVE CORDIC DO SOMETHING
-
-      val peelingWE = Mux(currentSubFFTBools(n), singletonEstimator.io.binType("single"), ~isZeroton(n)) & peelingPartsEnable.last
-      val mainMemWE = Mux(isInitialSearch, initialWE(n), false.B) //Mux(isInitialSearch, initialWE(n), peelingWE)
-
-      // Normal mode:
-      // Current FFT & singleton -> write 0
-      // !Current FFT & !zeroton -> write peel out [out - singletone out]
-      // !Current FFT & zeroton -> write 0 * NEW CONDITION
-      // Init mode:
-      // Zeroton -> write 0
-      // Otherwise -> write normalized FFT
-      // din, we
-      // use other data to memory
-
-      io.dataToMemory(n)(ph)(0).we := mainMemWE
-      
-*/
-
  
-    // binSignalEarly, do something if zeroton
+ 
 
 
 
 
-// connect up output memory w/ peel result
-// scr -- ffastOut* = 6 off them
+
+
+    // connect up output memory w/ peel result
+    // scr -- ffastOut* = 6 off them
 
     // TODO: Normalized: Different fraction!
     val k = Seq(ffastParams.k, 1952).max
@@ -959,18 +878,6 @@ hAVE CORDIC DO SOMETHING
     outIdxsMem.io.clk := io.clk
     val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
     outValsMem.io.clk := io.clk
-
-/*
-
-// current is zeroton -> don't write (delay x + y)
-// current is singleton -> write 0
-// current is multiton = !zeroton & !singleton -> don't write (delay y)
-
-// current is singleton & this isn't zeroton (i.e. singleton or multiton) -> write
-// current is singleton & this is zeroton -> don't write
-// current is zeroton/multiton -> don't write
-  
-    */
 
   }
 }

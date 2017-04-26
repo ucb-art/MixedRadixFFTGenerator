@@ -618,7 +618,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       val numDelays = c.ffastParams.adcDelays.length
       c.ffastParams.subFFTns.zipWithIndex.foreach { case (n, idx) =>
         // TODO: Less arbitrary
-        val noiseThresholdPwr = 50 * nf * numDelays.toDouble / math.pow(n, 2).toDouble
+        val noiseThresholdPwr = nf * numDelays.toDouble / math.pow(n, 2).toDouble
         val sigThresholdPwr = nf * 1.toDouble / math.pow(n, 2).toDouble
         poke(c.io.peelScr.zeroThresholdPwr(n), noiseThresholdPwr)
         poke(c.io.peelScr.sigThresholdPwr(n), sigThresholdPwr)
