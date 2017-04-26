@@ -99,12 +99,12 @@ class PeelingSCR[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams
   )
 
   val ffastOutRIdx = Input(UInt(range"[0, $k)"))
-  val ffastOutVal = Output(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams))
+  val ffastOutVal = Output(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)))
   val ffastOutBin = Output(UInt(range"[0, $n)"))
   val ffastREFromCPU = Input(Bool())
   val ffastREToCPU = Output(Bool())
 
-  val ffastOutNumFound = Output(ffastOutRIdx.cloneType)
+  val ffastFoundPointer = Output(ffastOutRIdx.cloneType)
 
   // DEBUG
   val cbLength = new CustomIndexedBundle(ffastParams.subFFTns.map(subn => subn -> Output(UInt(range"[0, $subn]"))): _*)
@@ -265,7 +265,6 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
   }
 
   val done = Wire(Bool())
-  io.stateInfo.done := done
 
   // TODO: Probably should separate out
   withClock(io.clk) {
@@ -607,6 +606,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     }
 
     io.skipToEnd := skipToEnd
+    io.stateInfo.done := done | skipToEnd
 
     // TODO: ZEROTON -- doesn't write, doesn't change bottom counter BUT SHOULD ALSO NOT WASTE CYCLES STALLING
    
@@ -820,14 +820,7 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
     val peelingOutValid = Wire(Bool())
     peelingOutValid := peelingPartsEnable.last
     peelingOutValid.suggestName("peelingOutValid")
-
-
-
-
-
-
-
-
+    val updateSingleton = peelingOutValid & singletonEstimator.io.binType("single")
 
     ffastParams.subFFTns.zipWithIndex.foreach { case (n, idxx) =>
       ffastParams.adcDelays.foreach { case d =>
@@ -849,35 +842,44 @@ class Peeling[T <: Data:RealBits](dspDataType: => T, ffastParams: FFASTParams, s
 
         val toMemInit = ShiftRegister(fftOutNormalized(n, d), zerotonDelay) 
         dataToMemory(n)(d) := Mux(normalPeel, peelOutFinal, toMemInit)
-        val peelingWE = Mux(currentSubFFTBools(n), singletonEstimator.io.binType("single"), ~isZeroton(n)) 
+        // Only peel when singleton is detected
+        val peelingWE = Mux(currentSubFFTBools(n), true.B, ~isZeroton(n)) & updateSingleton
  
         io.dataToMemory(n)(d)(0).we := Mux(isInitialSearch, initialWE(n), peelingWE) 
 
       }
     }
 
-
-
-
-
- 
- 
-
-
-
-
-
-
-    // connect up output memory w/ peel result
-    // scr -- ffastOut* = 6 off them
-
-    // TODO: Normalized: Different fraction!
     val k = Seq(ffastParams.k, 1952).max
     val n = ffastParams.fftn
     val outIdxsMem = Module(new SMem1P(UInt(range"[0, $n)"), k, "ffastOutBinIdxs"))
     outIdxsMem.io.clk := io.clk
-    val outValsMem = Module(new SMem1P(DspComplex(dspDataType), k, "ffastOutBinVals"))
+    val outValsMem = Module(new SMem1P(DspComplex(FFTNormalization.getNormalizedDataType(dspDataType, ffastParams)), k, "ffastOutBinVals"))
     outValsMem.io.clk := io.clk
+
+    val outPointer = Wire(UInt(range"[0, $k]"))
+    val outPointerNext = Mux(outPointer === k.U, 0.U, outPointer + 1.U)
+    val enablePointerInBounds = outPointer =/= (k - 1).U
+    outPointer := withReset(io.resetPeel) {
+      RegEnable(next = outPointerNext, init = k.U, enable = updateSingleton & enablePointerInBounds)
+    }
+
+    outIdxsMem.io.waddr := outPointerNext
+    outIdxsMem.io.raddr := io.peelScr.ffastOutRIdx
+    outIdxsMem.io.we := updateSingleton
+    outIdxsMem.io.re := ~io.stateInfo.inState & io.peelScr.ffastREFromCPU
+    outIdxsMem.io.din := singletonEstimator.io.binLoc
+    io.peelScr.ffastOutBin := outIdxsMem.io.dout
+    io.peelScr.ffastREToCPU := ShiftRegister(io.peelScr.ffastREFromCPU, outIdxsMem.moduleDelay)
+
+    outValsMem.io.waddr := outPointerNext
+    outValsMem.io.raddr := io.peelScr.ffastOutRIdx
+    outValsMem.io.we := updateSingleton
+    outValsMem.io.re := ~io.stateInfo.inState & io.peelScr.ffastREFromCPU
+    outValsMem.io.din := singletonEstimator.io.binSignal
+    io.peelScr.ffastOutVal := outValsMem.io.dout
+
+    io.peelScr.ffastFoundPointer := outPointer
 
   }
 }

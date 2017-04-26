@@ -725,7 +725,9 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 */
 // -------------------------------- ADC -> FFT OUTPUT TESTS
 
-  setupDebug(Seq("ADCCollectDebug", "FFTDebug", "PopulateNonZerotonsDebug"))
+  val lastState = c.mod.basicStateNames.last + "Debug"
+
+  setupDebug(Seq("ADCCollectDebug", "FFTDebug", "PopulateNonZerotonsDebug", lastState))
   setupPeel()
 
   // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
@@ -825,6 +827,16 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   peek(c.io.peelScr.seBinType("multi"))
   peek(c.io.peelScr.seBinLoc)
   peek(c.io.peelScr.seBinSignal)
+
+  cycleThroughUntil(lastState)
+  val lastPointerFound = peek(c.io.peelScr.ffastFoundPointer)
+  poke(c.io.peelScr.ffastREFromCPU, true)
+  for (i <- 0 to lastPointerFound) {
+    poke(c.io.peelScr.ffastOutRIdx, i)
+    step(subsamplingT * 5)
+    peek(c.io.peelScr.ffastOutVal)
+    peek(c.io.peelScr.ffastOutBin)
+  }
 
   cycleThroughUntil("ADCCollectDebug")
   clearResults()
