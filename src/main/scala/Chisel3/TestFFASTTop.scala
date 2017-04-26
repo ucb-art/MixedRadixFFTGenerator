@@ -618,8 +618,13 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       val numDelays = c.ffastParams.adcDelays.length
       c.ffastParams.subFFTns.zipWithIndex.foreach { case (n, idx) =>
         // TODO: Less arbitrary
-        val noiseThresholdPwr = nf * numDelays.toDouble / math.pow(n, 2).toDouble
-        val sigThresholdPwr = nf * 1.toDouble / math.pow(n, 2).toDouble
+        //val noiseThresholdPwr = nf * numDelays.toDouble / math.pow(n, 2).toDouble
+        //val sigThresholdPwr = nf * 1.toDouble / math.pow(n, 2).toDouble
+
+        // TODO: FIX -- DEPENDS ON TEST VECTORS
+        val noiseThresholdPwr = numDelays * .01 *.01 / 2
+        val sigThresholdPwr = .01 * .01
+
         poke(c.io.peelScr.zeroThresholdPwr(n), noiseThresholdPwr)
         poke(c.io.peelScr.sigThresholdPwr(n), sigThresholdPwr)
         poke(c.io.peelScr.sigThresholdPwrMulDlys(n), sigThresholdPwr * numDelays)
@@ -733,7 +738,12 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   // WARNING: NO QUANTIZATION SO RESULTS WILL BE WORSE IN COMPARISON
   val inLarge = FFTTestVectors.createInput(c.ffastParams.fftn, fracBits = adcBP)
   val inLargeReal = inLarge.map(x => x.real)
+  // val fftLargeThreshold = 1.toDouble / math.pow(c.ffastParams.fftn, 2).toDouble
+  val fftLargeThreshold = 0.01 * 0.01
+  val fftLargeOutIdxs = FFTTestVectors.expectedSubSampleLocations(inLarge, zeroThresholdPwr = fftLargeThreshold, disp = true)
+
   runADC(customInput = Some(inLargeReal))
+  /*
   runDebug("ADCCollectDebug")
   // TODO: Don't use complex
   val adcInInitialIdx = checkADCResults(s"FFTN ${c.ffastParams.fftn} In", customInput = Some(inLargeReal), skip = true).real.toInt
@@ -759,9 +769,6 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   }
 
-  val fftLargeThreshold = 1.toDouble / math.pow(c.ffastParams.fftn, 2).toDouble
-  val fftLargeOutIdxs = FFTTestVectors.expectedSubSampleLocations(inLarge, zeroThresholdPwr = fftLargeThreshold, disp = true)
-
   val mapBinToSubFFTIdx = PeelingScheduling.getBinToSubFFTIdxMap(c.ffastParams)
 
   val binToSubFFTIdxExpected = for (fullFFTBin <- fftLargeOutIdxs ; subFFT <- c.ffastParams.subFFTns) yield {
@@ -772,6 +779,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   binToSubFFTIdxExpected.sortBy { case ((fullFFTBin, subFFT), subFFTIdx) => (subFFT, subFFTIdx) }. foreach { case ((fullFFTBin, subFFT), subFFTIdx) =>
     println(s"Sub FFT: $subFFT Full FFT Bin: $fullFFTBin Sub FFT Index: $subFFTIdx")
   }
+  */
 
   // TODO: Convert to expect tests
 
@@ -780,7 +788,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     poke(c.io.peelScr.cbREFromCPU, true) 
     poke(c.io.scr.ctrlMemReadFromCPU.re, getAllEnable)
   }
-
+/*
   c.ffastParams.subFFTns foreach { case n =>
     println(s"Non-zero bins for FFT $n")
     c.ffastParams.adcDelays foreach { case ph => 
@@ -802,7 +810,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
       }   
     }
   }
-
+*/
   // TODO: Expect, don't hard code
   val seTest = 
     SingletonEstimatorTest(c.ffastParams, subFFT = 675, subFFTIdx = 135, binLoc = 12960, isSingleton = true, 
@@ -828,6 +836,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   peek(c.io.peelScr.seBinLoc)
   peek(c.io.peelScr.seBinSignal)
 
+  val ffastBins = scala.collection.mutable.ArrayBuffer[Int]()
+
   cycleThroughUntil(lastState)
   val lastPointerFound = peek(c.io.peelScr.ffastFoundPointer)
   poke(c.io.peelScr.ffastREFromCPU, true)
@@ -835,8 +845,23 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     poke(c.io.peelScr.ffastOutRIdx, i)
     step(subsamplingT * 5)
     peek(c.io.peelScr.ffastOutVal)
-    peek(c.io.peelScr.ffastOutBin)
+    ffastBins += peek(c.io.peelScr.ffastOutBin)
   }
+
+  val ffastOutBins = ffastBins.toSeq
+  val falsePositives = ffastOutBins.diff(fftLargeOutIdxs)
+  val falseNegatives = fftLargeOutIdxs.diff(ffastOutBins)
+  val foundCorrect = fftLargeOutIdxs.intersect(ffastOutBins)
+  if (falsePositives.length != 0)
+    println(s"FAILED: False positive locations (${falsePositives.length}): " + falsePositives.mkString(", "))
+  else
+    println("No false positives! :)")
+  if (falseNegatives.length != 0)
+    println(s"FAILED: False negative locations (${falseNegatives.length}): " + falseNegatives.mkString(", "))
+  else
+    println("No false negatives! :)")
+
+  println("Correctly found: " + foundCorrect.mkString(", "))
 
   cycleThroughUntil("ADCCollectDebug")
   clearResults()

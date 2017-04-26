@@ -7,11 +7,17 @@ import scala.util._
 // TODO: Make random tests, add noise
 object FFTTestVectors {
   // Should be fs / 2
-  val fixedRealFreq = Seq(0.2, 0.3, 0.4, 0.25)
-  val fixedRealAmp = Seq(0.25, 0.15, 0.2, 0.03)
+  // val fixedRealFreq = Seq(0.2, 0.3, 0.4, 0.25)
+
+  val r = new scala.util.Random
+  val numFreq = 70
+  val fixedRealAmpT = Seq(0.25, 0.15, 0.2, 0.12, 0.05).map(_ / 2)
+  val fixedRealFreq = (0 until numFreq).map(i => r.nextInt(21600 / 2).toDouble / 21600)
+  val fixedRealAmp = (Seq.fill(numFreq / fixedRealAmpT.length)(fixedRealAmpT)).flatten
 
   // I'm not really quantizing here... just limiting input range
   def createInput(fftn: Int, numTones: Int = -1, fracBits: Int): Seq[Complex] = {
+    println("Number of tones: " + fixedRealFreq.distinct.length)
     for (i <- 0 until fftn) yield {
       val tones = fixedRealAmp.zip(fixedRealFreq).map { case (a, f) => a * math.cos(2 * math.Pi * f * i) }
       val outR = tones.reduce(_ + _)
