@@ -3,6 +3,7 @@ import breeze.signal._
 import breeze.linalg.DenseVector
 import breeze.math.Complex
 import scala.util._
+import org.scalatest.{FlatSpec, Matchers}
 
 // TODO: Make random tests, add noise
 object FFTTestVectors {
@@ -10,8 +11,8 @@ object FFTTestVectors {
   // val fixedRealFreq = Seq(0.2, 0.3, 0.4, 0.25)
 
   val r = new scala.util.Random
-  val numFreq = 150 // 216 doesn't work
-  val fixedRealAmpT = Seq(0.25, 0.15, 0.2, 0.12, 0.05).map(_ / 2)
+  val numFreq = 216 
+  val fixedRealAmpT = Seq(0.25, 0.15, 0.2, 0.12, 0.13).map(_ / 3)
   val fixedRealFreq = (0 until numFreq).map(i => r.nextInt(21600 / 2).toDouble / 21600)
   val fixedRealAmp = (Seq.fill(numFreq / fixedRealAmpT.length)(fixedRealAmpT)).flatten
 
@@ -58,3 +59,51 @@ object FFTTestVectors {
   }
 
 } 
+
+object PlotFFT { 
+  def apply(exp: Seq[Complex]): Unit = {
+    import breeze.linalg._
+    import breeze.plot._
+
+    val f = Figure()
+    val p = f.subplot(0)
+
+    p.legend_=(true)
+
+    val xaxis = (0 until exp.length).map(e => e.toDouble).toSeq.toArray
+
+    // Log 0 doesn't exist
+    val plotMin = 0.0000000001
+    val expPlot = exp.map(c => 20 * math.log10(Seq(c.abs, plotMin).max)).toSeq
+    p += plot(xaxis, expPlot.toArray, name = "Expected")
+    
+    p.ylim(Seq(-100.0, expPlot.min).max, expPlot.max)
+    p.title_=(s"FFT: ${exp.length}")
+
+    p.xlabel = "Frequency Bin"
+    p.ylabel = "20log10(||Vpeak||)"
+    f.saveas(s"test_run_dir/fft_${exp.length}.pdf") 
+  }
+}
+
+class FFTTestVectorSpec extends FlatSpec with Matchers {
+  behavior of "FFT Test Vectors"
+  it should "be reasonable" in {
+    val fractionalBits = 8
+    val fftn = 21600
+    val in = FFTTestVectors.createInput(fftn, fracBits = fractionalBits).map { case xtot => 
+      val z = xtot.real
+      val x = if (z >= 1) 1 - math.pow(2, fractionalBits) else if (z < -1) -1 else z
+      val y = math.round(x * math.pow(2, fractionalBits)) / math.pow(2, fractionalBits)
+      Complex(y, 0.0)
+    }
+    val out = FFTTestVectors.createOutput(in).map(x => x / fftn)
+    PlotFFT(out)
+
+    val fftLargeThreshold = 0.004 * 0.004
+    val fftLargeOutIdxs = FFTTestVectors.expectedSubSampleLocations(in, zeroThresholdPwr = fftLargeThreshold, disp = false)
+    println(s"Actual # of non-zero bins: ${fftLargeOutIdxs.length}")
+
+  }
+}
+
