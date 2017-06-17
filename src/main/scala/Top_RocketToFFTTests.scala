@@ -149,7 +149,7 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper, fftn: Int = -1, frames: Int
     val sqnr = sig/noise
     val sqnrpwr = 10*math.log10(sqnr)
     println(sqnrpwr)
-    scala.tools.nsc.io.File("sqnr.csv").appendAll(s"$fftn, $sqnrpwr \n")
+    scala.tools.nsc.io.File("sqnr.csv").appendAll(s"$fftn, $sig, $noise \n")
 
     Status("Successfully verified outputs for N = " + n)
     o.toList
