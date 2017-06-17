@@ -2,7 +2,7 @@ package FFT
 import ChiselDSP._
 import Chisel.{Complex => _, _}
 
-class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
+class RocketToFFTWrapperTests(c: RocketToFFTWrapper, fftn: Int = -1, frames: Int = 1) extends DSPTester(c) {
 
   //MemInit.create()
 
@@ -11,7 +11,8 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
   val calcOption = "debugUntil1FrameOut"
 
   traceOn = false
-  val sizes = Params.getFFT.sizes //.slice(1,4)
+
+  val sizes = if (fftn == -1) Params.getFFT.sizes else List(fftn) //.slice(1,4)
   val (cins,couts,cinsshort) = test(sizes)
 
 ///////////////////////////////////////////// C HEADER
@@ -86,23 +87,28 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 ///////////////////////////////////////////// MACRO FUNCTIONS
 
   def test(sizes:List[Int]): Tuple3[List[List[BigInt]],List[List[BigInt]],List[List[BigInt]]] = {
+
+    TestVectors(sizes, frames)
+
     val fracWidth = Params.getComplex.fracBits
     val bigIntsIn = sizes.map{n => {
       val idx = Params.getFFT.sizes.indexOf(n)
-      val in = TestVectors.getIn(idx)
+      val in = if (sizes.length == 1) TestVectors.getIn(0) else TestVectors.getIn(idx)
       in.map(x => x.toBigInt(fracWidth,32))
     }}
     val bigIntsInShort = sizes.map{n => {
       val idx = Params.getFFT.sizes.indexOf(n)
-      val in = TestVectors.getIn(idx)
+      val in = if (sizes.length == 1) TestVectors.getIn(0) else TestVectors.getIn(idx)
       in.map(x => x.toBigInt(fracWidth,24))
     }}
     val bigIntsOut = sizes.map { n => {
       Tracker.reset(n)
       setup(n = n, isFFT = true)
       val idx = Params.getFFT.sizes.indexOf(n)
-      val in = TestVectors.getIn(idx).grouped(n).toList
-      val out = TestVectors.getOut(idx).grouped(n).toList
+      val inT = if (sizes.length == 1) TestVectors.getIn(0) else TestVectors.getIn(idx)
+      val outT = if (sizes.length == 1) TestVectors.getOut(0) else TestVectors.getOut(idx)
+      val in = inT.grouped(n).toList
+      val out = outT.grouped(n).toList
 
       in.zip(out).zipWithIndex.map{ x => {
         Status("///////////////////////////////////////////// FFT N = " + n)
@@ -121,15 +127,30 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
   def check(x: List[ScalaComplex]): List[BigInt] = {
     val fracWidth = Params.getComplex.fracBits
     val n = x.length
+    println(s"Test vector length: $n")
     val fromFFTAddr = c.memMap("fromFFT").base
-    val o = (0 until x.length).map{ i => {
+    val oideal = (0 until x.length).map{ i => 
+      // normalized
+      x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
+    }
+
+    // http://www.ti.com/lit/an/spra948/spra948.pdf
+    val (o, osqnr) = oideal.zipWithIndex.map{ case (normalized, i) => {
       val outBigInt = read(fromFFTAddr + i)
       val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
       // TODO: Add in IFFT
-      val normalized = x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
       checkError(normalized,out,orb,oib,"@ [Out] FFT = " + n + ", k = " + i)
-      outBigInt
-    }}
+      (outBigInt, out)
+    }}.unzip
+
+    val sig = oideal.map(x => math.pow(x.abs, 2)).sum
+    val noise = oideal.zip(osqnr).map { case (ideal, nonideal) => 
+      math.pow((ideal - nonideal).abs, 2) }.sum
+    val sqnr = sig/noise
+    val sqnrpwr = 10*math.log10(sqnr)
+    println(sqnrpwr)
+    scala.tools.nsc.io.File("sqnr.csv").appendAll(s"$fftn, $sqnrpwr \n")
+
     Status("Successfully verified outputs for N = " + n)
     o.toList
   }

@@ -315,7 +315,7 @@ object Tracker {
   def reset(n: Int) : Unit = {
 
     val idx = Params.getFFT.sizes.indexOf(n)
-    val dblTol = TestVectors.outAbsMin(idx)
+    //val dblTol = TestVectors.outAbsMin(idx)
     // Set tolerance for comparing expected values
     // val fixedTol = (DSPFixed.toFixed(dblTol,Complex.getFrac).bitLength-2).max(1)
 

@@ -60,6 +60,7 @@ object SQNRAnalysis {
       println(o)
       o
     }}}).transpose
+    //scala.tools.nsc.io.File("filename").appendAll("hello world")
 
     // TODO: Convert Java writer to Scala writer in Testbench, cleaner JSON
     // JSON file: List of # bits tested; JSON with FFTN followed by SQNR (dB) for # of bits tested

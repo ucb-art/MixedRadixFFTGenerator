@@ -44,7 +44,7 @@ object Params {
 
     fft = p.fft
     test = p.test
-    TestVectors(fft.sizes,test.frames)
+    //TestVectors(fft.sizes,test.frames)
 
     val (rad,radPow,radOrder,maxRad,maxStages,coprimes,global) = Factorize(getFFT.sizes)
     butterfly.rad = rad

@@ -33,7 +33,11 @@ object RocketInterfaceWrapper {
     val runArgs = args.slice(1, args.length)
 
     Chisel.chiselMainTest( runArgs, () => DSPModule(new RocketToFFTWrapper) ) {
-      c => new RocketToFFTWrapperTests(c)
+      c => 
+        RocketInterfaceParams().fft.sizes.foreach { n =>
+          new RocketToFFTWrapperTests(c, n)
+        }
+      new RocketToFFTWrapperTests(c, RocketInterfaceParams().fft.sizes.min, 20)
     }
 
   }
