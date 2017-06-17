@@ -1,0 +1,262 @@
+
+  wire debug_req_valid_delay;
+  reg debug_req_valid;
+  assign #0.1 debug_req_valid_delay = debug_req_valid;
+
+  wire debug_req_ready, debug_req_ready_delay;
+  assign #0.1 debug_req_ready = debug_req_ready_delay;
+
+  wire [4:0] debug_req_bits_addr_delay;
+  reg [4:0] debug_req_bits_addr;
+  assign #0.1 debug_req_bits_addr_delay = debug_req_bits_addr;
+
+  wire [1:0] debug_req_bits_op_delay;
+  reg [1:0] debug_req_bits_op;
+  assign #0.1 debug_req_bits_op_delay = debug_req_bits_op;
+
+  wire [33:0] debug_req_bits_data_delay;
+  reg [33:0] debug_req_bits_data;
+  assign #0.1 debug_req_bits_data_delay = debug_req_bits_data;
+
+  wire debug_resp_valid, debug_resp_valid_delay;
+  assign #0.1 debug_resp_valid = debug_resp_valid_delay;
+
+  wire debug_resp_ready_delay;
+  reg debug_resp_ready;
+  assign #0.1 debug_resp_ready_delay = debug_resp_ready;
+
+  wire [1:0] debug_resp_bits_resp, debug_resp_bits_resp_delay;
+  assign #0.1 debug_resp_bits_resp = {1'b0, debug_resp_bits_resp_delay[0]};
+
+  wire [33:0] debug_resp_bits_data, debug_resp_bits_data_delay;
+  assign #0.1 debug_resp_bits_data = debug_resp_bits_data_delay;
+
+  wire ar_valid_0;
+  reg ar_ready_0;
+  wire [`MEM_ADDR_BITS-1:0] ar_addr_0;
+  wire [`MEM_ID_BITS-1:0] ar_id_0;
+  wire [2:0] ar_size_0;
+  wire [7:0] ar_len_0;
+
+  wire aw_valid_0;
+  reg aw_ready_0;
+  wire [`MEM_ADDR_BITS-1:0] aw_addr_0;
+  wire [`MEM_ID_BITS-1:0] aw_id_0;
+  wire [2:0] aw_size_0;
+  wire [7:0] aw_len_0;
+
+  wire w_valid_0;
+  reg w_ready_0;
+  wire [`MEM_STRB_BITS-1:0] w_strb_0;
+  wire [`MEM_DATA_BITS-1:0] w_data_0;
+  wire w_last_0;
+
+  reg r_valid_0;
+  wire r_ready_0;
+  reg [1:0] r_resp_0;
+  reg [`MEM_ID_BITS-1:0] r_id_0;
+  reg [`MEM_DATA_BITS-1:0] r_data_0;
+  reg r_last_0;
+
+  reg b_valid_0;
+  wire b_ready_0;
+  reg [1:0] b_resp_0;
+  reg [`MEM_ID_BITS-1:0] b_id_0;
+
+
+  wire ar_valid_delay_0;
+  wire ar_ready_delay_0;
+  wire [`MEM_ADDR_BITS-1:0] ar_addr_delay_0;
+  wire [`MEM_ID_BITS-1:0] ar_id_delay_0;
+  wire [2:0] ar_size_delay_0;
+  wire [7:0] ar_len_delay_0;
+
+  wire aw_valid_delay_0;
+  wire aw_ready_delay_0;
+  wire [`MEM_ADDR_BITS-1:0] aw_addr_delay_0;
+  wire [`MEM_ID_BITS-1:0] aw_id_delay_0;
+  wire [2:0] aw_size_delay_0;
+  wire [7:0] aw_len_delay_0;
+
+  wire w_valid_delay_0;
+  wire w_ready_delay_0;
+  wire [`MEM_STRB_BITS-1:0] w_strb_delay_0;
+  wire [`MEM_DATA_BITS-1:0] w_data_delay_0;
+  wire w_last_delay_0;
+
+  wire r_valid_delay_0;
+  wire r_ready_delay_0;
+  wire [1:0] r_resp_delay_0;
+  wire [`MEM_ID_BITS-1:0] r_id_delay_0;
+  wire [`MEM_DATA_BITS-1:0] r_data_delay_0;
+  wire r_last_delay_0;
+
+  wire b_valid_delay_0;
+  wire b_ready_delay_0;
+  wire [1:0] b_resp_delay_0;
+  wire [`MEM_ID_BITS-1:0] b_id_delay_0;
+
+  assign #0.1 ar_valid_0 = ar_valid_delay_0;
+  assign #0.1 ar_ready_delay_0 = ar_ready_0;
+  assign #0.1 ar_addr_0 = ar_addr_delay_0;
+  assign #0.1 ar_id_0 = ar_id_delay_0[2:0];
+  assign #0.1 ar_size_0 = ar_size_delay_0[1:0];
+  assign #0.1 ar_len_0 = {ar_len_delay_0[2], 1'b0, 1'b0};
+
+  assign #0.1 aw_valid_0 = aw_valid_delay_0;
+  assign #0.1 aw_ready_delay_0 = aw_ready_0;
+  assign #0.1 aw_addr_0 = aw_addr_delay_0;
+  assign #0.1 aw_id_0 = aw_id_delay_0[2:0];
+  assign #0.1 aw_size_0 = aw_size_delay_0[1:0];
+  assign #0.1 aw_len_0 = {aw_len_delay_0[2], 1'b0, 1'b0};
+
+  assign #0.1 w_valid_0 = w_valid_delay_0;
+  assign #0.1 w_ready_delay_0 = w_ready_0;
+  assign #0.1 w_strb_0 = w_strb_delay_0;
+  assign #0.1 w_data_0 = w_data_delay_0;
+  assign #0.1 w_last_0 = w_last_delay_0;
+
+  assign #0.1 r_valid_delay_0 = r_valid_0;
+  assign #0.1 r_ready_0 = r_ready_delay_0;
+  assign #0.1 r_resp_delay_0 = r_resp_0;
+  assign #0.1 r_id_delay_0 = r_id_0;
+  assign #0.1 r_data_delay_0 = r_data_0;
+  assign #0.1 r_last_delay_0 = r_last_0;
+
+  assign #0.1 b_valid_delay_0 = b_valid_0;
+  assign #0.1 b_ready_0 = b_ready_delay_0;
+  assign #0.1 b_resp_delay_0 = b_resp_0;
+  assign #0.1 b_id_delay_0 = b_id_0;
+
+
+  SystemTop dut
+  (
+    .clk(clk),
+    .reset(reset),
+
+    
+    .io_mem_axi_0_ar_valid (ar_valid_delay_0),
+    .io_mem_axi_0_ar_ready (ar_ready_delay_0),
+    .io_mem_axi_0_ar_bits_addr (ar_addr_delay_0),
+    .io_mem_axi_0_ar_bits_id (ar_id_delay_0),
+    .io_mem_axi_0_ar_bits_size (ar_size_delay_0),
+    .io_mem_axi_0_ar_bits_len (ar_len_delay_0),
+    .io_mem_axi_0_ar_bits_burst (),
+    .io_mem_axi_0_ar_bits_lock (),
+    .io_mem_axi_0_ar_bits_cache (),
+    .io_mem_axi_0_ar_bits_prot (),
+    .io_mem_axi_0_ar_bits_qos (),
+    .io_mem_axi_0_ar_bits_region (),
+    .io_mem_axi_0_ar_bits_user (),
+
+    .io_mem_axi_0_aw_valid (aw_valid_delay_0),
+    .io_mem_axi_0_aw_ready (aw_ready_delay_0),
+    .io_mem_axi_0_aw_bits_addr (aw_addr_delay_0),
+    .io_mem_axi_0_aw_bits_id (aw_id_delay_0),
+    .io_mem_axi_0_aw_bits_size (aw_size_delay_0),
+    .io_mem_axi_0_aw_bits_len (aw_len_delay_0),
+    .io_mem_axi_0_aw_bits_burst (),
+    .io_mem_axi_0_aw_bits_lock (),
+    .io_mem_axi_0_aw_bits_cache (),
+    .io_mem_axi_0_aw_bits_prot (),
+    .io_mem_axi_0_aw_bits_qos (),
+    .io_mem_axi_0_aw_bits_region (),
+    .io_mem_axi_0_aw_bits_user (),
+
+    .io_mem_axi_0_w_valid (w_valid_delay_0),
+    .io_mem_axi_0_w_ready (w_ready_delay_0),
+    .io_mem_axi_0_w_bits_id (),
+    .io_mem_axi_0_w_bits_strb (w_strb_delay_0),
+    .io_mem_axi_0_w_bits_data (w_data_delay_0),
+    .io_mem_axi_0_w_bits_last (w_last_delay_0),
+    .io_mem_axi_0_w_bits_user (),
+
+    .io_mem_axi_0_r_valid (r_valid_delay_0),
+    .io_mem_axi_0_r_ready (r_ready_delay_0),
+    .io_mem_axi_0_r_bits_resp (r_resp_delay_0),
+    .io_mem_axi_0_r_bits_id (r_id_delay_0),
+    .io_mem_axi_0_r_bits_data (r_data_delay_0),
+    .io_mem_axi_0_r_bits_last (r_last_delay_0),
+    .io_mem_axi_0_r_bits_user (1'b0),
+
+    .io_mem_axi_0_b_valid (b_valid_delay_0),
+    .io_mem_axi_0_b_ready (b_ready_delay_0),
+    .io_mem_axi_0_b_bits_resp (b_resp_delay_0),
+    .io_mem_axi_0_b_bits_id (b_id_delay_0),
+    .io_mem_axi_0_b_bits_user (1'b0),
+
+
+
+    
+    .io_interrupts_0 (1'b0),
+
+    .io_interrupts_1 (1'b0),
+
+
+    
+    .io_debug_req_ready(debug_req_ready_delay),
+    .io_debug_req_valid(debug_req_valid_delay),
+    .io_debug_req_bits_addr(debug_req_bits_addr_delay),
+    .io_debug_req_bits_op(debug_req_bits_op_delay),
+    .io_debug_req_bits_data(debug_req_bits_data_delay),
+    .io_debug_resp_ready(debug_resp_ready_delay),
+    .io_debug_resp_valid(debug_resp_valid_delay),
+    .io_debug_resp_bits_resp(debug_resp_bits_resp_delay),
+    .io_debug_resp_bits_data(debug_resp_bits_data_delay)
+
+  );
+
+  reg [31:0] channel_0 = 0;
+
+  always @(posedge clk)
+  begin
+    if (reset || r_reset)
+    begin
+      ar_ready_0 <= 1'b0;
+      aw_ready_0 <= 1'b0;
+      w_ready_0 <= 1'b0;
+      r_valid_0 <= 1'b0;
+      r_resp_0 <= 2'b0;
+      r_id_0 <= {`MEM_ID_BITS {1'b0}};
+      r_data_0 <= {`MEM_DATA_BITS {1'b0}};
+      r_last_0 <= 1'b0;
+      b_valid_0 <= 1'b0;
+      b_resp_0 <= 2'b0;
+      b_id_0 <= {`MEM_ID_BITS {1'b0}};
+    end
+    else
+    begin
+      memory_tick
+      (
+        channel_0,
+        ar_valid_0, ar_ready_0, ar_addr_0, ar_id_0, ar_size_0, ar_len_0,
+        aw_valid_0, aw_ready_0, aw_addr_0, aw_id_0, aw_size_0, aw_len_0,
+        w_valid_0, w_ready_0, w_strb_0, w_data_0, w_last_0,
+        r_valid_0, r_ready_0, r_resp_0, r_id_0, r_data_0, r_last_0,
+        b_valid_0, b_ready_0, b_resp_0, b_id_0
+      );
+    end
+  end
+
+  always @(posedge clk)
+  begin
+    if (verbose)
+    begin
+      if (ar_valid_0 && ar_ready_0)
+      begin
+        $fdisplay(stderr, "MC0: ar addr=%x size=%x", ar_addr_0, ar_size_0);
+      end
+      if (aw_valid_0 && aw_ready_0)
+      begin
+        $fdisplay(stderr, "MC0: aw addr=%x size=%x", aw_addr_0, aw_size_0);
+      end
+      if (w_valid_0 && w_ready_0)
+      begin
+        $fdisplay(stderr, "MC0: w data=%x strb=%x", w_data_0, w_strb_0);
+      end
+      if (r_valid_0 && r_ready_0)
+      begin
+        $fdisplay(stderr, "MC0: r data=%x", r_data_0);
+      end
+    end
+  end

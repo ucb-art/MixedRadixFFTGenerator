@@ -67,6 +67,7 @@ object TestVectors{
     }
     // Larger tonal FFT sizes
     else if (!randomTests){
+      require(false)
       for (i <- 0 until FFTN){
         val r1 = (reala,realf).zipped.map( (a,f) => a*sin(2*Pi*f*i))
         val r2 = r1.foldLeft(0.0001+i.toDouble/FFTN/100)(_ + _)

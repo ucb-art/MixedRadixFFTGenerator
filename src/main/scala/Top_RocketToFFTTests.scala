@@ -4,13 +4,15 @@ import Chisel.{Complex => _, _}
 
 class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
+  //MemInit.create()
+
   // TODO: Support IFFT
 
   val calcOption = "debugUntil1FrameOut"
 
   traceOn = false
   val sizes = Params.getFFT.sizes //.slice(1,4)
-  val (cins,couts) = test(sizes)
+  val (cins,couts,cinsshort) = test(sizes)
 
 ///////////////////////////////////////////// C HEADER
 
@@ -44,10 +46,30 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
   ch write "unsigned long isFFT[NUM_TESTS] = {%s}; \n\n".format(isFFTs.mkString(","))
   val inames = cins.zipWithIndex.map{ x => {
     val n = sizes(x._2)
+    // WARNING: CURRENTLY INVALID!!! (24 bits instead of 32)
     val length = x._1.length
     ch write "unsigned long i%d[%d] = {%s}; \n".format(n,length,x._1.mkString(","))
     "i" + n
   }}
+
+  cinsshort.zipWithIndex.foreach{ x => {
+    val n = sizes(x._2)
+    if (n == 324) {
+      val insBottomTemp = if (x._1.length > 1024) x._1.dropRight(1024) else x._1
+      val insBottom = insBottomTemp ++ List.fill(1024 - insBottomTemp.length)(BigInt(0))
+      val insTopTemp = x._1.drop(1024)
+      val insTop = insTopTemp ++ List.fill(1024 - insTopTemp.length)(BigInt(0))
+      val insBottomLSB = insBottom.map(num => num & ((1 << 24) - 1)).map(num => num.toString(16)).mkString(" \n")
+      val insBottomMSB = insBottom.map(num => (num >> 24) & ((1 << 24) - 1)).map(num => num.toString(16)).mkString(" \n")
+      val insTopLSB = insTop.map(num => num & ((1 << 24) - 1)).map(num => num.toString(16)).mkString(" \n")
+      val insTopMSB = insTop.map(num => (num >> 24) & ((1 << 24) - 1)).map(num => num.toString(16)).mkString(" \n")
+      scala.tools.nsc.io.File("bottom_LSB.txt").writeAll(insBottomLSB)
+      scala.tools.nsc.io.File("bottom_MSB.txt").writeAll(insBottomMSB)
+      scala.tools.nsc.io.File("top_LSB.txt").writeAll(insTopLSB)
+      scala.tools.nsc.io.File("top_MSB.txt").writeAll(insTopMSB)
+    }
+  }}
+
   ch write "\n"
   val onames = couts.zipWithIndex.map{ x => {
     val n = sizes(x._2)
@@ -63,12 +85,17 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
 
 ///////////////////////////////////////////// MACRO FUNCTIONS
 
-  def test(sizes:List[Int]): Tuple2[List[List[BigInt]],List[List[BigInt]]] = {
+  def test(sizes:List[Int]): Tuple3[List[List[BigInt]],List[List[BigInt]],List[List[BigInt]]] = {
     val fracWidth = Params.getComplex.fracBits
     val bigIntsIn = sizes.map{n => {
       val idx = Params.getFFT.sizes.indexOf(n)
       val in = TestVectors.getIn(idx)
       in.map(x => x.toBigInt(fracWidth,32))
+    }}
+    val bigIntsInShort = sizes.map{n => {
+      val idx = Params.getFFT.sizes.indexOf(n)
+      val in = TestVectors.getIn(idx)
+      in.map(x => x.toBigInt(fracWidth,24))
     }}
     val bigIntsOut = sizes.map { n => {
       Tracker.reset(n)
@@ -82,12 +109,13 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
         Status("Loading inputs for N = " + n + ", Frame " + x._2)
         load(x._1._1)
         calculate(c.calcOptions(calcOption))
+        //calculate(0)
         if (read(c.memMap("k").base)!= n-1) Error("K not expected -- should be " + (n-1))
         Status("Verifying outputs for N = " + n + ", Frame " + x._2)
         check(x._1._2)
       }}.flatten
     }}
-    (bigIntsIn,bigIntsOut)
+    (bigIntsIn,bigIntsOut,bigIntsInShort)
   }
 
   def check(x: List[ScalaComplex]): List[BigInt] = {
@@ -119,7 +147,11 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper) extends DSPTester(c) {
     val calcAddr = c.memMap("calcStartDone").base
     write(calcAddr,0)
     var calcDone = read(calcAddr)
+    //var testCount = 0
     while (calcDone != BigInt(1)){
+      //testCount = testCount + 1
+      //if (testCount == 1000)
+        //write(calcTypeAddr,0) 
       calcDone = read(calcAddr)
     }
     Status("Done calculating!")

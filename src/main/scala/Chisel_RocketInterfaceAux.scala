@@ -27,7 +27,7 @@ object RocketInterfaceParams {
         generateOffset = true
       ),
       test = TestParams(
-        frames = 5            // Unused
+        frames = 1            
       )
     )
   }

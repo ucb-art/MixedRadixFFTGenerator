@@ -103,8 +103,8 @@ class ChiselFFT() { // extends ArborSpec {
     val (intBitsD,fracBitsD) = fixedParams.getOrElse((4,19))
 
     // Basic FFT doesn't renormalize outputs and doesn't have offset counter
-    val normalized = normal.getOrElse(false)
-    val generateOffset = genOffset.getOrElse(false)
+    val normalized = normal.getOrElse(true)
+    val generateOffset = genOffset.getOrElse(true)
 
     // Local generator params. Can use this instead of JSON values for design sweeps or Scala based parameter generation
     val defaultGenParams = GeneratorParams(
@@ -113,7 +113,7 @@ class ChiselFFT() { // extends ArborSpec {
         fracBits      = fracBitsD,
         use4Muls      = false,
         mulPipe       = 2,
-        addPipe       = 0.33,
+        addPipe       = 0.333,
         trimType      = Truncate,
         overflowType  = Grow,
         mulFracGrowth = 1
@@ -122,7 +122,10 @@ class ChiselFFT() { // extends ArborSpec {
         periodx100ps  = Math.floor(162.76).toInt
       ),
       fft = FFTParams(
-        sizes   = List(12,24,36,48),
+        sizes  = List(12, 24, 48, 96, 192, 384, 768, 36, 72, 144, 288, 576, 1152, 108, 216, 432, 864, 324, 648, 1296, 972,
+          60, 120, 240, 480, 960, 180, 360, 720, 300, 600, 1200, 540, 1080, 900).sorted ++
+          List(64, 128, 256, 512, 1024, 2048, 1536),
+                  //List(12,24,36,48),
                   /*List(12,24,48,96,192,384,768,36,72,144,288,576,1152,108,216,432,864,324,648,1296,972,
                        60,120,240,480,960,180,360,720,300,600,1200,540,1080,900).sorted ++
                   List(64,128,256,512,1024,2048,1536),*/

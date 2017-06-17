@@ -42,3 +42,5 @@ lazy val fft = Project(
 // mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
 mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
 // mainClass in (Compile, run) := Some("FFT.DebugFFT")
+
+//mainClass in (Compile, run) := Some("FFT.SQNRAnalysis")
