@@ -27,7 +27,10 @@ object ScheduleCalc {
           Warn("FFT  = " + fftn + " uses up at least " + Params.getIO.clkRatio + "N - stall delay cycles ")
           // TODO: Hide/unhide warn messages via apply (rather than global)
         // Returns values assuming 0 pipeline delay
-        List(fftn,cycles,rad2cycles)
+        //List(fftn,cycles,rad2cycles)
+        
+        val addedDelay = usedStages.length * pipeDelay
+        List(fftn,cycles + addedDelay,rad2cycles + addedDelay)
       })
     // TODO: Generic analysis folder needed
     try{

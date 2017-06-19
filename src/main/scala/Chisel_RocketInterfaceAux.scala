@@ -7,7 +7,7 @@ object RocketInterfaceParams {
     GeneratorParams(
       complex = ComplexParams(
         intBits = 4,
-        fracBits = 19,
+        fracBits = 11, //19,
         use4Muls = false,
         mulPipe = 2,
         addPipe = 0.333,
