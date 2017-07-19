@@ -623,8 +623,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
         // TODO: FIX -- DEPENDS ON TEST VECTORS
         // Above this number -> multiton
-        val noiseThresholdPwr = numDelays * .01 *.01
-        val sigThresholdPwr = .01 * .01
+        val noiseThresholdPwr = numDelays * .01 *.01 *.7
+        val sigThresholdPwr = .006 * .006
 
         poke(c.io.peelScr.zeroThresholdPwr(n), noiseThresholdPwr)
         poke(c.io.peelScr.sigThresholdPwr(n), sigThresholdPwr)
@@ -866,5 +866,8 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
   cycleThroughUntil("ADCCollectDebug")
   clearResults()
+
+  val out = FFTTestVectors.createOutput(inLarge).map(x => x / c.ffastParams.fftn)
+  PlotFFT(out)
 
 }
