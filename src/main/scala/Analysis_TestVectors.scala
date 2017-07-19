@@ -107,8 +107,32 @@ object TestVectors{
     // Using Breeze FFT Cooley Tukey instead of slow DFT == WIN!
 
     val breezeIn = DenseVector(inProto.map(x => breeze.math.Complex(x.real,x.imag)).toArray)
-    val breezeOut = fourierTr(breezeIn)
+
+    val breezeInFlip = DenseVector(inProto.map(x => breeze.math.Complex(x.imag,x.real)).toArray)
+    val breezeOutIFFT = iFourierTr(breezeIn) 
+    val breezeOut2 = fourierTr(breezeInFlip)
+
+    /*
+    breezeOutIFFT.map { case (i) => 
+      val t = breeze.math.Complex(i.imag, i.real)
+      println(s"IFFT: ${t * FFTN}")
+    }
+
+    breezeOut2.map { case (i) => 
+      println(s"FFT: $i")
+    }
+    */
+
+    //val breezeOut = fourierTr(breezeIn)
+    val breezeOut = iFourierTr(breezeIn)
+    /*
+    breezeOut.map { case (i) => 
+      println(s"IFFT: $i")
+    }
+    */
+
     breezeOut.map(x => ChiselDSP.Complex(x.real,x.imag)).toArray.toList
+    //breezeOut.map(x => ChiselDSP.Complex(x.imag,x.real)).toArray.toList
 
 /*
     var outProto = Array.fill(FFTN){Complex(0.0,0.0)}

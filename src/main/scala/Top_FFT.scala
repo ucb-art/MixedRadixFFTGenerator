@@ -140,7 +140,7 @@ class ChiselFFT() { // extends ArborSpec {
         generateOffset = generateOffset
       ),
       test = TestParams(
-        frames  = 5
+        frames  = 1
       )
     )
 

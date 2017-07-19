@@ -34,10 +34,12 @@ object RocketInterfaceWrapper {
 
     Chisel.chiselMainTest( runArgs, () => DSPModule(new RocketToFFTWrapper) ) {
       c => 
-        /*List(1296, 64, 128, 256, 512, 1024, 2048, 1536).foreach { n =>
-          new RocketToFFTWrapperTests(c, n, 20)
-        }*/
-      new RocketToFFTWrapperTests(c, RocketInterfaceParams().fft.sizes.min, 1)
+        //List(1296, 64, 128, 256, 512, 1024, 2048, 1536).foreach { n =>
+        RocketInterfaceParams().fft.sizes.foreach { n => 
+          new RocketToFFTWrapperTests(c, n, 1)
+        }
+      // RocketInterfaceParams().fft.sizes.min
+      new RocketToFFTWrapperTests(c, 24, 1)
     }
 
   }

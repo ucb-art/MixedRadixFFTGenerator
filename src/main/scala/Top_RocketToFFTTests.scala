@@ -103,7 +103,11 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper, fftn: Int = -1, frames: Int
     }}
     val bigIntsOut = sizes.map { n => {
       Tracker.reset(n)
+
+      // HACK for IFFT
+
       setup(n = n, isFFT = true)
+      //setup(n = n, isFFT = false)
       val idx = Params.getFFT.sizes.indexOf(n)
       val inT = if (sizes.length == 1) TestVectors.getIn(0) else TestVectors.getIn(idx)
       val outT = if (sizes.length == 1) TestVectors.getOut(0) else TestVectors.getOut(idx)
@@ -131,7 +135,10 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper, fftn: Int = -1, frames: Int
     val fromFFTAddr = c.memMap("fromFFT").base
     val oideal = (0 until x.length).map{ i => 
       // normalized
-      x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
+      //x(i)**(1/math.sqrt(Tracker.FFTN),typ = Real)
+      println(s"Idx $i , Exp: ${x(i)}")
+      val o = Complex(x(i).real*math.sqrt(Tracker.FFTN), x(i).imag*math.sqrt(Tracker.FFTN))
+      Complex(o.imag, o.real)
     }
 
     // http://www.ti.com/lit/an/spra948/spra948.pdf
@@ -184,11 +191,13 @@ class RocketToFFTWrapperTests(c: RocketToFFTWrapper, fftn: Int = -1, frames: Int
     val toFFTAddr = c.memMap("toFFT").base
     for (i <- 0 until x.length){
       // real is MSB (out of 64)
-      val in = x(i).toBigInt(fracWidth,32)
+      // HACK IFFT
+      val in = Complex(x(i).imag, x(i).real).toBigInt(fracWidth,32)
+      //val in = x(i).toBigInt(fracWidth,32)
       write(toFFTAddr + i,in)
       val outBigInt = read(toFFTAddr + i)
       val (out,orb,oib) = Complex.toScalaComplex(outBigInt,fracWidth,32)
-      checkError(x(i),out,orb,oib,"@ [In] FFT = " + n + ", n = " + i)
+      checkError(Complex(x(i).imag, x(i).real),out,orb,oib,"@ [In] FFT = " + n + ", n = " + i)
     }
     Status("Successfully loaded inputs for N = " + n)
   }

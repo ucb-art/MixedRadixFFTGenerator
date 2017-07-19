@@ -6,7 +6,7 @@ object DebugFFT {
 
   def main(args: Array[String]): Unit = {
     val fft = new ChiselFFT
-    val n = 12
+    val n = 24
     val inVec = (0 until n).map(x => Complex(x.toDouble,0.0)).toList
     fft.run(args,fftn=Some(n),inVec=Some(inVec),normal=Some(false),genOffset=Some(true),debugMode=true)
   }
