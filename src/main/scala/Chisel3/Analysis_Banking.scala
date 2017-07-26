@@ -24,7 +24,6 @@ class BankSpec extends FlatSpec with Matchers {
 
     // Note that at least 2 stages must be divisble by numPEs for this to work
     PETests(fft = 4 * 4 * 3, numPEs = 4), 
-    PETests(fft = 4 * 2 * 3, numPEs = 2), 
     PETests(fft = 4 * 3 * 3, numPEs = 3), 
     PETests(fft = 2 * 3 * 3, numPEs = 3), 
     PETests(fft = 4 * 3 * 3 * 3, numPEs = 3), 
@@ -33,31 +32,65 @@ class BankSpec extends FlatSpec with Matchers {
     PETests(fft = 3 * 3 * 5, numPEs = 3),
     PETests(fft = 5 * 3 * 3 * 3, numPEs = 3), 
     PETests(fft = 4 * 4 * 5, numPEs = 4),
-    PETests(fft = 4 * 2 * 5, numPEs = 2),
+    
     PETests(fft = 4 * 5 * 5, numPEs = 5), 
     PETests(fft = 2 * 5 * 5, numPEs = 5), 
     PETests(fft = 4 * 4 * 4 * 3, numPEs = 4),
+    PETests(fft = 5 * 5 * 4 * 3, numPEs = 5),
+
+    // The previous tests prefer to be ordered s.t. largest radix is on the left hand side (i.e. stages' = stages.sorted.reverse)
+    // With these guys, after you do that, the first stage (on the left) prefers that the count least significant digit is shifted to the left by 1
+    PETests(fft = 4 * 2 * 3, numPEs = 2), 
+    PETests(fft = 4 * 2 * 5, numPEs = 2),
+
+    // See "testScheduleTemp" for conditions -- requires special grouping
     PETests(fft = 5 * 4 * 4, numPEs = 2),
-    PETests(fft = 4 * 4 * 3, numPEs = 2),
-    PETests(fft = 5 * 5 * 4 * 3, numPEs = 5)
+    PETests(fft = 4 * 4 * 3, numPEs = 2)
   )
 
   val tests = testsLong.slice(0, testsLong.length)
 
-  tests foreach { case test => 
+  val testVectors = tests.map { case test => 
     val fftParams = PeelingScheduling.getFFTParams(test.fft)
+    // This is ideal, but requires changing some "firmware" stuff
+    // val stages = fftParams.calc.getStages.head.stages.sorted.reverse
     val stages = fftParams.calc.getStages.head.stages
-    println(s"FFT Stages: ${stages.mkString(", ")}, # PEs: ${test.numPEs}")
-    Scheduler.run(DIF, stages, test.numPEs)
+    println(s"\nFFT Stages: ${stages.mkString(", ")}, # PEs: ${test.numPEs}")
+    test -> Scheduler.run(DIF, stages, test.numPEs)
   }
 
+  // Redundant printing to make pattern observation easier (?)
+  val validCombinations = testVectors.map { case (test, tvs) =>
+    val fftParams = PeelingScheduling.getFFTParams(test.fft)
+    val stages = fftParams.calc.getStages.head.stages
+    println(s"\nFFT Stages: ${stages.mkString(", ")}, # PEs: ${test.numPEs}")
+    tvs.map { case (stageCounts, shiftCount) =>
+      println(s"Stage: ${stageCounts.head.rad}")
+      println(s"Least significant digit shift for counting (from right): $shiftCount")
+      shiftCount == -1
+    }
+  }
+
+  if (validCombinations.flatten.reduce(_ | _))
+    throw new Exception(s"Could not find a schedule with a good pattern. See above.")
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
+case class CalcCtrlTests(
+  n: Seq[Int] = Seq.empty,
+  rad: Int = 0,
+  stageNum: Int = 0,
+  bank: Seq[Int] = Seq.empty,
+  addr: Seq[Int] = Seq.empty
+) {
+  def print() = 
+    println("ns: " + n.mkString(", ") + "\t banks: " + bank.mkString(", ") + "\t addrs: " + addr.mkString(", "))
+}
+
 object Scheduler {
 
-  def run(fftType: FFTType, stages: Seq[Int], numPEs: Int): Unit = {
+  def run(fftType: FFTType, stages: Seq[Int], numPEs: Int): Seq[(Seq[CalcCtrlTests], Int)] = {
 
     val maxRad = stages.max
     val fft = stages.filterNot(_ == 0).product
@@ -125,95 +158,10 @@ object Scheduler {
     val addressConstants =  addressConstantsShort.padTo(stagesLen, 0)
     println(s"Address constants: ${addressConstants.mkString(", ")}")
 
-    case class CalcCtrlTests(
-      n: Seq[Int] = Seq.empty,
-      rad: Int = 0,
-      stageNum: Int = 0,
-      bank: Seq[Int] = Seq.empty,
-      addr: Seq[Int] = Seq.empty
-    ) {
-      def print() = 
-        println("ns: " + n.mkString(", ") + "\t banks: " + bank.mkString(", ") + "\t addrs: " + addr.mkString(", "))
-    }
-
     val stageVec = fftType match {
       // DIT counts stages in reverse order
       case DIT => stages.zipWithIndex.reverse
       case DIF => stages.zipWithIndex
-    }
-
-    // PE counter is essentially mixed radix counter up to # of PEs per stage
-    val nsEachStage = for ((srad, idx) <- stageVec) yield {
-      // Max stage count associated with current stage is zeroed
-      val stagesNew = stages.updated(idx, 1)
-      val numPEsPerStage = fft / srad
-
-
-
-
-
-
-
-      // Can also be accomplished by changing the order of the radices when you first decompose via PFA, if not 4 * 2, but 4 * 4 is OK
-    // Want the prime associated with # of PEs to appear to the right (least significant mixed-radix digit)
-    // Note for # PEs = 4 and FFT = 4 * 4 * 2, need to shift 1 (to have 4 be to the right)
-    // This works out nicely if the requirement that # PEs should be redundant in stages radices is met
-    // Circular shift to the right of count order!
-    val rightMostOccuranceOfNumPEsIdx = 
-      if (numPEs % 2 == 0)
-        stagesNew.zipWithIndex.reverse.find(_._1 % numPEs == 0).get._2
-      else 
-        stagesNew.zipWithIndex.find(_._1 % numPEs == 0).get._2
-
-
-
-
-
-      // 4, 2 weird
-      val t = 
-        if (rightMostOccuranceOfNumPEsIdx - 1 < 0)
-
-          stages.length - (rightMostOccuranceOfNumPEsIdx - 1)
-        else
-          rightMostOccuranceOfNumPEsIdx - 1
-      val shiftCount = stages.length - (t + 1)
-
-
-
-
-
-
-
-
-
-
-
-      val stagesShifted = stagesNew.drop(stagesNew.length - shiftCount) ++ stagesNew.dropRight(shiftCount)
-
-      for (count <- 0 until numPEsPerStage) yield {
-
-        val tempMixedRadixCount = 
-          if (numPEs == 1)
-            MixedRadix.toDigitSeqMSDFirst(count, radicesHighFirst = stagesNew)  
-          else 
-            MixedRadix.toDigitSeqMSDFirst(count, radicesHighFirst = stagesShifted)  
-
-        // Pad to correct # of digits
-        val mixedRadixCountPadded = Seq.fill(stagesLen - tempMixedRadixCount.length)(0) ++ tempMixedRadixCount
-
-        val mixedRadixCount =
-          if (numPEs == 1)
-            mixedRadixCountPadded
-          else
-            // Shift back to match IO ordering: must be done after padding!
-            mixedRadixCountPadded.drop(shiftCount) ++ mixedRadixCountPadded.dropRight(stagesNew.length - shiftCount)
-
-        CalcCtrlTests(
-          n = mixedRadixCount,
-          rad = srad,
-          stageNum = idx
-        )
-      }
     }
 
     // For banks, # of PEs multiplied @ index of left-most occurance of the largest radix
@@ -222,41 +170,107 @@ object Scheduler {
     // Left needed so that all banks + addresses are accessed
     val leftMostIdxOfMaxRad = stages.indexOf(maxRad)
     val bankMul = Seq.fill(stagesLen)(1).updated(leftMostIdxOfMaxRad, numPEs)
-    // Incrementally add info
-    val testVectors = nsEachStage.map { case stageCounts => 
-      for (countInfo <- stageCounts) yield {
-        val nCount = countInfo.n
-        val currentStageAddressConstant = addressConstants(countInfo.stageNum)
-        // Note: For FFT = 9 * 9 * 2, either you can use 9 * (3 * 3) * 2 i.e. count with n1, n2a, n2b, n3
-        // which requires banking to be modified to: include 3 * n2a + n2b OR
-        // (what is currently done): keeps as 9 * 9 * 2 with n1, n2, n3, except for addrss generation, use floor(n2 / 3) with LUT
-        val addr0 = nCount.zip(addressConstants.zipWithIndex).map { case (n, (ac, idx)) => 
-          if (idx == countIdxToDivide)
-            // FLOOR! -- important to divide n first before multiplying by the address constant
-            // Power of 2 is the simplest case (just shift)
-            (n / numPEs) * ac
-          else 
-            n * ac
-        }.sum
-        // Note that #PEs * [0, maxRad) < maxNumBanks!
-        val bank0 = nCount.zip(bankMul).map { case (n, m) => n * m }.sum % maxNumBanks
-        val banks = Seq(bank0) ++ (1 until countInfo.rad).map { case i => 
-          (bank0 + i * bankMul(countInfo.stageNum)) % maxNumBanks
+
+    // PE counter is essentially mixed radix counter up to # of PEs per stage
+    val testVectors = for ((srad, idx) <- stageVec) yield {
+      // Max stage count associated with current stage is zeroed
+      val stagesNew = stages.updated(idx, 1)
+      val numPEsPerStage = fft / srad
+
+      // Test count ordering, starting with right-most stage associated with least significant digit
+      // Circular shift to the right of count order!
+      val possibleSchedule = for (shiftCountOffset <- 0 until stages.length) yield {
+        // Seems you have to shift less (different amounts of shift per stage of each FFT) when max radix is the left-most
+        // But keep IO stuff static, so only shift for calculation!
+        // If this is a constant amount, then there's no extra hardware required
+        val shiftCount = (shiftCountOffset + (stagesNew.length - leftMostIdxOfMaxRad)) % stages.length
+        val stagesShifted = stagesNew.drop(stagesNew.length - shiftCount) ++ stagesNew.dropRight(shiftCount)
+
+        val possibleCounts = for (count <- 0 until numPEsPerStage) yield {
+
+          val tempMixedRadixCount = 
+            if (numPEs == 1)
+              MixedRadix.toDigitSeqMSDFirst(count, radicesHighFirst = stagesNew)  
+            else 
+              MixedRadix.toDigitSeqMSDFirst(count, radicesHighFirst = stagesShifted)  
+
+          // Pad to correct # of digits
+          val mixedRadixCountPadded = Seq.fill(stagesLen - tempMixedRadixCount.length)(0) ++ tempMixedRadixCount
+
+          val mixedRadixCount =
+            if (numPEs == 1)
+              mixedRadixCountPadded
+            else
+              // Shift back to match IO ordering: must be done after padding!
+              mixedRadixCountPadded.drop(shiftCount) ++ mixedRadixCountPadded.dropRight(stagesNew.length - shiftCount)
+
+          CalcCtrlTests(
+            n = mixedRadixCount,
+            rad = srad,
+            stageNum = idx
+          )
         }
-        val addrs = Seq(addr0) ++ (1 until countInfo.rad).map { case i =>
-          // Need to do this here too
-          if (countInfo.stageNum == countIdxToDivide)
-            addr0 + (i / numPEs) * currentStageAddressConstant
+
+        // Should be a separate block, done as an incremental step
+        val schedule = for (countInfo <- possibleCounts) yield {
+          val nCount = countInfo.n
+          val currentStageAddressConstant = addressConstants(countInfo.stageNum)
+          // Note: For FFT = 9 * 9 * 2, either you can use 9 * (3 * 3) * 2 i.e. count with n1, n2a, n2b, n3
+          // which requires banking to be modified to: include 3 * n2a + n2b OR
+          // (what is currently done): keeps as 9 * 9 * 2 with n1, n2, n3, except for addrss generation, use floor(n2 / 3) with LUT
+          val addr0 = nCount.zip(addressConstants.zipWithIndex).map { case (n, (ac, idx)) => 
+            if (idx == countIdxToDivide)
+              // FLOOR! -- important to divide n first before multiplying by the address constant
+              // Power of 2 is the simplest case (just shift)
+              (n / numPEs) * ac
+            else 
+              n * ac
+          }.sum
+          // Note that #PEs * [0, maxRad) < maxNumBanks!
+          val bank0 = nCount.zip(bankMul).map { case (n, m) => n * m }.sum % maxNumBanks
+          val banks = Seq(bank0) ++ (1 until countInfo.rad).map { case i => 
+            (bank0 + i * bankMul(countInfo.stageNum)) % maxNumBanks
+          }
+          val addrs = Seq(addr0) ++ (1 until countInfo.rad).map { case i =>
+            // Need to do this here too
+            if (countInfo.stageNum == countIdxToDivide)
+              addr0 + (i / numPEs) * currentStageAddressConstant
+            else
+              addr0 + i * currentStageAddressConstant
+          }
+          countInfo.copy(bank = banks, addr = addrs)
+        }
+           
+        val testScheduleTemp = 
+          // TODO: Check that this is sufficiently generic (???) 
+          if (leftMostIdxOfMaxRad == idx && !stages.contains(numPEs))
+            schedule.toList.grouped(numPEs).toList
           else
-            addr0 + i * currentStageAddressConstant
-        }
-        countInfo.copy(bank = banks, addr = addrs)
+            schedule.toList.grouped(numPEsPerStage / numPEs).toList.transpose
+
+        val isGoodSchedule = testScheduleTemp.map { case group =>
+          val groupedBankSet = group.map(_.bank).flatten
+          val groupedAddrSet = group.map(_.addr)
+          // Banks accessed simultaneously should be unique
+          // Addresses per PE should be the same (not required, just makes life easier if true? -- seems like it doesn't work that well)
+          (groupedBankSet.distinct.length == groupedBankSet.length) // && (groupedAddrSet.distinct.length == 1)
+        }.reduce(_ & _)
+        (schedule, isGoodSchedule, shiftCount)
       }
+
+      val goodSchedule = possibleSchedule.find { case (schedule, isGoodSchedule, shiftCount) => isGoodSchedule }
+      goodSchedule match {
+        case None =>
+          (possibleSchedule(0)._1, -1)
+        case Some(sch) =>
+          (sch._1, sch._3)
+      }      
     }
 
-    testVectors foreach { case stage =>
-      println(s"Stage: ${stage.head.rad}")
-      stage foreach { case count =>
+    testVectors foreach { case (stageCounts, shiftCount) =>
+      println(s"Stage: ${stageCounts.head.rad}")
+      println(s"Least significant digit shift (from right): $shiftCount")
+      stageCounts foreach { case count =>
         count.print()
       }
     }
@@ -266,13 +280,15 @@ object Scheduler {
       Seq.fill(memLen)(b).zip(0 until memLen)
     }.flatten.sorted
 
-    testVectors foreach { case stage =>
+    testVectors foreach { case (stageCounts, shiftCount) =>
       // Already sorted address first
-      val stageDataLocs = stage.map { case count =>
+      val stageDataLocs = stageCounts.map { case count =>
         count.bank.zip(count.addr)
       }.flatten.sorted
-      require(completeDataLocs == stageDataLocs, s"This combination doesn't cover all data locations :(. Stage Idx: ${stage.head.stageNum}")
+      require(completeDataLocs == stageDataLocs, s"This combination doesn't cover all data locations :(. Stage Idx: ${stageCounts.head.stageNum}")
     }
+
+    testVectors
 
   }
 
@@ -289,71 +305,25 @@ object Scheduler {
 
 /*
 
-Use the most of the smallest radix 
+// original FFT + 675 + 864 + 800 + 3780
 
-
-
-
-For each stage, split into # PE groups. 0th element of ith group should then be merged -- should have same address but diff banks
 Build visualizer
-How to modify count to make it work??? -- circular count
+
 Minimize banks! + twiddle factors (i.e. rather do more 3's to bring down cycle count rather than also do for 4's which already don't have that many PEs per stage)
-
-
-
-
-
-
 
 // get original FFT, see if calc too high, if so, split minimum that works....
 
 make sure uniquness still holds for all of LTE (with # calc cycles...)
-then properly schedule --> rotate count
-
-
-
-
-
-
-
- // separate N / current stage into groups of (N/current stage/# PEs)
-    //require(stages.contains(numPEs), "# PEs must equal a valid stage radix")
-    // group # + 1 together -- check that they're diff (diff bank, same addr)
-
-
-
-
-
-
-
-
-
 
 4 * 4 * 3 * 3 * 5 * 5 -- try 4, 3, 5
 
 // Try for all FFT sizes supported!!
 
-// TODO: Count differently (reduce # of counts) -- same address, diff banks
-
-Get rid of right most count [n1 + n2 + 3*n3] % 9 
-
 Pease is better except for reconfigurability
-
-get rid of left count (for radix 2 stg can have >2 in parallel)
 
 doubling up on smaller radix butterlfy is less power and more useful (to meet CC requirements)
 need new twiddle
 
-when # PEs = 4 but you actually want 2.... go to next highest
-
-
-
-
-
-coprime to the right (wrap) if right < PE else 1???
-
 when # PEs is 2, but can group by 4 -- can do more per stage?
-
-
 
 */
