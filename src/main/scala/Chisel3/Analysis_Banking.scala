@@ -1,6 +1,30 @@
 package dspblocks.fft
 import org.scalatest.{FlatSpec, Matchers}
 import dsptools.numbers._
+import org.json4s._
+import org.json4s.JsonDSL._
+import org.json4s.jackson.JsonMethods._
+import com.gilt.handlebars.scala.binding.dynamic._
+// import com.gilt.handlebars.scala.Handlebars
+import scala.io.Source
+
+case class ScheduledCalcParams(
+  fftn: Int,
+  stageInfo: Seq[StageInfo],
+  maxNumParallelPEs: Int,
+  maxNumBanks: Int,
+  memLen: Int,
+  maxRad: Int
+)
+case class StageInfo(
+  rad: Int,
+  n: Seq[Seq[Int]],
+  bank: Seq[Seq[Int]],
+  addr: Seq[Seq[Int]],
+  shiftCount: Int
+) {
+  def toJSONTuples = ("rad" -> rad) ~ ("n" -> n) ~ ("bank" -> bank)
+}
 
 // 1) Check that all expected banks/addresses are used, without redundancies per stage
 
@@ -11,6 +35,29 @@ class BankSpec extends FlatSpec with Matchers {
   case class PETests(fft: Int, numPEs: Int)
 
   val testsLong = Seq(
+    PETests(fft = 9 * 9 * 2, numPEs = 1),
+    PETests(fft = 9 * 9 * 3 * 2, numPEs = 1),
+    PETests(fft = 4 * 3, numPEs = 1),
+    PETests(fft = 5 * 4 * 3, numPEs = 1),
+    PETests(fft = 4 * 3 * 5, numPEs = 1),
+    PETests(fft = 4 * 4 * 3, numPEs = 1), 
+    PETests(fft = 4 * 3 * 3, numPEs = 1), 
+    PETests(fft = 2 * 3 * 3, numPEs = 1), 
+    PETests(fft = 4 * 3 * 3 * 3, numPEs = 1), 
+    PETests(fft = 2 * 3 * 3 * 3, numPEs = 1), 
+    PETests(fft = 3 * 5 * 5, numPEs = 1), 
+    PETests(fft = 3 * 3 * 5, numPEs = 1),
+    PETests(fft = 5 * 3 * 3 * 3, numPEs = 1), 
+    PETests(fft = 4 * 4 * 5, numPEs = 1),
+    PETests(fft = 4 * 5 * 5, numPEs = 1), 
+    PETests(fft = 2 * 5 * 5, numPEs = 1), 
+    PETests(fft = 4 * 4 * 4 * 3, numPEs = 1),
+    PETests(fft = 5 * 5 * 4 * 3, numPEs = 1),
+    PETests(fft = 4 * 2 * 3, numPEs = 1), 
+    PETests(fft = 4 * 2 * 5, numPEs = 1),
+    PETests(fft = 5 * 4 * 4, numPEs = 1),
+    PETests(fft = 4 * 4 * 3, numPEs = 1),
+
     // WFTA currently doesn't support this
     // PETests(fft = 9 * 9 * 2, numPEs = 3),
     // PETests(fft = 9 * 9 * 3 * 2, numPEs = 3),
@@ -45,7 +92,11 @@ class BankSpec extends FlatSpec with Matchers {
 
     // See "testScheduleTemp" for conditions -- requires special grouping
     PETests(fft = 5 * 4 * 4, numPEs = 2),
-    PETests(fft = 4 * 4 * 3, numPEs = 2)
+    PETests(fft = 4 * 4 * 3, numPEs = 2),
+
+    // Duplicates
+    PETests(fft = 4 * 4 * 3, numPEs = 1), 
+    PETests(fft = 4 * 4 * 3, numPEs = 4) 
   )
 
   val tests = testsLong.slice(0, testsLong.length)
@@ -64,7 +115,7 @@ class BankSpec extends FlatSpec with Matchers {
     val fftParams = PeelingScheduling.getFFTParams(test.fft)
     val stages = fftParams.calc.getStages.head.stages
     println(s"\nFFT Stages: ${stages.mkString(", ")}, # PEs: ${test.numPEs}")
-    tvs.map { case (stageCounts, shiftCount) =>
+    tvs.map { case (stageCounts, combinedStageCounts, shiftCount, stageCountsNoShift) =>
       println(s"Stage: ${stageCounts.head.rad}")
       println(s"Least significant digit shift for counting (from right): $shiftCount")
       shiftCount == -1
@@ -77,20 +128,21 @@ class BankSpec extends FlatSpec with Matchers {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-case class CalcCtrlTests(
-  n: Seq[Int] = Seq.empty,
-  rad: Int = 0,
-  stageNum: Int = 0,
-  bank: Seq[Int] = Seq.empty,
-  addr: Seq[Int] = Seq.empty
-) {
-  def print() = 
-    println("ns: " + n.mkString(", ") + "\t banks: " + bank.mkString(", ") + "\t addrs: " + addr.mkString(", "))
-}
-
 object Scheduler {
 
-  def run(fftType: FFTType, stages: Seq[Int], numPEs: Int): Seq[(Seq[CalcCtrlTests], Int)] = {
+  def run(fftType: FFTType = DIF, stages: Seq[Int], numPEs: Int) = { 
+
+    // Internal
+    case class CalcCtrlStageSeq(
+      n: Seq[Int] = Seq.empty,
+      rad: Int = 0,
+      stageNum: Int = 0,
+      bank: Seq[Int] = Seq.empty,
+      addr: Seq[Int] = Seq.empty
+    ) {
+      def print() = 
+        println("ns: " + n.mkString(", ") + "\t banks: " + bank.mkString(", ") + "\t addrs: " + addr.mkString(", "))
+    }
 
     val maxRad = stages.max
     val fft = stages.filterNot(_ == 0).product
@@ -183,28 +235,24 @@ object Scheduler {
         // Seems you have to shift less (different amounts of shift per stage of each FFT) when max radix is the left-most
         // But keep IO stuff static, so only shift for calculation!
         // If this is a constant amount, then there's no extra hardware required
-        val shiftCount = (shiftCountOffset + (stagesNew.length - leftMostIdxOfMaxRad)) % stages.length
+        val shiftCount = 
+          if (numPEs == 1)
+            0
+          else
+            (shiftCountOffset + (stagesNew.length - leftMostIdxOfMaxRad)) % stages.length
         val stagesShifted = stagesNew.drop(stagesNew.length - shiftCount) ++ stagesNew.dropRight(shiftCount)
 
         val possibleCounts = for (count <- 0 until numPEsPerStage) yield {
 
-          val tempMixedRadixCount = 
-            if (numPEs == 1)
-              MixedRadix.toDigitSeqMSDFirst(count, radicesHighFirst = stagesNew)  
-            else 
-              MixedRadix.toDigitSeqMSDFirst(count, radicesHighFirst = stagesShifted)  
+          val tempMixedRadixCount = MixedRadix.toDigitSeqMSDFirst(count, radicesHighFirst = stagesShifted)  
 
           // Pad to correct # of digits
           val mixedRadixCountPadded = Seq.fill(stagesLen - tempMixedRadixCount.length)(0) ++ tempMixedRadixCount
 
-          val mixedRadixCount =
-            if (numPEs == 1)
-              mixedRadixCountPadded
-            else
-              // Shift back to match IO ordering: must be done after padding!
-              mixedRadixCountPadded.drop(shiftCount) ++ mixedRadixCountPadded.dropRight(stagesNew.length - shiftCount)
+          // Shift back to match IO ordering: must be done after padding!
+          val mixedRadixCount = mixedRadixCountPadded.drop(shiftCount) ++ mixedRadixCountPadded.dropRight(stagesNew.length - shiftCount)
 
-          CalcCtrlTests(
+          CalcCtrlStageSeq(
             n = mixedRadixCount,
             rad = srad,
             stageNum = idx
@@ -255,32 +303,74 @@ object Scheduler {
           // Addresses per PE should be the same (not required, just makes life easier if true? -- seems like it doesn't work that well)
           (groupedBankSet.distinct.length == groupedBankSet.length) // && (groupedAddrSet.distinct.length == 1)
         }.reduce(_ & _)
-        (schedule, isGoodSchedule, shiftCount)
+        (schedule, testScheduleTemp, isGoodSchedule, shiftCount)
       }
 
-      val goodSchedule = possibleSchedule.find { case (schedule, isGoodSchedule, shiftCount) => isGoodSchedule }
+      val goodSchedule = possibleSchedule.find { case (schedule, combinedSchedule, isGoodSchedule, shiftCount) => isGoodSchedule }
       goodSchedule match {
         case None =>
-          (possibleSchedule(0)._1, -1)
+          (possibleSchedule(0)._1, possibleSchedule(0)._2, -1, possibleSchedule(0)._1)
         case Some(sch) =>
-          (sch._1, sch._3)
+          // Last is without shift
+          (sch._1, sch._2, sch._4, possibleSchedule(0)._1)
       }      
     }
 
-    testVectors foreach { case (stageCounts, shiftCount) =>
-      println(s"Stage: ${stageCounts.head.rad}")
+    val (unsortedStageInfos, sortedStageInfos) = testVectors.map { case (stageCounts, combinedStageCounts, shiftCount, stageCountsNoShift) =>
+      val stageRad = stageCounts.head.rad
+      println(s"Stage: $stageRad")
       println(s"Least significant digit shift (from right): $shiftCount")
-      stageCounts foreach { case count =>
-        count.print()
+      combinedStageCounts foreach { case countSeq =>
+        countSeq foreach { case count =>
+          count.print()
+        }
+        println("----------")
       }
-    }
+      val flattenedCombinedStageCounts = combinedStageCounts.flatten
+      val unsorted = StageInfo(
+        rad = stageRad,
+        shiftCount = 0,
+        n = stageCountsNoShift.map(_.n),
+        bank = stageCountsNoShift.map(_.bank),
+        addr = stageCountsNoShift.map(_.addr)
+      )
+      val sorted = unsorted.copy(
+        shiftCount = shiftCount,
+        n = flattenedCombinedStageCounts.map(_.n),
+        bank = flattenedCombinedStageCounts.map(_.bank),
+        addr = flattenedCombinedStageCounts.map(_.addr)
+      )
+      (unsorted, sorted)
+    }.unzip
+
+    val unsortedScheduledCalcParams = ScheduledCalcParams(
+      fftn = fft,
+      stageInfo = unsortedStageInfos,
+      maxNumParallelPEs = numPEs,
+      maxNumBanks = maxNumBanks,
+      memLen = memLen,
+      maxRad = maxRad
+    )
+
+    val scheduledCalcParams = unsortedScheduledCalcParams.copy(
+      stageInfo = sortedStageInfos
+    )
+
+    val jsonUnsorted = compact(render(unsortedScheduledCalcParams.stageInfo.map(_.toJSONTuples)))
+    val jsonSorted = compact(render(scheduledCalcParams.stageInfo.map(_.toJSONTuples)))    
+
+    val htmlTemplate = Source.fromFile("visualization/scheduling_example.html").getLines.mkString("\n")
+    val unsortedHtml = htmlTemplate.replace("{{#json}}", jsonUnsorted)
+    val sortedHtml = htmlTemplate.replace("{{#json}}", jsonSorted)
+    scala.tools.nsc.io.File(s"visualization/out/${fft}_${numPEs}_sorted.html").writeAll(sortedHtml)
+    scala.tools.nsc.io.File(s"visualization/out/${fft}_${numPEs}_unsorted.html").writeAll(unsortedHtml)
 
     // All data locations should be exercised (sorted bank, address)
     val completeDataLocs = (0 until maxNumBanks).map { case b =>
       Seq.fill(memLen)(b).zip(0 until memLen)
     }.flatten.sorted
 
-    testVectors foreach { case (stageCounts, shiftCount) =>
+    testVectors foreach { case (stageCounts, combinedStageCounts, shiftCount, stageCountsNoShift) =>
       // Already sorted address first
       val stageDataLocs = stageCounts.map { case count =>
         count.bank.zip(count.addr)
@@ -294,16 +384,32 @@ object Scheduler {
 
 }
 
-
-
-
-
-
-
-
-
-
 /*
+
+if !stages.contains(numPEs) & numPEsinParallsl > 1
+  x + i, count should be + numPEs instead of + 1
+else if numPEsinParallel > 1
+group: x + (numPEsPerStage/PE) * i, where i [0, numPEs), count up to stagePEs/numPEs 
+
+//////
+
+totalCalcCycles
+  * lower until meets spec -- parallelize smallest radix, right most so no twiddles
+stages (including padding 0), stagesLen, stagesShortLen, stagesShort, leftMostIdxOfMaxRad
+numPEsNotInStages (i.e. 2 for 4 4 3)
+countIdxToDivide
+  * only used for PE = 2, FFT = 4 * 4 * 3; generally -1 = don't care; signals renormalizing n before multiplying by ac
+addressConstants
+bankMul
+per stage:
+  bank, addr, n: Seq[Seq[Seq[Int]]]
+  numPEsPerStage
+  numPEsInGroup
+  numParallelPEsPerStage
+    * start w/ PE = 1, then go PE > prev PE and used radix. In bounds? If less, then optimize small -> large radix. Ideally 1 or worstCase
+  numCycles, numCycles with pipe
+
+// fft test vectors
 
 // original FFT + 675 + 864 + 800 + 3780
 

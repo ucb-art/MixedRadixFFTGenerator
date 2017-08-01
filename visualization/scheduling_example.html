@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scheduling</title>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+</head>
+<body>
+<script type="text/javascript">
+
+function subscript(selection, text, sub) {
+  selection.selectAll("tspan").remove();
+  selection.append("tspan").text(text);
+  selection.append("tspan")
+    .attr("baseline-shift", "sub")
+    .style("font-size", "60%")
+    .text(sub);
+}
+
+var topRowOffset = 3;
+var delimThickness = 5;
+
+var groupSpacing = 50;
+var squareSide = 28;
+var xSpacing = 3;
+var xSquareDelta = squareSide + xSpacing;
+var xSquareOffset = squareSide / 2;
+var ySquareOffset = squareSide / 2;
+var ySpacing = 3;
+var ySquareDelta = squareSide + ySpacing;
+var squareCorner = 3;
+var nToRectSpacing = 8;
+var xNsDelta = xSquareDelta - xSpacing * 2;
+var headerGapScale = 1.3;
+
+var titleFontFamily = "Century Gothic";
+var fontFamily = "Calibri";
+var squareFontSize = "20px";
+var headerFontSize = "16px";
+var titleFontSize = "20px";
+var nsFontSize = "16px";
+var squareFontFill = "white";
+var headerFontFill = "black";
+var titleFontFill = "black";
+var nsFontFill = "black";
+var delimColor = "lightgray";
+
+var data = {{#json}};
+
+var numNs = data[0].n[0].length;
+var numBanks = 0;
+
+for (peIdx = 0; peIdx < data[0].n.length; peIdx++) { 
+  var peBanks = data[0].bank[peIdx];
+  var peBanksMax = Math.max.apply(Math, peBanks);
+  if (peBanksMax > numBanks) {
+    numBanks = peBanksMax;
+  }
+}
+
+var svgContainer = d3.select("body").append("svg").attr("width", "1000px").attr("height", "1000px");
+var stageX = 0;
+var maxStageHeight = 0;
+var stageXs = [];
+
+for (stgIdx = 0; stgIdx < data.length; stgIdx++) {
+  var stageGroup = svgContainer.append("g").attr("transform", "translate(" + stageX + ", 0)");
+  var nsGroup = stageGroup.append("g");
+  for (peIdx = 0; peIdx < data[stgIdx].n.length; peIdx++) {
+    for (nsIdx = 0; nsIdx < data[stgIdx].n[peIdx].length; nsIdx++) {
+      if (peIdx == 0) {
+        var nName = nsGroup.append("text");
+        var nNameAttributes = nName
+                            .attr("x", xSquareOffset + nsIdx * xNsDelta) 
+                            .attr("y", ySquareOffset * headerGapScale + (topRowOffset - 1) * ySquareDelta)  
+                            .attr("text-anchor", "middle")
+                            .attr("alignment-baseline", "central")
+                            .attr("font-family", fontFamily)
+                            .attr("font-size", headerFontSize)
+                            .attr("fill", headerFontFill)
+                            .attr("font-weight", "bold"); 
+        subscript(nName, "m", (numNs - 1) - nsIdx)    
+      }
+
+      var nCurr = data[stgIdx].n[peIdx][nsIdx]
+      var nTxt = nsGroup.append("text");
+      var nTxtAttributes = nTxt
+                            .attr("x", xSquareOffset + nsIdx * xNsDelta) 
+                            .attr("y", ySquareOffset + (topRowOffset + peIdx) * ySquareDelta)  
+                            .text(nCurr)
+                            .attr("text-anchor", "middle")
+                            .attr("alignment-baseline", "central")
+                            .attr("font-family", fontFamily)
+                            .attr("font-size", nsFontSize)
+                            .attr("fill", nsFontFill);       
+    }
+  }
+  var nsXCenter = nsGroup.node().getBBox().width / 2  + xSquareOffset / 2 - nToRectSpacing / 2;
+
+  var nTitle = nsGroup.append("text");
+  var nTitleAttributes = nTitle
+                          .attr("x", nsXCenter) 
+                          .attr("y", ySquareOffset * headerGapScale + (topRowOffset - 2) * ySquareDelta)  
+                          .attr("text-anchor", "middle")
+                          .attr("alignment-baseline", "central")
+                          .attr("font-family", fontFamily)
+                          .attr("font-size", headerFontSize)
+                          .attr("fill", headerFontFill)
+                          .attr("font-style", "italic")
+                          .attr("font-weight", "bold")
+                          .text("Counts"); 
+        
+  var nsGroupWidth = nsGroup.node().getBBox().width + nToRectSpacing + xSquareOffset;
+  var banksGroup = stageGroup.append("g").attr("transform", "translate(" + nsGroupWidth + ", 0)");
+  for (peIdx = 0; peIdx < data[stgIdx].n.length; peIdx++) {
+    for (bankIdx = 0; bankIdx < data[stgIdx].bank[peIdx].length; bankIdx++) {
+
+      if (peIdx == 0) {
+        var bankName = banksGroup.append("text");
+        var bankNameAttributes = bankName
+                            .attr("x", xSquareOffset + bankIdx * xSquareDelta) 
+                            .attr("y", ySquareOffset * headerGapScale + (topRowOffset - 1) * ySquareDelta)  
+                            .attr("text-anchor", "middle")
+                            .attr("alignment-baseline", "central")
+                            .attr("font-family", fontFamily)
+                            .attr("font-size", headerFontSize)
+                            .attr("fill", headerFontFill)
+                            .attr("font-weight", "bold"); 
+        subscript(bankName, "b", bankIdx)    
+      }
+
+      var currBank = data[stgIdx].bank[peIdx][bankIdx]
+      var bankRect = banksGroup.append("rect");
+      var bankTxt = banksGroup.append("text");
+      // https://bl.ocks.org/pstuffa/d5934843ee3a7d2cc8406de64e6e4ea5
+      var squareAttributes = bankRect
+                            .attr("x", bankIdx * xSquareDelta) // Left
+                            .attr("y", (topRowOffset + peIdx) * ySquareDelta)   // Top
+                            .attr("width", squareSide)
+                            .attr("height", squareSide)
+                            .style("fill", d3.interpolateRainbow(currBank / numBanks))  // Warm is also OK
+                            .attr("rx", squareCorner)        
+                            .attr("ry", squareCorner); 
+      // https://www.dashingd3js.com/svg-text-element
+      var bankTxtAttributes = bankTxt
+                            .attr("x", xSquareOffset + bankIdx * xSquareDelta) 
+                            .attr("y", ySquareOffset + (topRowOffset + peIdx) * ySquareDelta)   
+                            .text(currBank)
+                            .attr("text-anchor", "middle")
+                            .attr("alignment-baseline", "central")
+                            .attr("font-family", fontFamily)
+                            .attr("font-size", squareFontSize)
+                            .attr("fill", squareFontFill);       
+    }
+  }
+
+  var banksXCenter = banksGroup.node().getBBox().width / 2  + xSquareOffset / 2 - nToRectSpacing / 2;
+  var bankTitle = banksGroup.append("text");
+  var bankTitleAttributes = bankTitle
+                          .attr("x", banksXCenter) 
+                          .attr("y", ySquareOffset * headerGapScale + (topRowOffset - 2) * ySquareDelta)  
+                          .attr("text-anchor", "middle")
+                          .attr("alignment-baseline", "central")
+                          .attr("font-family", fontFamily)
+                          .attr("font-size", headerFontSize)
+                          .attr("fill", headerFontFill)
+                          .attr("font-style", "italic")
+                          .attr("font-weight", "bold")
+                          .text("Banks"); 
+  
+  var stageBB = stageGroup.node().getBBox();
+  stageX = stageX + stageBB.width + groupSpacing;
+  stageXs.push(stageX); 
+
+  var stageXCenter = stageBB.width / 2 + xSquareOffset / 2;
+  var stageTitle = stageGroup.append("text");
+  var stageTitleAttributes = stageTitle
+                          .attr("x", stageXCenter) 
+                          .attr("y", ySquareOffset * headerGapScale + (topRowOffset - 3) * ySquareDelta)  
+                          .attr("text-anchor", "middle")
+                          .attr("alignment-baseline", "central")
+                          .attr("font-family", titleFontFamily)
+                          .attr("font-size", titleFontSize)
+                          .attr("fill", titleFontFill)
+                          .attr("font-weight", "bold")
+                          .text("Stage " + stgIdx + ": Radix " + data[stgIdx].rad); 
+  stageBB = stageGroup.node().getBBox();
+  if (stageBB.height > maxStageHeight) {
+    maxStageHeight = stageBB.height;
+  }   
+}
+
+for (i = 0; i < stageXs.length - 1; i++) {
+  var stageX = stageXs[i];
+  var delimRect = svgContainer.append("rect");
+  var delimAttributes = delimRect
+                         // TODO: This is wrong!
+                        .attr("x", stageX - groupSpacing / 2 + delimThickness / 2)
+                        .attr("y", ySquareOffset / 2)
+                        .attr("width", delimThickness)
+                        .attr("height", maxStageHeight + ySquareOffset / 2)
+                        .style("fill", delimColor);
+}
+
+</script> 
+</body>
+</html>
