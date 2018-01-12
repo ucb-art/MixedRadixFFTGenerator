@@ -11,3 +11,9 @@ src/main/resources/Matlab/generated/
 *.gtkw
 analysis/
 visualization/out/*
+ADCCollectDebug*
+FFTDebug*
+ffast_bins
+ffast_reals
+ffast_imags
+in_large

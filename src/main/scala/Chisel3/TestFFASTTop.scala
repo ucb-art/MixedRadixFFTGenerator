@@ -142,6 +142,12 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     }.head
     1 << groupIdx
   }
+
+  c.ffastParams.getSubFFTDelayKeys foreach { case (n, ph) =>
+    val x = getEnable(n, ph)
+    println(s"#define EN_${n}_${ph} $x")
+  }
+
   def getAllEnable: Int = {
     val fftGroups = c.ffastParams.getSubFFTDelayKeys  
     fftGroups.map { case (n, ph) => getEnable(n, ph) }.sum
@@ -481,7 +487,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     }
   }
 
-  def runDebug(state: String, stopIdx: Int = -1) = {
+  def runDebug(state: String, stopIdx: Int = -1, print: Boolean = false) = {
     updatableDspVerbose.withValue(false) { 
       cycleThroughUntil(state) 
       poke(c.io.scr.ctrlMemReadFromCPU.re, getAllEnable)
@@ -491,6 +497,14 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         step(subsamplingT)
       }
     }
+
+    if (print) c.ffastParams.getSubFFTDelayKeys.map { case (n, ph) => 
+      val reals = peekedResultsBigInts(n, ph).toList.map(_.real)
+      val imags = peekedResultsBigInts(n, ph).toList.map(_.imag)
+      scala.tools.nsc.io.File(s"${state}_${n}_${ph}_reals").writeAll(reals.mkString(",\n"))
+      scala.tools.nsc.io.File(s"${state}_${n}_${ph}_imags").writeAll(imags.mkString(",\n"))
+    }
+
   }
 
   def writeInDebug(debugNext: DebugNext, flipInput: Boolean, customInput: Option[Seq[Complex]]): DebugNext = {
@@ -744,6 +758,10 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   val fftLargeOutIdxs = FFTTestVectors.expectedSubSampleLocations(inLarge, zeroThresholdPwr = fftLargeThreshold, disp = true)
 
   runADC(customInput = Some(inLargeReal))
+  scala.tools.nsc.io.File("in_large").writeAll(inLargeReal.map(x => FixedPoint.toBigInt(x, fpBP)).mkString(",\n"))
+  runDebug("ADCCollectDebug", print = true)
+  runDebug("FFTDebug", print = true)
+
   /*
   runDebug("ADCCollectDebug")
   // TODO: Don't use complex
@@ -813,6 +831,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   }
 */
   // TODO: Expect, don't hard code
+  /*
   val seTest = 
     SingletonEstimatorTest(c.ffastParams, subFFT = 675, subFFTIdx = 135, binLoc = 12960, isSingleton = true, 
       delayedIns = Seq(
@@ -824,12 +843,14 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
         19 -> Complex(-0.08087959862445164, 0.05879325658840878)
       ).toMap
     )
-
+  */
   poke(c.io.peelScr.singletonEstCurrentFFTBools, 1)
   poke(c.io.peelScr.singletonEstSubFFTIdx, 135)
+  /*
   c.ffastParams.adcDelays.foreach { d =>
     poke(c.io.peelScr.singletonIns(d), seTest.delayedIns(d))
   }
+  */
   step(subsamplingT * 70)
   peek(c.io.peelScr.seBinType("zero"))
   peek(c.io.peelScr.seBinType("single"))
@@ -838,6 +859,7 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
   peek(c.io.peelScr.seBinSignal)
 
   val ffastBins = scala.collection.mutable.ArrayBuffer[Int]()
+  val ffastResults = scala.collection.mutable.ArrayBuffer[PeekedComplexBigInt]()
 
   cycleThroughUntil(lastState)
   val lastPointerFound = peek(c.io.peelScr.ffastFoundPointer)
@@ -846,8 +868,21 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
     poke(c.io.peelScr.ffastOutRIdx, i)
     step(subsamplingT * 5)
     peek(c.io.peelScr.ffastOutVal)
+
+    // FOR ROCKET-CHIP TESTING
+    val realPeek = dspPeekWithBigInt(c.io.peelScr.ffastOutVal.real)._2
+    val imagPeek = dspPeekWithBigInt(c.io.peelScr.ffastOutVal.imag)._2
+    ffastResults += PeekedComplexBigInt(real = realPeek, imag = imagPeek)
+            
     ffastBins += peek(c.io.peelScr.ffastOutBin)
   }
+
+  val reals = ffastResults.toList.map(_.real)
+  val imags = ffastResults.toList.map(_.imag)
+
+  scala.tools.nsc.io.File(s"ffast_reals").writeAll(reals.mkString(",\n"))
+  scala.tools.nsc.io.File(s"ffast_imags").writeAll(imags.mkString(",\n"))
+  scala.tools.nsc.io.File(s"ffast_bins").writeAll(ffastBins.toList.mkString(",\n"))
 
   val ffastOutBins = ffastBins.toSeq
   val falsePositives = ffastOutBins.diff(fftLargeOutIdxs)
