@@ -654,15 +654,15 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
 
         updatableDspVerbose.withValue(true) {
           c.ffastParams.subFFTns.zipWithIndex.foreach { case (n, idx) =>
-            println(dspPeekWithBigInt(c.io.peelScr.zeroThresholdPwr(n))._2)
-            println(dspPeekWithBigInt(c.io.peelScr.sigThresholdPwr(n))._2)
-            println(dspPeekWithBigInt(c.io.peelScr.sigThresholdPwrMulDlys(n))._2)
+            println(dspPeekWithBigInt(c.io.peelScr.zeroThresholdPwr(n))._2.toString)
+            println(dspPeekWithBigInt(c.io.peelScr.sigThresholdPwr(n))._2.toString)
+            println(dspPeekWithBigInt(c.io.peelScr.sigThresholdPwrMulDlys(n))._2.toString)
 
             c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
-              println(dspPeekWithBigInt(c.io.peelScr.delayCalcConstants(n)(id))._2)
+              println(dspPeekWithBigInt(c.io.peelScr.delayCalcConstants(n)(id))._2.toString)
             }
             c.ffastParams.adcDelays foreach { case d =>
-              println(dspPeekWithBigInt(c.io.peelScr.delayCalibration(n)(d))._2)
+              println(dspPeekWithBigInt(c.io.peelScr.delayCalibration(n)(d))._2.toString)
             }
           }  
         }
