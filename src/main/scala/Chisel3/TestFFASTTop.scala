@@ -651,6 +651,22 @@ class FFASTTopTester[T <: Data:RealBits](c: FFASTTopWrapper[T]) extends DspTeste
           // Senssiitivity to delay offset
           //poke(c.io.peelScr.delayCalibration(n)(d), d.toDouble + (-1 + idx.toDouble) / 250)
         }
+
+        updatableDspVerbose.withValue(true) {
+          c.ffastParams.subFFTns.zipWithIndex.foreach { case (n, idx) =>
+            println(dspPeekWithBigInt(c.io.peelScr.zeroThresholdPwr(n))._2)
+            println(dspPeekWithBigInt(c.io.peelScr.sigThresholdPwr(n))._2)
+            println(dspPeekWithBigInt(c.io.peelScr.sigThresholdPwrMulDlys(n))._2)
+
+            c.ffastParams.delayConstants.zipWithIndex foreach { case (const, id) =>
+              println(dspPeekWithBigInt(c.io.peelScr.delayCalcConstants(n)(id))._2)
+            }
+            c.ffastParams.adcDelays foreach { case d =>
+              println(dspPeekWithBigInt(c.io.peelScr.delayCalibration(n)(d))._2)
+            }
+          }  
+        }
+
       }
     }
   }
