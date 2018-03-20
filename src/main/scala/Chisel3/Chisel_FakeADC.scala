@@ -49,13 +49,13 @@ class FakeADCSpec extends FlatSpec with Matchers {
 }
 
 class FakeADCTester(c: FakeADCWrapper[FixedPoint]) extends DspTester(c) {
-  val ins = (-5.0 until 5.0 by 0.1) ++ Seq(0.0)
-  val outs = Seq(ins.last) ++ ins.init
-
+  val ins = (-5.0 until 5.0 by 0.1) ++ Seq.fill(2)(0.0)
+  val outs = Seq.fill(2)(ins.last) ++ ins.init.init
+  // Delay of 2
   ins.zip(outs).zipWithIndex foreach { case ((in, out), idx) =>
     poke(c.io.analogIn, in)
     // Last bit of digitizer is uncertain (hence need options1Tol)
-    if (idx > 0) expect(c.io.digitalOut, out)
+    if (idx > 1) expect(c.io.digitalOut, out)
     step(1)
   }
 
