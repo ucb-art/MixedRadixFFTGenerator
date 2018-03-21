@@ -17,6 +17,8 @@ import barstools.tapeout.TestParams
 import dsptools.{DspTesterOptions}
 import chisel3.iotesters.TesterOptions
 
+import firrtl._
+
 object QAM16 {
   val map = Seq(
     Complex(-3, -3),
@@ -116,9 +118,9 @@ object SER {
     val imagFFTBits = imagADCBits + BigInt(fftn - 1).bitLength
     val worstFFTBits = Seq(realFFTBits, imagFFTBits).max
 
-    def runChisel[T <: Data:RealBits](genADC: => T, genFFT: => T): Seq[Double] = {
+    def runChisel[T <: Data:RealBits](genADC: => T, genFFT: => T, outDir: String): Seq[Double] = {
       RXResults.storedDemod.clear()
-      dsptools.Driver.execute(() => new Receiver(genADC = genADC, genFFT = genFFT, 16, fftn), TestParams2.options1Tol) { c =>
+      dsptools.Driver.execute(() => new Receiver(genADC = genADC, genFFT = genFFT, 16, fftn), TestParams2.options1Tol(outDir)) { c =>
         new RXTester(c, insLong)
       } 
 
@@ -135,7 +137,7 @@ object SER {
       chiselResult
     }  
 
-    val adcNumBits = Seq(8, 12, 16)
+    val adcNumBits = Seq(4, 8, 16)
     val fftNumBits = Seq(12, 14, 16)
 
     // Initial: Horizontal: SNR, Vertical: Bits
@@ -143,13 +145,16 @@ object SER {
     val fpChiselResults = adcNumBits.map { case adcBits =>
       fftNumBits.map { case fftBits =>
         println(s"ADC Bits: $adcBits , FFT Bits: $fftBits")
-        val genADC = FixedPoint(adcBits.W, (adcBits - (worstADCBits + 1)).BP)
-        val genFFT = FixedPoint(fftBits.W, (fftBits - (worstFFTBits + 1)).BP)
-        runChisel(genADC, genFFT).toList
+        val fftBP = fftBits - (worstFFTBits + 1)
+        val adcBP = adcBits - (worstADCBits + 1)
+        println(s"ADC BP: $adcBP , FFT BP: $fftBP")
+        val genADC = FixedPoint(adcBits.W, adcBP.BP)
+        val genFFT = FixedPoint(fftBits.W, fftBP.BP)
+        runChisel(genADC, genFFT, s"out_${adcBits}_${fftBits}").toList
       }
     }.flatten.transpose
 
-    val chiselResult = runChisel(DspReal(), DspReal())
+    val chiselResult = runChisel(DspReal(), DspReal(), s"out_dspreal")
 
     // Going down should be SNR changes
     val out = idealResult.zip(chiselResult).zip(fpChiselResults).map { case (((a, b, c), d), e) =>
@@ -374,14 +379,17 @@ object TestParams2 {
     backendName = "verilator"
   )
 
-  val options1Tol = new DspTesterOptionsManager {
-    dspTesterOptions = DspTesterOptions(
-      fixTolLSBs = 1,
-      genVerilogTb = false,
-      isVerbose = false)
-    testerOptions = testerOptionsGlobal.copy(waveform = None)
-    //testerOptions = testerOptionsGlobal.copy(waveform = Some(new java.io.File("test_run_dir/waveform.vcd")))
-  }
+  def options1Tol(outDir: String = "") = 
+    new DspTesterOptionsManager {
+      dspTesterOptions = DspTesterOptions(
+        fixTolLSBs = 1,
+        genVerilogTb = false,
+        isVerbose = false)
+      testerOptions = testerOptionsGlobal.copy(waveform = None)
+      //testerOptions = testerOptionsGlobal.copy(waveform = Some(new java.io.File("test_run_dir/waveform.vcd")))
+      commonOptions = CommonOptions(
+        targetDirName = outDir)
+    }
 }  
 
 ////////////////////////////////////////////////////////
@@ -390,7 +398,7 @@ class RXSpec extends FlatSpec with Matchers {
   behavior of "RX"
   it should "demodulate data" in {
     val insLong = Seq.fill(2)(Seq(Complex(0, 0), Complex(1, -1), Complex(2, -2), Complex(3, -3))).flatten
-    dsptools.Driver.execute(() => new Receiver(genADC = DspReal(), genFFT = DspReal(), 16, 128 / 32), TestParams2.options1Tol) { c =>
+    dsptools.Driver.execute(() => new Receiver(genADC = DspReal(), genFFT = DspReal(), 16, 128 / 32), TestParams2.options1Tol()) { c =>
       new RXTester(c, insLong)
     } should be (true)
   }
