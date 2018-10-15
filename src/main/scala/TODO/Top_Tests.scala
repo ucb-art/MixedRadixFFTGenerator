@@ -4,6 +4,7 @@
 package FFT
 import ChiselDSP._
 import Chisel.{Complex => _, _}
+import scala.collection.mutable.ListBuffer
 
 class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Option[List[ScalaComplex]] = None,
                                          normalized:Boolean, genOffset:Boolean)
@@ -253,6 +254,22 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
     val temp = traceOn
     traceOn = true
 
+    // TWIDDLE TV
+    traceOn = false
+    val dit = peek(c.CalcCtrl.calcDIT)
+    val currentStage = peek(c.CalcCtrl.currentStage)
+    if (currentStage == 0 && Tracker.prevStage > 0) Tracker.observedSection = !Tracker.observedSection
+    Tracker.prevStage = currentStage
+    if (!dit && Tracker.observedSection) { 
+      val stageAgain = peek(c.CalcCtrl.currentStage)
+      val ns = peek(c.CalcCtrl.nToAddrBank.io.n)
+      val twiddleAddr = peek(c.TwiddleGen.twiddleAddr)
+      Tracker.data += Tuple3(stageAgain, ns, twiddleAddr)
+    }
+    // TW delay is 4 from address
+    // Actul n count starts 14 after, then 7 after
+    // END TWIDDLE TV
+
     //peek(c.IOCtrl.o.bank)
     //peek(c.IOCtrl.o.addr)
     //peek(c.CalcCtrl.nToAddrBank.io.bank)
@@ -298,6 +315,13 @@ class FFTTests[T <: FFT[_ <: DSPQnm[_]]](c: T, fftn: Option[Int] = None, in: Opt
 }
 
 object Tracker {
+
+  // TWIDDLE TV
+  var observedSection = false
+  var prevStage: BigInt = 0
+  var data = new ListBuffer[(BigInt, Seq[BigInt], BigInt)]()   // Stage, n's, twiddle address
+
+  // END TWIDDLE TV
 
   // Variables to track tester progress
   // Output currently valid

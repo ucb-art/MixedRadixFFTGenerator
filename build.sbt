@@ -17,6 +17,7 @@ val prjSettings = Project.defaultSettings ++ Seq(
   ),
   // WISP plotting libraries
   libraryDependencies += "com.quantifind" %% "wisp" % "0.0.4",
+  libraryDependencies += "net.jcazevedo" %% "moultingyaml" % "0.4.0",
   libraryDependencies <+= scalaVersion("org.scala-lang" % "scala-compiler" % _ ) 
 )
 
@@ -40,7 +41,7 @@ lazy val fft = Project(
 
 // Define default sbt run main class
 // mainClass in (Compile, run) := Some("FFT.MainWithMatlab")
-mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
-//mainClass in (Compile, run) := Some("FFT.DebugFFT")
+//mainClass in (Compile, run) := Some("FFT.RocketInterfaceWrapper")
+mainClass in (Compile, run) := Some("FFT.DebugFFT")
 
 //mainClass in (Compile, run) := Some("FFT.SQNRAnalysis")
