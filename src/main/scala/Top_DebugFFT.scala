@@ -30,7 +30,7 @@ object DebugFFT {
       }
 
       val (stages, ns, twiddleAddrsTemp) = data.unzip3
-
+      
       // TW delay is 4 from address
       val twiddleAddrs = twiddleAddrsTemp.drop(4) ++ Seq.fill(4)(0)
 
@@ -44,12 +44,12 @@ object DebugFFT {
         val tempOut = associatedNs.zip(associatedTwiddleAddrs)
         if (stage == 0)
           // Pipeline delay for 0th stage is 14?
-          stage -> tempOut.drop(14)
+          stage -> tempOut //.drop(14)
         else if (stage == maxStage)
-          stage -> tempOut.drop(7).dropRight(14)
+          stage -> tempOut //.drop(7).dropRight(14)
         else
           // Pipeline delay is 7
-          stage -> tempOut.drop(7)
+          stage -> tempOut //.drop(7)
       }.toMap
       n -> evals
     }.toMap
